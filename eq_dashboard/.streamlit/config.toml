@@ -1,0 +1,17 @@
+# cookieSecret diambil dari env STREAMLIT_SERVER_COOKIE_SECRET (lihat .env)
+[server]
+headless = true
+maxUploadSize = 50
+enableXsrfProtection = true
+enableCORS = false
+
+[client]
+showErrorDetails = false
+toolbarMode = "minimal"
+showSidebarNavigation = false
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "dark"

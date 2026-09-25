@@ -1,0 +1,14 @@
+# data & reports (tidak di-commit)
+*.xlsb
+*.xlsx
+*.pdf
+!eq_dashboard/tests/fixtures/*.xlsx
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+# rahasia & cache
+.env
+eq_dashboard/.cache/
+eq_dashboard/.streamlit/secrets.toml
