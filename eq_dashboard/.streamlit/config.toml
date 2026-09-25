@@ -3,7 +3,9 @@
 headless = true
 maxUploadSize = 50
 enableXsrfProtection = true
-enableCORS = false
+# CORS aktif: batasi WebSocket lintas origin. Di production isi origin domain Anda, mis.
+# corsAllowedOrigins = ["https://dashboard.example.co.id"]
+enableCORS = true
 
 [client]
 showErrorDetails = false

@@ -61,12 +61,15 @@ def lookups(s: Session) -> tuple[dict[str, str], dict[str, str]]:
 
 
 def ingest(s: Session, data: bytes, filename: str, user_id: int | None = None,
-           username: str | None = None) -> tuple[m.Upload, list[m.UploadSite]]:
+           username: str | None = None, parsed: Parsed | None = None) -> tuple[m.Upload, list[m.UploadSite]]:
+    """`parsed` boleh diisi hasil preview (parse_eq_event) agar file tidak diparse dua kali."""
     digest = sha256(data)
     if s.scalar(select(m.Upload.id).where(m.Upload.sha256 == digest)):
         raise DuplicateUpload("File identik sudah pernah diupload.")
-    alias, tanks = lookups(s)
-    p = parse_eq_event(data, alias, tanks)
+    if parsed is None:
+        alias, tanks = lookups(s)
+        parsed = parse_eq_event(data, alias, tanks)
+    p = parsed
     month = p.month
 
     for code in p.sites:

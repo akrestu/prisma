@@ -1,0 +1,70 @@
+"""Antrian approval per site: preview KPI + DQ → Approve / Reject."""
+import pandas as pd
+import streamlit as st
+
+from auth.access import can_review
+from core import ingest as ing
+from core import metrics
+from core.ui import fmt_num, fmt_pct, require, sites_for
+from db import models as m
+from db import repo
+from db.engine import session_scope
+
+user = require("approval")
+sites = sites_for(user)
+st.title("Approval data")
+
+with session_scope() as s:
+    queue = repo.upload_sites(s, sites, [ing.PENDING])
+queue = queue[[can_review(user, x, sites) for x in queue["site"]]] if len(queue) else queue
+
+if queue.empty:
+    st.success("Tidak ada data yang menunggu persetujuan.")
+    st.stop()
+
+st.caption(f"{len(queue)} data menunggu persetujuan. Data baru tampil ke Viewer dan TV setelah di-approve; "
+           "versi sebelumnya untuk site & bulan yang sama otomatis menjadi SUPERSEDED.")
+
+for _, row in queue.iterrows():
+    dq = row["dq_summary"] or {}
+    summ = row["summary"] or {}
+    head = (f"**{row['site']}** · {row['month']:%B %Y} · upload #{row['upload_id']} · {row['filename']} · "
+            f"oleh {row['uploader'] or '-'}")
+    with st.container(border=True):
+        st.markdown(head)
+        with session_scope() as s:
+            ev = repo.events(s, int(row["upload_id"]), row["site"])
+            st_ = repo.stoppages(s, int(row["upload_id"]), row["site"])
+            findings = repo.dq_findings(s, int(row["upload_id"]), row["site"])
+        k = metrics.kpis(ev) if len(ev) else None
+        r = metrics.reliability(ev, st_) if len(ev) else None
+        c = st.columns(7)
+        c[0].metric("Unit", summ.get("units", 0))
+        c[1].metric("PA", fmt_pct(k["PA"].iloc[0]) if k is not None else "—")
+        c[2].metric("UoA", fmt_pct(k["UoA"].iloc[0]) if k is not None else "—")
+        c[3].metric("MTBS (jam)", fmt_num(r["MTBS"].iloc[0], 1) if r is not None else "—")
+        c[4].metric("OB (BCM)", fmt_num(summ.get("ob_bcm")))
+        c[5].metric("Coal (t)", fmt_num(summ.get("coal_ton"), 1))
+        c[6].metric("Fuel (L)", fmt_num(summ.get("fuel_liters")))
+        crit = int(dq.get("critical", 0))
+        label = f"Data quality: {crit} kritis · {int(dq.get('warn', 0))} cek · {int(dq.get('info', 0))} info"
+        with st.expander(label, expanded=crit > 0):
+            st.dataframe(findings, hide_index=True, width="stretch")
+
+        key = f"us{row['id']}"
+        comment = st.text_input("Komentar (wajib bila reject)", key=f"c_{key}")
+        a, b, _ = st.columns([1, 1, 4])
+        if a.button("Approve", key=f"a_{key}", type="primary"):
+            with session_scope() as s:
+                ing.publish(s, s.get(m.UploadSite, int(row["id"])), user.id, user.username, comment=comment)
+            st.cache_data.clear()
+            st.toast(f"{row['site']} {row['month']:%Y-%m} PUBLISHED")
+            st.rerun()
+        if b.button("Reject", key=f"r_{key}"):
+            if not comment.strip():
+                st.error("Isi komentar alasan penolakan.")
+            else:
+                with session_scope() as s:
+                    ing.reject(s, s.get(m.UploadSite, int(row["id"])), user.id, user.username, comment)
+                st.toast(f"{row['site']} ditolak")
+                st.rerun()

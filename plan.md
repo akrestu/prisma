@@ -254,10 +254,10 @@ eq_dashboard/
 - [x] Riset context7 & perbaikan plan
 - [x] Keputusan tampilan TV per site (Display role, 1 layar, MTD + hari lengkap terakhir, 1080p)
 - [x] Setup project, Docker Compose (belum diuji, Docker belum terpasang), PostgreSQL Laragon, Alembic, config.toml
-- [ ] Auth: streamlit-authenticator + tabel users, role navigation, akses site, CLI create-admin
+- [x] Auth: streamlit-authenticator + tabel users, lockout 5x/15 menit, idle 60 menit, role navigation, akses site, CLI create-admin/create-user/reset-password
 - [x] Ingest: io + validate + clean + split site + stoppage + DQ + golden test (16 test lulus)
 - [~] Target: import Target.xlsx (CLI) ✓ · halaman Target & Plan, interval PM, mapping standby (UI) belum
-- [ ] Upload, Approval (auto-approve), Riwayat Upload
+- [x] Upload (preview → submit), Approval (auto-approve), Riwayat Upload + rollback (26 test lulus)
 - [ ] **Layar TV**: core/tv.py, halaman TV 1080p, perangkat Display & token, Preview TV
 - [ ] Dashboard: Overview, PA/UA, Time Distribution, Reliability
 - [ ] Dashboard: Produksi OB, Coal Getting, Loader & Fleet, Fuel, Data Quality
