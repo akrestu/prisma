@@ -30,4 +30,4 @@ else:
     pub = pub.assign(Bulan=pd.to_datetime(pub["month"]).dt.strftime("%B %Y"))
     grid = pub.pivot_table(index="Bulan", columns="site", values="upload_id", aggfunc="first")
     st.dataframe(grid.map(lambda v: f"upload #{int(v)}" if pd.notna(v) else "—"), width="stretch")
-st.caption("Dashboard analisa dan layar TV menyusul di milestone berikutnya.")
+

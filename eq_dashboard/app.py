@@ -39,14 +39,34 @@ if user is None:
     st.stop()
 st.session_state["user"] = user
 
-PAGES = {
-    "home": st.Page("pages/home.py", title="Beranda", icon=":material/home:", default=True),
-    "upload": st.Page("pages/data/upload.py", title="Upload data", icon=":material/upload_file:"),
-    "approval": st.Page("pages/data/approval.py", title="Approval", icon=":material/fact_check:"),
-    "upload_history": st.Page("pages/data/upload_history.py", title="Riwayat upload", icon=":material/history:"),
-    "account": st.Page("pages/account.py", title="Ganti password", icon=":material/key:"),
-    "preview_tv": st.Page("pages/tv/preview.py", title="Preview TV", icon=":material/tv:"),
-    "display_devices": st.Page("pages/admin/display_devices.py", title="Perangkat TV", icon=":material/cast:"),
+def P(path, title, icon, **kw):
+    return st.Page(path, title=title, icon=f":material/{icon}:", **kw)
+
+
+DASH = {
+    "overview": P("pages/dashboard/overview.py", "Overview", "dashboard", default=True),
+    "pa_ua": P("pages/dashboard/pa_ua.py", "PA & UoA", "speed"),
+    "time_distribution": P("pages/dashboard/time_distribution.py", "Time distribution", "donut_large"),
+    "reliability": P("pages/dashboard/reliability.py", "Reliability", "build"),
+    "production_ob": P("pages/dashboard/production_ob.py", "Produksi OB", "landscape"),
+    "coal_getting": P("pages/dashboard/coal_getting.py", "Coal getting", "local_shipping"),
+    "loader_fleet": P("pages/dashboard/loader_fleet.py", "Loader & fleet", "construction"),
+    "fuel": P("pages/dashboard/fuel.py", "Fuel", "local_gas_station"),
+    "data_quality": P("pages/dashboard/data_quality.py", "Data quality", "rule"),
+}
+OTHER = {
+    "preview_tv": P("pages/tv/preview.py", "Preview TV", "tv"),
+    "upload": P("pages/data/upload.py", "Upload data", "upload_file"),
+    "approval": P("pages/data/approval.py", "Approval", "fact_check"),
+    "upload_history": P("pages/data/upload_history.py", "Riwayat upload", "history"),
+    "users_roles": P("pages/admin/users_roles.py", "User & role", "group"),
+    "targets_plan": P("pages/admin/targets_plan.py", "Target & plan", "flag"),
+    "pm_interval": P("pages/admin/pm_interval.py", "Interval PM & standby", "schedule"),
+    "sites_mapping": P("pages/admin/sites_mapping.py", "Site & mapping", "account_tree"),
+    "display_devices": P("pages/admin/display_devices.py", "Perangkat TV", "cast"),
+    "audit_log": P("pages/admin/audit_log.py", "Audit log", "receipt_long"),
+    "home": P("pages/home.py", "Status data", "info"),
+    "account": P("pages/account.py", "Ganti password", "key"),
 }
 
 
@@ -55,7 +75,7 @@ def allowed(key: str) -> bool:
 
 
 if user.must_change_password:
-    nav = st.navigation([PAGES["account"]])
+    nav = st.navigation([OTHER["account"]])
 else:
     if allowed("approval"):
         from core.ui import sites_for
@@ -63,13 +83,14 @@ else:
         with session_scope() as s:
             n = repo.pending_count(s, sites_for(user))
         if n:
-            PAGES["approval"] = st.Page("pages/data/approval.py", title=f"Approval ({n})",
-                                        icon=":material/fact_check:")
+            OTHER["approval"] = P("pages/data/approval.py", f"Approval ({n})", "fact_check")
+    pick = lambda keys, src=OTHER: [src[k] for k in keys if allowed(k)]  # noqa: E731
     sections = {
-        "": [PAGES["home"]] + ([PAGES["preview_tv"]] if allowed("preview_tv") else []),
-        "Data": [PAGES[k] for k in ("upload", "approval", "upload_history") if allowed(k)],
-        "Admin": [PAGES[k] for k in ("display_devices",) if allowed(k)],
-        "Akun": [PAGES["account"]],
+        "Dashboard": pick(DASH, DASH),
+        "Layar TV": pick(["preview_tv"]),
+        "Data": pick(["upload", "approval", "upload_history"]),
+        "Admin": pick(["users_roles", "targets_plan", "pm_interval", "sites_mapping", "display_devices", "audit_log"]),
+        "Akun": pick(["home", "account"]),
     }
     nav = st.navigation({k: v for k, v in sections.items() if v})
 

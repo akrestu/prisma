@@ -256,10 +256,10 @@ eq_dashboard/
 - [x] Setup project, Docker Compose (belum diuji, Docker belum terpasang), PostgreSQL Laragon, Alembic, config.toml
 - [x] Auth: streamlit-authenticator + tabel users, lockout 5x/15 menit, idle 60 menit, role navigation, akses site, CLI create-admin/create-user/reset-password
 - [x] Ingest: io + validate + clean + split site + stoppage + DQ + golden test (16 test lulus)
-- [~] Target: import Target.xlsx (CLI) ✓ · halaman Target & Plan, interval PM, mapping standby (UI) belum
+- [x] Target: import Target.xlsx (CLI + UI), halaman Target & Plan, interval PM, mapping standby
 - [x] Upload (preview → submit), Approval (auto-approve), Riwayat Upload + rollback (26 test lulus)
 - [x] **Layar TV**: core/tv.py + tv_render (HTML/SVG tanpa JS via st.html), kiosk `?display=token` refresh 5 menit, perangkat Display & token, Preview TV (34 test lulus)
-- [ ] Dashboard: Overview, PA/UA, Time Distribution, Reliability
-- [ ] Dashboard: Produksi OB, Coal Getting, Loader & Fleet, Fuel, Data Quality
-- [ ] Admin: Users & Roles, Sites & Mapping, Audit Log
-- [ ] Uji end-to-end per role (lokal); deploy VPS saat production
+- [x] Dashboard: Overview, PA/UA, Time Distribution, Reliability
+- [x] Dashboard: Produksi OB, Coal Getting, Loader & Fleet, Fuel, Data Quality
+- [x] Admin: Users & Roles, Sites & Mapping, Audit Log (51 test lulus)
+- [ ] Uji end-to-end per role oleh user di browser (lokal); uji Docker; deploy VPS saat production

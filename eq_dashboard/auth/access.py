@@ -24,6 +24,16 @@ PAGE_ROLES: dict[str, set[str]] = {
     "account": {ADMIN, SITE_MANAGER, DATA_OFFICER, VIEWER},
     "preview_tv": {ADMIN, SITE_MANAGER},
     "display_devices": {ADMIN},
+    # dashboard: semua role login
+    **{k: {ADMIN, SITE_MANAGER, DATA_OFFICER, VIEWER} for k in (
+        "overview", "pa_ua", "time_distribution", "reliability", "production_ob", "coal_getting", "loader_fleet",
+        "fuel", "data_quality")},
+    # admin
+    "users_roles": {ADMIN},
+    "targets_plan": {ADMIN, SITE_MANAGER},
+    "pm_interval": {ADMIN},
+    "sites_mapping": {ADMIN},
+    "audit_log": {ADMIN, SITE_MANAGER},
 }
 
 

@@ -1,0 +1,53 @@
+"""Time distribution: porsi jam R/I/S/D, reason idle & standby, standby client vs internal, DS vs NS."""
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+
+from core import dash, metrics
+from core.ui import excel_download, fmt_num
+
+c = dash.context("time_distribution")
+st.title("Time distribution")
+
+b = metrics.time_buckets(c.ev).iloc[0]
+r = st.columns(5)
+r[0].metric("Total jam", fmt_num(b["T"]))
+for i, cat in enumerate("RISD", start=1):
+    r[i].metric(dash.CAT_LABEL[cat], f"{b[cat] / b['T']:.1%}".replace(".", ","), f"{fmt_num(b[cat])} jam",
+                delta_color="off")
+
+a, bb = st.columns(2)
+with a:
+    dash.stacked_dist(c.ev, "type", "Distribusi jam per Type")
+with bb:
+    dash.stacked_dist(c.ev, "model", "Distribusi jam per Model (20 terbesar)")
+
+client = dash.client_standby_codes()
+sb = c.ev[c.ev["category"] == "S"].assign(grp=lambda d: d["reason_code"].isin(client).map(
+    {True: "Client", False: "Internal"}))
+a, bb, cc = st.columns([1.2, 1.2, 0.8])
+with a:
+    dash.pareto(c.ev[c.ev["category"] == "I"], "reason_text", "hours", "Pareto jam Idle", "#F5B400")
+with bb:
+    dash.pareto(sb, "reason_text", "hours", "Pareto jam Standby", "#7F95C4")
+with cc:
+    g = sb.groupby("grp")["hours"].sum()
+    fig = go.Figure(go.Pie(labels=g.index, values=g.values, hole=.55, marker_colors=["#7F95C4", "#3A4656"]))
+    fig.update_layout(title="Standby: client vs internal")
+    dash.plot(fig, 380)
+    st.caption("Kode reason client diatur Admin di halaman Interval PM & Standby.")
+
+st.subheader("Day shift vs night shift")
+ds = metrics.availability(metrics.time_buckets(c.ev, ["shift"]))
+fig = go.Figure()
+for cat in "RISD":
+    fig.add_bar(x=ds.index, y=ds[cat] / ds["T"], name=dash.CAT_LABEL[cat], marker_color=dash.COL_CAT[cat])
+fig.update_layout(barmode="stack", yaxis=dict(tickformat=".0%"), title="Porsi jam per shift")
+dash.plot(fig, 320)
+
+st.subheader("Jam per reason code")
+tab = (c.ev.groupby(["category", "reason_code", "reason_text"], dropna=False)["hours"].sum().reset_index()
+       .assign(category=lambda d: d["category"].map(dash.CAT_LABEL)).sort_values("hours", ascending=False))
+tab.columns = ["Kategori", "Kode", "Reason", "Jam"]
+st.dataframe(tab, hide_index=True, width="stretch", column_config={"Jam": st.column_config.NumberColumn(format="%.1f")})
+excel_download(tab, "jam_per_reason.xlsx")
