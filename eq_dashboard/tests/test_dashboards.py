@@ -46,14 +46,14 @@ def run(page, user):
 def test_page_runs_for_admin(world, page):
     at = run(page, load_user(world, "adm"))
     assert not at.exception, [e.value for e in at.exception]
-    assert not any("tidak punya akses" in e.value for e in at.error)
+    assert not any("do not have access" in e.value for e in at.error)
 
 
 def test_viewer_sees_dashboards_not_admin(world):
     vw = load_user(world, "vw")
     assert not run("overview", vw).exception
     for page in ADMIN_PAGES:
-        assert any("tidak punya akses" in e.value for e in run(page, vw).error)
+        assert any("do not have access" in e.value for e in run(page, vw).error)
 
 
 def test_site_manager_scope_on_dashboard_and_targets(world):
@@ -64,13 +64,13 @@ def test_site_manager_scope_on_dashboard_and_targets(world):
     at = run("targets_plan", sm)
     assert not at.exception
     assert at.selectbox(key="tgt_site").options == ["WBK-BAU"]
-    assert any("tidak punya akses" in e.value for e in run("users_roles", sm).error)
+    assert any("do not have access" in e.value for e in run("users_roles", sm).error)
 
 
 def test_overview_numbers_weighted_across_sites(world):
     at = run("overview", load_user(world, "adm"))
     vals = {mt.label: mt.value for mt in at.metric}
     # MAS (T 63.252 jam, PA 71,07%) + BAU (T 35.028 jam, PA 54,49%) berbobot jam = 65,16%
-    assert vals["PA"] == "65,2%"
-    assert vals["OB (BCM)"] == "778.796"
-    assert vals["Coal (ton)"] == "93.724,8"  # tanpa tiket loader tak dikenali (UNMAPPED 984,3 t)
+    assert vals["PA"] == "65.2%"
+    assert vals["OB (BCM)"] == "778,796"
+    assert vals["Coal (t)"] == "93,724.8"  # excludes tickets with an unknown loader (UNMAPPED 984.3 t)

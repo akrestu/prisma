@@ -15,13 +15,13 @@ from db import models as m
 from db.engine import session_scope
 
 COOKIE_NAME = "eqdash_auth"
-LOGIN_FIELDS = {"Form name": "Masuk", "Username": "Username", "Password": "Password", "Login": "Masuk"}
+LOGIN_FIELDS = {"Form name": "Sign in", "Username": "Username", "Password": "Password", "Login": "Sign in"}
 
 
 def _cookie_key() -> str:
     key = os.environ.get("AUTH_COOKIE_KEY")
     if not key:
-        st.error("AUTH_COOKIE_KEY belum diset di environment.")
+        st.error("AUTH_COOKIE_KEY is not set in the environment.")
         st.stop()
     return key
 
@@ -38,7 +38,7 @@ def authenticate() -> tuple[CurrentUser | None, stauth.Authenticate]:
         auth.login(location="main", max_login_attempts=security.MAX_FAILED, fields=LOGIN_FIELDS,
                    callback=_on_login)
     except LoginError as e:
-        st.error("Akun ini sedang dikunci atau tidak diizinkan masuk." if "attempts" in str(e) or
+        st.error("This account is locked or not allowed to sign in." if "attempts" in str(e) or
                  "authorized" in str(e) else str(e))
         _force_logout(auth)
         return None, auth
@@ -46,10 +46,10 @@ def authenticate() -> tuple[CurrentUser | None, stauth.Authenticate]:
     with session_scope() as s:
         locked = security.sync_failed_attempts(s, creds)
     if locked:
-        st.error(f"Terlalu banyak percobaan gagal. Akun dikunci {security.LOCK_MINUTES} menit.")
+        st.error(f"Too many failed attempts. The account is locked for {security.LOCK_MINUTES} minutes.")
     status = st.session_state.get("authentication_status")
     if status is False and not locked:
-        st.error("Username atau password salah.")
+        st.error("Incorrect username or password.")
     if not status:
         return None, auth
 
@@ -68,7 +68,7 @@ def _finish_login(username: str, auth: stauth.Authenticate) -> CurrentUser | Non
         if idle and not fresh and not st.session_state.get("_active"):
             s.add(m.AuditLog(username=username, action="session_expired"))
             _force_logout(auth)
-            st.info(f"Sesi berakhir karena tidak aktif lebih dari {security.IDLE_MINUTES} menit. Silakan masuk lagi.")
+            st.info(f"Your session ended after more than {security.IDLE_MINUTES} minutes of inactivity. Please sign in again.")
             return None
         if fresh:
             s.add(m.AuditLog(username=username, action="login"))

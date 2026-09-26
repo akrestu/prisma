@@ -1,4 +1,4 @@
-"""Beranda: status data per site & bulan sesuai hak akses."""
+"""Data status: published data per site & month within the user's access."""
 import pandas as pd
 import streamlit as st
 
@@ -9,11 +9,11 @@ from db.engine import session_scope
 
 user = require("home")
 sites = sites_for(user)
-st.title(f"Selamat datang, {user.name}")
-st.caption(f"{ROLE_LABEL[user.role]} · akses site: {', '.join(sites) if sites else 'belum ada'}")
+st.title(f"Welcome, {user.name}")
+st.caption(f"{ROLE_LABEL[user.role]} · site access: {', '.join(sites) if sites else 'none yet'}")
 
 if not sites:
-    st.warning("Akun Anda belum diberi akses site. Hubungi Admin.")
+    st.warning("Your account has no site access yet. Contact your Admin.")
     st.stop()
 
 with session_scope() as s:
@@ -21,13 +21,12 @@ with session_scope() as s:
     pending = repo.pending_count(s, sites)
 
 if pending and user.role in ("admin", "site_manager"):
-    st.info(f"{pending} data menunggu persetujuan di halaman Approval.")
+    st.info(f"{pending} upload(s) waiting for approval on the Approval page.")
 
-st.subheader("Data yang sudah tayang")
+st.subheader("Published data")
 if pub.empty:
-    st.caption("Belum ada data PUBLISHED.")
+    st.caption("No PUBLISHED data yet.")
 else:
-    pub = pub.assign(Bulan=pd.to_datetime(pub["month"]).dt.strftime("%B %Y"))
-    grid = pub.pivot_table(index="Bulan", columns="site", values="upload_id", aggfunc="first")
+    pub = pub.assign(Month=pd.to_datetime(pub["month"]).dt.strftime("%B %Y"))
+    grid = pub.pivot_table(index="Month", columns="site", values="upload_id", aggfunc="first")
     st.dataframe(grid.map(lambda v: f"upload #{int(v)}" if pd.notna(v) else "—"), width="stretch")
-

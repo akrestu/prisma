@@ -26,5 +26,5 @@ def database_url(test: bool = False) -> str:
     key = "TEST_DATABASE_URL" if test else "DATABASE_URL"
     url = os.environ.get(key)
     if not url:
-        raise RuntimeError(f"{key} belum diset. Salin .env.example menjadi .env lalu isi.")
+        raise RuntimeError(f"{key} is not set. Copy .env.example to .env and fill it in.")
     return url

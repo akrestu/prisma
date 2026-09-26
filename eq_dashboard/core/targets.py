@@ -23,7 +23,7 @@ def read_target_file(data: bytes) -> pd.DataFrame:
     df.columns = [str(c).strip() for c in df.columns]
     missing = [c for c in ["Year", "Month"] if c not in df.columns]
     if missing:
-        raise ValueError(f"Target.xlsx tidak punya kolom: {', '.join(missing)}")
+        raise ValueError(f"Target.xlsx is missing columns: {', '.join(missing)}")
     df = df.rename(columns=COLUMN_MAP)
     df = df[[v for v in COLUMN_MAP.values() if v in df.columns]]
     df = df.dropna(subset=["year", "month"])
@@ -40,7 +40,7 @@ def import_targets(s: Session, data: bytes, sites: list[str] | None = None) -> i
     if "site" not in df.columns or df["site"].isna().all():
         targets = sites or [x.code for x in s.scalars(select(m.Site).where(m.Site.active))]
         if not targets:
-            raise ValueError("Belum ada site. Upload Eq.Event dulu atau pilih site tujuan.")
+            raise ValueError("No sites yet. Upload an Eq.Event file first or choose target sites.")
         df = pd.concat([df.assign(site=code) for code in targets], ignore_index=True)
     recs = df[["site", "year", "month", *METRICS]].astype(object).where(df.notna(), None).to_dict("records")
     stmt = pg_insert(m.Target).values(recs)

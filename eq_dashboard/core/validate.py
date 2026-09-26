@@ -29,7 +29,7 @@ class StructureError(ValueError):
 
     def __init__(self, problems: list[str]):
         self.problems = problems
-        super().__init__("Struktur file tidak sesuai:\n- " + "\n- ".join(problems))
+        super().__init__("File structure is not valid:\n- " + "\n- ".join(problems))
 
 
 def validate(raw: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
@@ -37,17 +37,17 @@ def validate(raw: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     problems, frames = [], {}
     for sheet, (hdr, cols) in SPEC.items():
         if sheet not in raw:
-            problems.append(f"Sheet '{sheet}' tidak ditemukan.")
+            problems.append(f"Sheet '{sheet}' was not found.")
             continue
         if len(raw[sheet]) <= hdr:
-            problems.append(f"Sheet '{sheet}' kosong.")
+            problems.append(f"Sheet '{sheet}' is empty.")
             continue
         df = frame(raw[sheet], hdr)
         need = cols + (HOUR_SLOTS if sheet == "Ritasi Unit" else [])
         missing = [c for c in need if c not in df.columns]
         if missing:
-            where = f"baris {hdr + 1}"
-            problems.append(f"Sheet '{sheet}' ({where}) tidak punya kolom: {', '.join(missing)}.")
+            where = f"row {hdr + 1}"
+            problems.append(f"Sheet '{sheet}' ({where}) is missing columns: {', '.join(missing)}.")
         frames[sheet] = df
     if problems:
         raise StructureError(problems)

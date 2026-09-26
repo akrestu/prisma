@@ -63,7 +63,7 @@ def test_publish_supersede_reject_rollback(db_session, sample_bytes, monkeypatch
     assert s.scalar(select(func.count()).select_from(m.AuditLog).where(m.AuditLog.action == "rollback")) == 1
 
 
-@pytest.mark.skipif(not TARGET.exists(), reason="Target.xlsx tidak ada")
+@pytest.mark.skipif(not TARGET.exists(), reason="Target.xlsx not found")
 def test_import_targets(db_session):
     s = db_session
     s.add_all([m.Site(code="WBK-MAS", name="MAS"), m.Site(code="WBK-BAU", name="BAU")])
@@ -73,6 +73,6 @@ def test_import_targets(db_session):
     t = target_for(s, "WBK-MAS", 2026, 9)
     assert t["pa"] is None and t["uoa"] == pytest.approx(0.6) and t["mtbs"] == 90 and t["mttr"] == 15
     assert target_for(s, "WBK-BAU", 2026, 1)["pa"] == pytest.approx(0.874565, abs=1e-6)
-    # import ulang hanya untuk satu site menimpa, tidak menggandakan
+    # re-importing for one site overwrites instead of duplicating
     import_targets(s, TARGET.read_bytes(), ["WBK-MAS"])
     assert s.scalar(select(func.count()).select_from(m.Target)) == 188

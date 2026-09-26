@@ -1,85 +1,134 @@
-"""Produktivitas loader & hauler: BCM per jam Ready (pembanding Ready+Idle), rit/jam, jarak angkut."""
-import numpy as np
+"""Loader & hauler productivity for OB (BCM/h) and CG (t/h) with haul distance, hourly → yearly."""
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
+from auth.access import scope_filter
 from core import dash
+from core.periods import (PERIOD_LABEL, PERIODS, UNIT, bucket, bucket_order, fleet_summary, pretty,
+                          productivity, split_hourly, with_week)
 from core.ui import excel_download, fmt_num
 
 c = dash.context("loader_fleet", unit_filter=False)
-st.title("Loader & fleet")
-ob = c.rit[c.rit["material_group"] == "OB"] if len(c.rit) else c.rit
-if ob.empty:
-    st.info("Tidak ada data ritase OB untuk pilihan ini.")
+st.title("Loader & hauler productivity")
+
+a, b = st.columns([3, 2])
+period = a.segmented_control("Granularity", PERIODS, default="daily", format_func=PERIOD_LABEL.get,
+                             key="prod_period") or "daily"
+group = b.segmented_control("Material", ["OB", "CG"], default="OB", key="prod_group",
+                            format_func=lambda g: "OB (BCM)" if g == "OB" else "Coal getting (t)") or "OB"
+unit = UNIT[group]
+scope = {"hourly": "month", "daily": "month", "weekly": "month", "monthly": "year", "yearly": "all"}[period]
+st.caption({
+    "hourly": "Hourly profile over the selected dates (by production hour 06-07 … 05-06).",
+    "daily": "Per day within the selected dates.",
+    "weekly": "Per week of the selected month (1–7, 8–14, 15–21, 22–end).",
+    "monthly": f"Per month of {c.month.year} (all published months, sidebar dates ignored).",
+    "yearly": "Per year across all published data (sidebar dates ignored).",
+}[period])
+
+if scope == "month":
+    ev, rit = c.ev, c.rit
+else:
+    vers = c.versions_for(scope)
+    ev = scope_filter(dash.combine("events", vers), c.allowed)
+    rit = scope_filter(dash.combine("ritase", vers), c.allowed)
+if rit.empty or rit[rit["material_group"] == group].empty:
+    st.info(f"No {group} trips for this selection.")
     st.stop()
 
-hrs = c.ev.pivot_table(index="unit_id", columns="category", values="hours", aggfunc="sum", fill_value=0)
-ready = hrs.get("R", pd.Series(dtype=float))
-work = ready.add(hrs.get("I", pd.Series(dtype=float)), fill_value=0)
+rit = with_week(rit)
+if period == "hourly":
+    evb = split_hourly(ev)
+    key = ["hour_slot"]
+else:
+    evb = ev
+    key = ["date"]
+# productivity per unit per base key (hour slot or date), then rolled up to the chosen period
+ld = productivity(rit, evb, "loader", key, group)
+hl = productivity(rit, evb, "hauler", key, group)
+for df in (ld, hl):
+    if len(df):
+        if period == "hourly":
+            df["bucket"] = df["hour_slot"]
+        else:
+            tmp = with_week(df.assign(date=pd.to_datetime(df["date"])))
+            df["bucket"] = bucket(tmp, period).to_numpy()
+
+fl = fleet_summary(ld, ["bucket"])
+fh = fleet_summary(hl, ["bucket"])
+order = bucket_order(fl.index, period)
+fl, fh = fl.reindex(order), fh.reindex(order)
+labels = [pretty(x, period) for x in order]
+
+tot_l, tot_h = fleet_summary(ld, []), fleet_summary(hl, [])
+k = st.columns(6)
+k[0].metric(f"{group} volume", f"{fmt_num(tot_l['volume'].iloc[0])} {unit}")
+k[1].metric("Trips", fmt_num(tot_l["rit"].iloc[0]))
+k[2].metric(f"Loader {unit}/h", fmt_num(tot_l["per_hour"].iloc[0], 1), help="Volume / loader Ready hours")
+k[3].metric(f"Hauler {unit}/h", fmt_num(tot_h["per_hour"].iloc[0], 1), help="Volume / hauler Ready hours")
+k[4].metric("Horizontal distance", f"{fmt_num(tot_l['dist_h'].iloc[0])} m", "trip-weighted", delta_color="off")
+k[5].metric("Vertical distance", f"{fmt_num(tot_l['dist_v'].iloc[0])} m", "trip-weighted", delta_color="off")
+
+left, right = st.columns(2)
+with left:
+    fig = go.Figure()
+    fig.add_bar(x=labels, y=fl["volume"], name=f"Volume ({unit})", marker_color="#F0A63C" if group == "OB" else "#6CB6FF",
+                opacity=.55)
+    fig.add_scatter(x=labels, y=fl["per_hour"], name=f"Loader {unit}/h", yaxis="y2", line=dict(color="#30A46C", width=3))
+    fig.add_scatter(x=labels, y=fh["per_hour"], name=f"Hauler {unit}/h", yaxis="y2", line=dict(color="#E5484D", width=3))
+    per = {"hourly": "hour", "daily": "day", "weekly": "week", "monthly": "month", "yearly": "year"}[period]
+    fig.update_layout(title=f"{group} volume & productivity per {per}",
+                      xaxis=dict(type="category"), yaxis=dict(title=unit),
+                      yaxis2=dict(overlaying="y", side="right", title=f"{unit} per Ready hour"))
+    dash.plot(fig, 380)
+with right:
+    fig = go.Figure()
+    fig.add_scatter(x=labels, y=fl["dist_h"], name="Horizontal (m)", line=dict(color="#7F95C4", width=3))
+    fig.add_scatter(x=labels, y=fl["dist_v"], name="Vertical (m)", yaxis="y2", line=dict(color="#F5B400", width=3))
+    fig.update_layout(title=f"{group} haul distance (trip-weighted)", xaxis=dict(type="category"),
+                      yaxis=dict(title="horizontal (m)"), yaxis2=dict(overlaying="y", side="right", title="vertical (m)"))
+    dash.plot(fig, 380)
 
 
-def wavg(g, col):
-    return np.average(g[col], weights=g["rit"]) if g["rit"].sum() and g[col].notna().all() else np.nan
+def unit_table(df: pd.DataFrame, role: str) -> pd.DataFrame:
+    g = df.groupby("unit").agg(model=("model", "first"), volume=("volume", "sum"), trips=("rit", "sum"),
+                               ready_h=("ready_h", "sum"), work_h=("work_h", "sum"))
+    w = df.assign(wh=df["dist_h"] * df["rit"], wv=df["dist_v"] * df["rit"]).groupby("unit")[["wh", "wv"]].sum()
+    g["per_hour"] = g["volume"] / g["ready_h"].where(g["ready_h"] > 0)
+    g["per_hour_work"] = g["volume"] / g["work_h"].where(g["work_h"] > 0)
+    g["trips_per_hour"] = g["trips"] / g["ready_h"].where(g["ready_h"] > 0)
+    g["dist_h"], g["dist_v"] = w["wh"] / g["trips"], w["wv"] / g["trips"]
+    g = g.reset_index().sort_values("volume", ascending=False)
+    return g.rename(columns={"unit": role.title(), "model": "Model", "volume": f"Volume ({unit})", "trips": "Trips",
+                             "ready_h": "Ready h", "work_h": "Ready+Idle h", "per_hour": f"{unit}/Ready h",
+                             "per_hour_work": f"{unit}/(Ready+Idle) h", "trips_per_hour": "Trips/Ready h",
+                             "dist_h": "Horizontal (m)", "dist_v": "Vertical (m)"})
 
 
-ld = ob.groupby("loader").agg(model=("loader_model", "first"), bcm=("volume", "sum"), rit=("rit", "sum"),
-                             hauler=("hauler", "nunique"))
-ld["jam_ready"] = ready.reindex(ld.index)
-ld["jam_ready_idle"] = work.reindex(ld.index)
-ld["bcm_per_jam"] = ld["bcm"] / ld["jam_ready"].replace(0, np.nan)
-ld["bcm_per_jam_ri"] = ld["bcm"] / ld["jam_ready_idle"].replace(0, np.nan)
-ld["jarak_h"] = ob.groupby("loader").apply(lambda g: wavg(g, "dist_h"), include_groups=False)
-ld = ld.sort_values("bcm", ascending=False)
+cfg = lambda cols: {x: st.column_config.NumberColumn(format="%,.1f") for x in cols}  # noqa: E731
+t1, t2 = st.tabs(["Loaders", "Haulers"])
+with t1:
+    tl = unit_table(ld, "loader")
+    a, b = st.columns([1, 1.6])
+    with a:
+        dash.ranking(tl.dropna(subset=[f"{unit}/Ready h"]), "Loader", f"{unit}/Ready h", f"Loader {unit} per Ready hour",
+                     dash.COL_MODEL, pct=False, digits=1)
+    with b:
+        st.dataframe(tl, hide_index=True, width="stretch", height=420, column_config=cfg(tl.columns[2:]))
+        excel_download(tl, f"loader_productivity_{group}_{period}.xlsx", key="dl_ld")
+with t2:
+    th = unit_table(hl, "hauler")
+    mdl = hl.groupby("model").agg(volume=("volume", "sum"), ready_h=("ready_h", "sum"), rit=("rit", "sum")).reset_index()
+    mdl["per_hour"] = mdl["volume"] / mdl["ready_h"].where(mdl["ready_h"] > 0)
+    a, b = st.columns([1, 1.6])
+    with a:
+        dash.ranking(mdl.dropna(subset=["per_hour"]), "model", "per_hour", f"Hauler {unit} per Ready hour by model",
+                     dash.COL_UNIT, pct=False, digits=1)
+    with b:
+        st.dataframe(th, hide_index=True, width="stretch", height=420, column_config=cfg(th.columns[2:]))
+        excel_download(th, f"hauler_productivity_{group}_{period}.xlsx", key="dl_hl")
 
-tot_ready = ld["jam_ready"].sum()
-r = st.columns(4)
-r[0].metric("Loader aktif", len(ld))
-r[1].metric("BCM / jam Ready (fleet)", fmt_num(ld["bcm"].sum() / tot_ready, 1) if tot_ready else "—")
-r[2].metric("Hauler aktif", fmt_num(ob["hauler"].nunique()))
-r[3].metric("Jarak angkut rata-rata", f"{fmt_num(np.average(ob['dist_h'].fillna(0), weights=ob['rit']))} m",
-            "berbobot ritase", delta_color="off")
-
-a, b = st.columns(2)
-with a:
-    dash.ranking(ld.reset_index().dropna(subset=["bcm_per_jam"]), "loader", "bcm_per_jam",
-                 "BCM per jam Ready per loader", dash.COL_MODEL, pct=False)
-with b:
-    fig = px.scatter(ld.reset_index().dropna(subset=["bcm_per_jam"]), x="jarak_h", y="bcm_per_jam", size="bcm",
-                     color="model", hover_name="loader",
-                     labels={"jarak_h": "Jarak horizontal rata-rata (m)", "bcm_per_jam": "BCM / jam Ready"})
-    fig.update_layout(title="Jarak angkut vs produktivitas loader")
-    dash.plot(fig, max(360, 26 * len(ld) + 80))
-
-st.subheader("Loader")
-show = ld.reset_index().rename(columns={"loader": "Loader", "model": "Model", "bcm": "BCM", "rit": "Rit",
-                                        "hauler": "Hauler dilayani", "jam_ready": "Jam Ready",
-                                        "jam_ready_idle": "Jam Ready+Idle", "bcm_per_jam": "BCM/jam Ready",
-                                        "bcm_per_jam_ri": "BCM/jam Ready+Idle", "jarak_h": "Jarak H (m)"})
-st.dataframe(show, hide_index=True, width="stretch",
-             column_config={x: st.column_config.NumberColumn(format="%.1f") for x in
-                            ["BCM", "Jam Ready", "Jam Ready+Idle", "BCM/jam Ready", "BCM/jam Ready+Idle", "Jarak H (m)"]})
-excel_download(show, "produktivitas_loader.xlsx", key="dl_ld")
-
-st.subheader("Hauler")
-hl = ob.groupby(["hauler", "hauler_model"]).agg(rit=("rit", "sum"), bcm=("volume", "sum")).reset_index()
-hl["jam_ready"] = hl["hauler"].map(ready)
-hl["rit_per_jam"] = hl["rit"] / hl["jam_ready"].replace(0, np.nan)
-hl["bcm_per_jam"] = hl["bcm"] / hl["jam_ready"].replace(0, np.nan)
-a, b = st.columns([1, 1.4])
-with a:
-    mdl = hl.groupby("hauler_model").agg(rit=("rit", "sum"), jam=("jam_ready", "sum")).reset_index()
-    mdl["rit_per_jam"] = mdl["rit"] / mdl["jam"].replace(0, np.nan)
-    dash.ranking(mdl.dropna(subset=["rit_per_jam"]), "hauler_model", "rit_per_jam", "Rit per jam Ready per model",
-                 dash.COL_UNIT, pct=False)
-with b:
-    st.dataframe(hl.sort_values("bcm", ascending=False), hide_index=True, width="stretch", height=420,
-                 column_config={x: st.column_config.NumberColumn(format="%.2f") for x in
-                                ["jam_ready", "rit_per_jam", "bcm_per_jam"]})
-
-st.subheader("Jumlah hauler per loader per jam (rata-rata)")
-per_h = ob.groupby(["loader", "date", "hour_slot"])["hauler"].nunique().groupby("loader").mean().sort_values()
-fig = px.bar(per_h, orientation="h", labels={"value": "hauler / jam", "loader": ""})
-fig.update_traces(marker_color=dash.COL_MODEL)
-fig.update_layout(showlegend=False, title="Rata-rata hauler yang dilayani per jam aktif")
-dash.plot(fig, max(300, 24 * len(per_h) + 80))
+st.caption("Ready hours come from Eq.Event. A unit working on both OB and CG in the same "
+           f"{'hour' if period == 'hourly' else 'day'} has its hours shared by its trip share. "
+           "Distances are averages weighted by trips.")

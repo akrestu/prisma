@@ -10,13 +10,13 @@ sys.path.insert(0, str(APP_DIR))
 
 SAMPLE = APP_DIR.parent / "Eq.Event.xlsb"
 TARGET = APP_DIR.parent / "Target.xlsx"
-needs_sample = pytest.mark.skipif(not SAMPLE.exists(), reason="Eq.Event.xlsb contoh tidak ada")
+needs_sample = pytest.mark.skipif(not SAMPLE.exists(), reason="sample Eq.Event.xlsb not found")
 
 
 @pytest.fixture(scope="session")
 def sample_bytes() -> bytes:
     if not SAMPLE.exists():
-        pytest.skip("Eq.Event.xlsb contoh tidak ada")
+        pytest.skip("sample Eq.Event.xlsb not found")
     return SAMPLE.read_bytes()
 
 
@@ -46,7 +46,7 @@ def db_session():
         with engine.connect():
             pass
     except Exception as e:  # pragma: no cover
-        pytest.skip(f"database test tidak tersedia: {e}")
+        pytest.skip(f"test database not available: {e}")
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, expire_on_commit=False)()

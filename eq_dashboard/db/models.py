@@ -52,6 +52,7 @@ class DisplayDevice(Base):
     name: Mapped[str] = mapped_column(String(120))
     site_code: Mapped[str] = mapped_column(ForeignKey("sites.code"))
     token_hash: Mapped[str] = mapped_column(String(128), unique=True)
+    period: Mapped[str] = mapped_column(String(10), default="daily", server_default="daily")  # hourly..yearly
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

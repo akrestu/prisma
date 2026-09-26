@@ -1,12 +1,12 @@
-"""Fondasi halaman dashboard: data PUBLISHED per site (cache), filter sidebar, target gabungan, grafik."""
+"""Dashboard foundation: PUBLISHED data per site (cached), sidebar filters, combined targets, shared charts."""
 from __future__ import annotations
 
+import calendar
 import datetime as dt
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from sqlalchemy import select
@@ -20,13 +20,15 @@ from db import models as m
 from db import repo
 from db.engine import session_scope
 
-# warna mengikuti report acuan: Type merah, Model hijau, Unit kuning
+# colours follow the reference report: Type red, Model green, Unit yellow
 COL_TYPE, COL_MODEL, COL_UNIT = "#E5484D", "#30A46C", "#F5B400"
 COL_CAT = {"R": "#30A46C", "I": "#F5B400", "S": "#7F95C4", "D": "#E5484D"}
 CAT_LABEL = {"R": "Ready", "I": "Idle", "S": "Standby", "D": "Down"}
+FONT = "IBM Plex Sans, sans-serif"
 TABLES = {
-    "events": (m.FactEvent, ["site", "date", "shift", "week", "seq", "unit_id", "type", "model", "operator", "hours",
-                             "hm_start", "hm_end", "status", "category", "reason_code", "reason_text", "down_type"]),
+    "events": (m.FactEvent, ["site", "date", "shift", "week", "seq", "unit_id", "type", "model", "operator",
+                             "time_start", "hours", "hm_start", "hm_end", "status", "category", "reason_code",
+                             "reason_text", "down_type"]),
     "stoppages": (m.FactStoppage, ["site", "unit_id", "type", "model", "start_date", "start_shift", "end_date",
                                    "hours", "sm_hours", "usm_hours", "main_reason", "hm_start"]),
     "ritase": (m.FactRitase, ["site", "site_hauler", "date", "hour_slot", "shift", "hauler", "hauler_model",
@@ -41,7 +43,7 @@ TABLES = {
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _table(name: str, upload_id: int, site: str) -> pd.DataFrame:
-    """Cache per tabel × upload × site (bukan per user). Hak akses disaring setelahnya."""
+    """Cached per table × upload × site (never per user). Access is filtered afterwards."""
     model, cols = TABLES[name]
     with session_scope() as s:
         return repo.frame(s, select(*[getattr(model, c) for c in cols])
@@ -54,12 +56,20 @@ def _dq(upload_id: int, site: str) -> pd.DataFrame:
         return repo.dq_findings(s, upload_id, site).assign(site=site)
 
 
+def combine(name: str, versions: pd.DataFrame) -> pd.DataFrame:
+    parts = [_table(name, int(r.upload_id), r.site) for r in versions.itertuples()]
+    parts = [p for p in parts if len(p)]
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=TABLES[name][1])
+
+
 @dataclass
 class Ctx:
     user: object
+    allowed: list[str]
     sites: list[str]
     month: dt.date
-    versions: pd.DataFrame
+    published: pd.DataFrame      # all PUBLISHED versions the user may see
+    versions: pd.DataFrame       # versions of the selected sites × month
     ev: pd.DataFrame
     st: pd.DataFrame
     rit: pd.DataFrame
@@ -73,44 +83,47 @@ class Ctx:
         parts = [_dq(int(r.upload_id), r.site) for r in self.versions.itertuples()]
         return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
-
-def _combine(name: str, versions: pd.DataFrame) -> pd.DataFrame:
-    parts = [_table(name, int(r.upload_id), r.site) for r in versions.itertuples()]
-    parts = [p for p in parts if len(p)]
-    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=TABLES[name][1])
+    def versions_for(self, scope: str) -> pd.DataFrame:
+        """Versions for wider ranges: 'month' (selected), 'year' (selected year) or 'all'."""
+        v = self.published[self.published["site"].isin(self.sites)]
+        if scope == "month":
+            return v[v["month"] == self.month]
+        if scope == "year":
+            return v[[mo.year == self.month.year for mo in v["month"]]]
+        return v
 
 
 def context(page: str, unit_filter: bool = True) -> Ctx:
-    """Guard halaman + filter sidebar + data PUBLISHED yang sudah disaring."""
+    """Page guard + sidebar filters + filtered PUBLISHED data."""
     user = require(page)
     allowed = [x for x in sites_for(user) if x != UNMAPPED or user.is_admin]
     with session_scope() as s:
         pub = repo.published_versions(s, allowed)
     if pub.empty:
-        msg = "Belum ada data yang dipublikasikan untuk site Anda."
+        msg = "No published data for your sites yet."
         if user.role in ("admin", "site_manager"):
-            msg += " Buka menu **Data → Approval** untuk menyetujui upload yang menunggu."
+            msg += " Open **Data → Approval** to approve pending uploads."
         elif user.role == "data_officer":
-            msg += " Upload file di menu **Data → Upload data**, lalu tunggu persetujuan Site Manager."
+            msg += " Upload a file in **Data → Upload data**, then wait for Site Manager approval."
         st.info(msg)
         st.stop()
     sb = st.sidebar
-    sb.markdown("### Filter")
+    sb.markdown("### Filters")
     avail = sorted(pub["site"].unique())
     sel = sb.multiselect("Site", avail, default=[x for x in avail if x != UNMAPPED] or avail, key="f_site")
     if not sel:
-        st.warning("Pilih minimal satu site.")
+        st.warning("Select at least one site.")
         st.stop()
     months = sorted(pub[pub["site"].isin(sel)]["month"].unique(), reverse=True)
-    month = sb.selectbox("Bulan", months, format_func=lambda d: pd.Timestamp(d).strftime("%B %Y"), key="f_month")
+    month = sb.selectbox("Month", months, format_func=lambda d: pd.Timestamp(d).strftime("%B %Y"), key="f_month")
     versions = pub[(pub["site"].isin(sel)) & (pub["month"] == month)]
 
-    ev = scope_filter(_combine("events", versions), allowed)
+    ev = scope_filter(combine("events", versions), allowed)
     if ev.empty:
-        st.info("Tidak ada data event untuk pilihan ini.")
+        st.info("No event data for this selection.")
         st.stop()
     dmin, dmax = ev["date"].min(), ev["date"].max()
-    rng = sb.date_input("Tanggal", (dmin, dmax), min_value=dmin, max_value=dmax, key=f"f_date_{month}")
+    rng = sb.date_input("Dates", (dmin, dmax), min_value=dmin, max_value=dmax, key=f"f_date_{month}")
     d0, d1 = (rng if isinstance(rng, (tuple, list)) and len(rng) == 2 else (dmin, dmax))
     weeks = sb.multiselect("Week", sorted(ev["week"].unique()), key="f_week")
     shift = sb.segmented_control("Shift", ["DS", "NS"], selection_mode="multi", key="f_shift") or ["DS", "NS"]
@@ -145,25 +158,24 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
         return df
 
     ev_f = by_unit(by_date(ev))
-    stp = scope_filter(_combine("stoppages", versions), allowed)
+    stp = scope_filter(combine("stoppages", versions), allowed)
     stp = by_unit(stp[(stp["start_date"] >= d0) & (stp["start_date"] <= d1)] if len(stp) else stp)
-    rit = by_date(scope_filter(_combine("ritase", versions), allowed))
-    coal = by_date(scope_filter(_combine("coal", versions), allowed))
-    fuel = by_unit(by_date(scope_filter(_combine("fuel", versions), allowed)))
-    rec = scope_filter(_combine("receipt", versions), allowed)
+    rit = by_date(scope_filter(combine("ritase", versions), allowed))
+    coal = by_date(scope_filter(combine("coal", versions), allowed))
+    fuel = by_unit(by_date(scope_filter(combine("fuel", versions), allowed)))
+    rec = scope_filter(combine("receipt", versions), allowed)
     rec = rec[(rec["date"] >= d0) & (rec["date"] <= d1)] if len(rec) else rec
-    label = f"{', '.join(sel)} · {pd.Timestamp(month):%B %Y} · {d0:%d %b}–{d1:%d %b}"
-    sb.caption(label)
-    return Ctx(user, sel, month, versions, ev_f, stp, rit, coal, fuel, rec, d0, d1)
+    sb.caption(f"{', '.join(sel)} · {pd.Timestamp(month):%B %Y} · {d0:%d %b}–{d1:%d %b}")
+    return Ctx(user, allowed, sel, month, pub, versions, ev_f, stp, rit, coal, fuel, rec, d0, d1)
 
 
-# ------------------------------------------------------------------ target & konfigurasi
+# ------------------------------------------------------------------ targets & configuration
 def targets(sites: list[str], month: dt.date, weights: pd.Series | None = None) -> dict[str, float | None]:
-    """Target gabungan: satu site → target site itu; >1 site → rata-rata berbobot jam (weights: site→jam).
-    Bila ada site tanpa target, hasilnya None (belum ada target)."""
+    """Combined target: one site → that site's target; several sites → hour-weighted average.
+    If any site has no target the result is None (no target)."""
     with session_scope() as s:
-        rows = repo.frame(s, select(m.Target.site, *[getattr(m.Target, c) for c in METRICS]).where(m.Target.site.in_(sites), m.Target.year == month.year,
-                                                    m.Target.month == month.month))
+        rows = repo.frame(s, select(m.Target.site, *[getattr(m.Target, c) for c in METRICS]).where(
+            m.Target.site.in_(sites), m.Target.year == month.year, m.Target.month == month.month))
     out = {}
     for c in METRICS:
         vals = rows.set_index("site")[c].reindex(sites) if len(rows) else pd.Series(index=sites, dtype=float)
@@ -190,8 +202,7 @@ def client_standby_codes() -> set[int]:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def plan_daily(sites: tuple[str, ...], month: dt.date) -> pd.DataFrame:
-    """Plan harian per tanggal (gabungan site). Plan bulanan dibagi rata per hari kalender."""
-    import calendar
+    """Daily plan per date (all selected sites). A monthly plan is spread evenly over calendar days."""
     days = calendar.monthrange(month.year, month.month)[1]
     dates = [dt.date(month.year, month.month, d) for d in range(1, days + 1)]
     with session_scope() as s:
@@ -202,7 +213,7 @@ def plan_daily(sites: tuple[str, ...], month: dt.date) -> pd.DataFrame:
     out = pd.DataFrame({"date": dates, "ob_plan": 0.0, "coal_plan": 0.0})
     if rows.empty:
         return out.assign(ob_plan=np.nan, coal_plan=np.nan)
-    for site, g in rows.groupby("site"):
+    for _site, g in rows.groupby("site"):
         daily = g[g["date"].notna()].set_index("date")
         monthly = g[g["date"].isna()]
         for col, src in (("ob_plan", "ob_bcm"), ("coal_plan", "coal_ton")):
@@ -213,33 +224,32 @@ def plan_daily(sites: tuple[str, ...], month: dt.date) -> pd.DataFrame:
     return out
 
 
-# ------------------------------------------------------------------ tampilan
+# ------------------------------------------------------------------ display
 def kpi(col, label: str, value, target=None, kind: str = "pct", higher_better: bool = True, help: str | None = None):
-    """Kartu KPI: actual, target, selisih (warna). Bulan tanpa target → 'belum ada target'."""
-    fmt = {"pct": fmt_pct, "h": lambda v: fmt_num(v, 1) + " jam", "n": fmt_num, "n1": lambda v: fmt_num(v, 1),
+    """KPI card: actual, target, difference (coloured). No target → 'no target'."""
+    fmt = {"pct": fmt_pct, "h": lambda v: fmt_num(v, 1) + " h", "n": fmt_num, "n1": lambda v: fmt_num(v, 1),
            "n2": lambda v: fmt_num(v, 2)}[kind]
     if value is None or pd.isna(value):
         col.metric(label, "—", help=help)
         return
     if target is None or pd.isna(target):
-        col.metric(label, fmt(value), "belum ada target", delta_color="off", help=help)
+        col.metric(label, fmt(value), "no target", delta_color="off", help=help)
         return
     diff = value - target
-    dtxt = (f"{diff * 100:+.1f} pt".replace(".", ",") if kind == "pct" else f"{diff:+,.1f}".replace(",", "X")
-            .replace(".", ",").replace("X", ".")) + f" vs target {fmt(target)}"
+    dtxt = (f"{diff * 100:+.1f} pt" if kind == "pct" else f"{diff:+,.1f}") + f" vs target {fmt(target)}"
     col.metric(label, fmt(value), dtxt, delta_color="normal" if higher_better else "inverse", help=help)
 
 
 def plot(fig: go.Figure, height: int = 360) -> None:
     fig.update_layout(height=height, margin=dict(l=10, r=10, t=40, b=10), legend_title_text="",
-                      hovermode="x unified" if fig.layout.xaxis.type == "date" else "closest")
+                      font=dict(family=FONT), separators=".,")
     st.plotly_chart(fig, width="stretch", config={"displaylogo": False})
 
 
 def ranking(df: pd.DataFrame, cat: str, val: str, title: str, color: str, pct: bool = True, top: int = 15,
-            ascending: bool = False, height: int | None = None):
+            ascending: bool = False, height: int | None = None, digits: int = 0):
     d = df.sort_values(val, ascending=ascending).head(top).iloc[::-1]
-    text = d[val].map(fmt_pct) if pct else d[val].map(fmt_num)
+    text = d[val].map(fmt_pct) if pct else d[val].map(lambda v: fmt_num(v, digits))
     fig = go.Figure(go.Bar(x=d[val], y=d[cat].astype(str), orientation="h", marker_color=color, text=text,
                            textposition="outside", cliponaxis=False))
     fig.update_layout(title=title, xaxis=dict(tickformat=".0%" if pct else ",", showgrid=True),
@@ -265,7 +275,7 @@ def pareto(df: pd.DataFrame, cat: str, val: str, title: str, color: str = "#E548
     cum = d.cumsum() / d.sum() if d.sum() else d
     fig = go.Figure()
     fig.add_bar(x=d.index.astype(str), y=d.values, marker_color=color, name=val)
-    fig.add_scatter(x=d.index.astype(str), y=cum.values, yaxis="y2", mode="lines+markers", name="kumulatif",
+    fig.add_scatter(x=d.index.astype(str), y=cum.values, yaxis="y2", mode="lines+markers", name="cumulative",
                     line=dict(color="#93A0B2"))
     fig.update_layout(title=title, yaxis2=dict(overlaying="y", side="right", tickformat=".0%", range=[0, 1.05]),
                       xaxis=dict(type="category"), showlegend=False)

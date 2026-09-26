@@ -1,5 +1,4 @@
-"""Antrian approval per site: preview KPI + DQ → Approve / Reject."""
-import pandas as pd
+"""Approval queue per site: KPI preview + data quality → Approve / Reject."""
 import streamlit as st
 
 from auth.access import can_review
@@ -12,24 +11,24 @@ from db.engine import session_scope
 
 user = require("approval")
 sites = sites_for(user)
-st.title("Approval data")
+st.title("Data approval")
 
 with session_scope() as s:
     queue = repo.upload_sites(s, sites, [ing.PENDING])
 queue = queue[[can_review(user, x, sites) for x in queue["site"]]] if len(queue) else queue
 
 if queue.empty:
-    st.success("Tidak ada data yang menunggu persetujuan.")
+    st.success("Nothing is waiting for approval.")
     st.stop()
 
-st.caption(f"{len(queue)} data menunggu persetujuan. Data baru tampil ke Viewer dan TV setelah di-approve; "
-           "versi sebelumnya untuk site & bulan yang sama otomatis menjadi SUPERSEDED.")
+st.caption(f"{len(queue)} item(s) waiting. Data reaches Viewers and TVs only after approval; the previous "
+           "version for the same site & month automatically becomes SUPERSEDED.")
 
 for _, row in queue.iterrows():
     dq = row["dq_summary"] or {}
     summ = row["summary"] or {}
     head = (f"**{row['site']}** · {row['month']:%B %Y} · upload #{row['upload_id']} · {row['filename']} · "
-            f"oleh {row['uploader'] or '-'}")
+            f"by {row['uploader'] or '-'}")
     with st.container(border=True):
         st.markdown(head)
         with session_scope() as s:
@@ -39,20 +38,20 @@ for _, row in queue.iterrows():
         k = metrics.kpis(ev) if len(ev) else None
         r = metrics.reliability(ev, st_) if len(ev) else None
         c = st.columns(7)
-        c[0].metric("Unit", summ.get("units", 0))
+        c[0].metric("Units", summ.get("units", 0))
         c[1].metric("PA", fmt_pct(k["PA"].iloc[0]) if k is not None else "—")
         c[2].metric("UoA", fmt_pct(k["UoA"].iloc[0]) if k is not None else "—")
-        c[3].metric("MTBS (jam)", fmt_num(r["MTBS"].iloc[0], 1) if r is not None else "—")
+        c[3].metric("MTBS (h)", fmt_num(r["MTBS"].iloc[0], 1) if r is not None else "—")
         c[4].metric("OB (BCM)", fmt_num(summ.get("ob_bcm")))
         c[5].metric("Coal (t)", fmt_num(summ.get("coal_ton"), 1))
         c[6].metric("Fuel (L)", fmt_num(summ.get("fuel_liters")))
         crit = int(dq.get("critical", 0))
-        label = f"Data quality: {crit} kritis · {int(dq.get('warn', 0))} cek · {int(dq.get('info', 0))} info"
+        label = f"Data quality: {crit} critical · {int(dq.get('warn', 0))} to check · {int(dq.get('info', 0))} info"
         with st.expander(label, expanded=crit > 0):
             st.dataframe(findings, hide_index=True, width="stretch")
 
         key = f"us{row['id']}"
-        comment = st.text_input("Komentar (wajib bila reject)", key=f"c_{key}")
+        comment = st.text_input("Comment (required when rejecting)", key=f"c_{key}")
         a, b, _ = st.columns([1, 1, 4])
         if a.button("Approve", key=f"a_{key}", type="primary"):
             with session_scope() as s:
@@ -62,9 +61,9 @@ for _, row in queue.iterrows():
             st.rerun()
         if b.button("Reject", key=f"r_{key}"):
             if not comment.strip():
-                st.error("Isi komentar alasan penolakan.")
+                st.error("Enter a reason for rejecting.")
             else:
                 with session_scope() as s:
                     ing.reject(s, s.get(m.UploadSite, int(row["id"])), user.id, user.username, comment)
-                st.toast(f"{row['site']} ditolak")
+                st.toast(f"{row['site']} rejected")
                 st.rerun()

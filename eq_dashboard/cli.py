@@ -1,13 +1,13 @@
-"""Perintah administrasi.
+"""Administration commands.
 
-    python cli.py migrate                       # buat / update tabel (alembic upgrade head)
-    python cli.py ingest ../Eq.Event.xlsb       # upload file Eq.Event (status PENDING / auto-approve)
+    python cli.py migrate                       # create / update tables (alembic upgrade head)
+    python cli.py ingest ../Eq.Event.xlsb       # upload an Eq.Event file (PENDING / auto-approve)
     python cli.py import-target ../Target.xlsx [--site WBK-MAS --site WBK-BAU]
-    python cli.py approve <upload_site_id>      # publish satu site dari sebuah upload
-    python cli.py status                        # daftar upload per site
-    python cli.py create-admin                  # admin pertama (interaktif, password tidak tampil)
+    python cli.py approve <upload_site_id>      # publish one site of an upload
+    python cli.py status                        # list uploads per site
+    python cli.py create-admin                  # first admin (interactive, hidden password)
     python cli.py create-user budi --name "Budi" --role site_manager --site WBK-MAS
-    python cli.py reset-password budi           # password sementara, wajib diganti saat login
+    python cli.py reset-password budi           # temporary password, must be changed at sign-in
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def cmd_ingest(a):
     with session_scope() as s:
         up, sites = ing.ingest(s, path.read_bytes(), path.name, username="cli")
         rows = [(us.id, us.site_code, us.status, us.summary, us.dq_summary) for us in sites]
-    print(f"Upload #{up.id} bulan {up.month:%Y-%m} selesai dalam {time.time() - t:.1f} dtk")
+    print(f"Upload #{up.id} month {up.month:%Y-%m} done in {time.time() - t:.1f} s")
     for i, code, st, summ, dq in rows:
         print(f"  [{i}] {code:<10} {st:<9} unit={summ['units']:>4} OB={summ['ob_bcm']:>10,.0f} BCM "
               f"coal={summ['coal_ton']:>9,.1f} t fuel={summ['fuel_liters']:>11,.0f} L  DQ={dq}")
@@ -50,15 +50,15 @@ def cmd_ingest(a):
 def cmd_import_target(a):
     with session_scope() as s:
         n = import_targets(s, Path(a.file).read_bytes(), a.site or None)
-        ing.audit(s, "cli", "import_target", None, f"{a.file}: {n} baris")
-    print(f"{n} baris target tersimpan.")
+        ing.audit(s, "cli", "import_target", None, f"{a.file}: {n} rows")
+    print(f"{n} target rows saved.")
 
 
 def cmd_approve(a):
     with session_scope() as s:
         us = s.get(m.UploadSite, a.upload_site_id)
         if us is None:
-            sys.exit("upload_site tidak ditemukan")
+            sys.exit("upload_site not found")
         ing.publish(s, us, None, "cli")
         print(f"{us.site_code} {us.month:%Y-%m} → PUBLISHED")
 
@@ -75,7 +75,7 @@ def _ask_password(prompt="Password"):
     while True:
         pw = getpass.getpass(f"{prompt}: ")
         if pw != getpass.getpass("Ulangi: "):
-            print("Tidak sama, ulangi.")
+            print("Passwords do not match, try again.")
             continue
         problem = security.password_problem(pw)
         if problem:
@@ -86,22 +86,22 @@ def _ask_password(prompt="Password"):
 
 def cmd_create_admin(a):
     username = a.username or input("Username admin: ").strip()
-    name = a.name or input("Nama lengkap: ").strip()
+    name = a.name or input("Full name: ").strip()
     pw = a.password or _ask_password()
     with session_scope() as s:
         security.create_user(s, username, name, "admin", pw, all_sites=True, must_change_password=False)
         ing.audit(s, "cli", "create_user", None, f"{username} (admin)")
-    print(f"Admin '{username}' dibuat.")
+    print(f"Admin '{username}' created.")
 
 
 def cmd_create_user(a):
     if a.role not in ROLES:
-        sys.exit(f"role harus salah satu dari: {', '.join(ROLES)}")
+        sys.exit(f"role must be one of: {', '.join(ROLES)}")
     temp = a.password or secrets.token_urlsafe(9) + "1a"
     with session_scope() as s:
         security.create_user(s, a.username, a.name, a.role, temp, sites=a.site or [], all_sites=a.all_sites)
         ing.audit(s, "cli", "create_user", None, f"{a.username} ({a.role}) sites={'ALL' if a.all_sites else a.site}")
-    print(f"User '{a.username}' ({a.role}) dibuat. Password sementara: {temp}  (wajib diganti saat login)")
+    print(f"User '{a.username}' ({a.role}) created. Temporary password: {temp}  (must be changed at sign-in)")
 
 
 def cmd_reset_password(a):
@@ -109,10 +109,10 @@ def cmd_reset_password(a):
     with session_scope() as s:
         u = s.scalar(select(m.User).where(m.User.username == a.username))
         if u is None:
-            sys.exit("user tidak ditemukan")
+            sys.exit("user not found")
         security.set_password(s, u.id, temp, must_change=True)
         ing.audit(s, "cli", "reset_password", None, a.username)
-    print(f"Password sementara {a.username}: {temp}")
+    print(f"Temporary password for {a.username}: {temp}")
 
 
 def main():
@@ -125,7 +125,7 @@ def main():
     x = sub.add_parser("approve"); x.add_argument("upload_site_id", type=int); x.set_defaults(fn=cmd_approve)
     sub.add_parser("status").set_defaults(fn=cmd_status)
     x = sub.add_parser("create-admin"); x.add_argument("--username"); x.add_argument("--name")
-    x.add_argument("--password", help="hanya untuk otomasi; default ditanya tanpa tampil")
+    x.add_argument("--password", help="automation only; by default it is asked without echo")
     x.set_defaults(fn=cmd_create_admin)
     x = sub.add_parser("create-user"); x.add_argument("username"); x.add_argument("--name", required=True)
     x.add_argument("--role", required=True); x.add_argument("--site", action="append")

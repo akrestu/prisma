@@ -1,4 +1,4 @@
-"""Upload file Eq.Event: cek struktur → preview per site + DQ → Submit."""
+"""Upload an Eq.Event file: structure check → per-site preview + data quality → Submit."""
 import pandas as pd
 import streamlit as st
 from sqlalchemy import select
@@ -13,11 +13,11 @@ from db import models as m
 from db.engine import session_scope
 
 user = require("upload")
-st.title("Upload data Eq.Event")
-st.caption("Satu file = satu bulan (month-to-date). Upload ulang bulan yang sama membuat versi baru; "
-           "versi lama tetap tersimpan.")
+st.title("Upload Eq.Event data")
+st.caption("One file = one month (month to date). Uploading the same month again creates a new version; "
+           "older versions are kept.")
 
-f = st.file_uploader("Pilih file Eq.Event (.xlsb)", type=["xlsb"], key="upload_file")
+f = st.file_uploader("Choose an Eq.Event file (.xlsb)", type=["xlsb"], key="upload_file")
 if f is None:
     st.session_state.pop("upload_preview", None)
     st.stop()
@@ -30,18 +30,18 @@ if prev is None or prev["digest"] != digest:
         dup = s.scalar(select(m.Upload.id).where(m.Upload.sha256 == digest))
         alias, tanks = ing.lookups(s)
     if dup:
-        st.error(f"File ini identik dengan upload #{dup} yang sudah ada. Tidak perlu diupload lagi.")
+        st.error(f"This file is identical to upload #{dup}. No need to upload it again.")
         st.stop()
-    with st.status("Memeriksa & membaca file…", expanded=True) as box:
+    with st.status("Checking and reading the file…", expanded=True) as box:
         try:
-            st.write("Cek struktur sheet dan kolom")
+            st.write("Checking sheets and columns")
             parsed = parse_eq_event(data, alias, tanks)
         except StructureError as e:
-            box.update(label="File ditolak: struktur tidak sesuai", state="error")
+            box.update(label="File rejected: invalid structure", state="error")
             for p in e.problems:
                 st.error(p)
             st.stop()
-        box.update(label=f"File terbaca: bulan {parsed.month:%B %Y}, {len(parsed.events):,} baris event",
+        box.update(label=f"File read: {parsed.month:%B %Y}, {len(parsed.events):,} event rows",
                    state="complete", expanded=False)
     prev = {"digest": digest, "parsed": parsed, "name": f.name}
     st.session_state["upload_preview"] = prev
@@ -53,22 +53,22 @@ for site in p.sites:
     summ = ing.site_summary(p, site)
     k = metrics.kpis(p.events[p.events["site"] == site])
     dq = p.dq[p.dq["site"] == site]["severity"].value_counts()
-    rows.append({"Site": site, "Unit": summ["units"], "PA": fmt_pct(k["PA"].iloc[0] if len(k) else None),
+    rows.append({"Site": site, "Units": summ["units"], "PA": fmt_pct(k["PA"].iloc[0] if len(k) else None),
                  "UoA": fmt_pct(k["UoA"].iloc[0] if len(k) else None), "OB (BCM)": fmt_num(summ["ob_bcm"]),
                  "Coal (t)": fmt_num(summ["coal_ton"], 1), "Fuel (L)": fmt_num(summ["fuel_liters"]),
-                 "DQ kritis": int(dq.get("critical", 0)), "DQ cek": int(dq.get("warn", 0)),
+                 "DQ critical": int(dq.get("critical", 0)), "DQ check": int(dq.get("warn", 0)),
                  "DQ info": int(dq.get("info", 0))})
 st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
 crit = p.dq[p.dq["severity"] == "critical"]
 if len(crit):
-    st.warning(f"{len(crit)} temuan kritis. Site dengan temuan kritis tidak akan di-auto-approve "
-               "dan menunggu persetujuan Site Manager.")
-with st.expander(f"Lihat {len(p.dq)} temuan data quality"):
+    st.warning(f"{len(crit)} critical finding(s). Sites with critical findings are never auto-approved "
+               "and wait for Site Manager approval.")
+with st.expander(f"Show {len(p.dq)} data quality findings"):
     st.dataframe(p.dq, hide_index=True, width="stretch")
 
-if st.button("Submit untuk approval", type="primary"):
-    with st.spinner("Menyimpan ke database…"):
+if st.button("Submit for approval", type="primary"):
+    with st.spinner("Saving to the database…"):
         try:
             with session_scope() as s:
                 up, sites = ing.ingest(s, data, prev["name"], user.id, user.username, parsed=p)
@@ -78,7 +78,7 @@ if st.button("Submit untuk approval", type="primary"):
             st.error(str(e))
             st.stop()
     st.session_state.pop("upload_preview", None)
-    st.success(f"Upload #{up_id} tersimpan.")
+    st.success(f"Upload #{up_id} saved.")
     for site, status in result:
         st.markdown(f"- **{site}** {STATUS_BADGE[status]}")
     st.cache_data.clear()

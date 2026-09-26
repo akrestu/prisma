@@ -1,6 +1,6 @@
 # Rencana: Dashboard Eq Event & Produksi (multi-site, multi-user)
 
-> Dibuat: 2026-09-25 · **Revisi 6** (keputusan review + Target.xlsx + perbaikan context7 + **tampilan TV per site**).
+> Dibuat: 2026-09-25 · **Revisi 7** (2026-09-26: review UI — English, font, periode TV, jarak & productivity) · sebelumnya Revisi 6 (keputusan review + Target.xlsx + perbaikan context7 + **tampilan TV per site**).
 > Sumber data: **`Eq.Event.xlsb`** per bulan + **`Target.xlsx`**. Referensi gaya visual: `Report 20260723.pdf`.
 > Blueprint review: https://claude.ai/artifact/K5N7pzdZz4W9ktgyixopaZ
 
@@ -248,6 +248,17 @@ eq_dashboard/
 4. `docker compose up` lokal → `cli.py create-admin` → 4 user contoh + 1 perangkat Display → upload Eq.Event → import Target.xlsx → approve per site → cek tampilan tiap role, refresh browser tetap login, buka link Display di browser kiosk dan pastikan data baru muncul ±5 menit setelah approve.
 5. Saat production: deploy VPS + domain, cek HTTPS & header keamanan, backup berjalan, uji di TV sungguhan di tiap site.
 
+## Revisi 7 — hasil review aplikasi (2026-09-26)
+| # | Review | Implementasi |
+|---|---|---|
+| 1 | Bahasa seragam | Seluruh UI, layar TV, pesan error, temuan DQ (termasuk kode aturan, mis. `unit_without_site`), dan CLI dalam **bahasa Inggris**. Format angka Inggris `1,234.5`. |
+| 2 | Font seragam | **IBM Plex Sans** untuk seluruh aplikasi & TV, di-host sendiri (`static/fonts`, `enableStaticServing`, `[[theme.fontFaces]]`) dan disematkan di grafik SVG TV → TV tanpa internet tetap sama. |
+| 3 | Periode TV | Admin memilih per TV di **TV devices**: Hourly (hari lengkap terakhir per jam) · Daily (bulan berjalan per hari) · Weekly (bulan berjalan per minggu) · Monthly (tahun berjalan per bulan) · Yearly (semua tahun). KPI, target (rata-rata berbobot jam), plan, trend & produksi mengikuti periode; perubahan berlaku ≤ 5 menit. Kolom `display_devices.period` (migrasi Alembic). |
+| 4 | Jarak V/H OB & CG | Rata-rata berbobot ritase. Tampil di TV (panel baru), OB production (harian + per rute pit→disposal), Coal getting (CG harian + rute), halaman productivity. |
+| 5 | Productivity hauler & loader OB & CG | Halaman **Loader & hauler productivity**: granularity hourly→yearly, tab OB (BCM/h) / CG (t/h), per loader & hauler: volume, trips, jam Ready, per jam Ready & Ready+Idle, trips/jam, jarak H/V. Jam Ready dipecah per jam produksi (`core/periods.split_hourly`); unit yang mengerjakan OB & CG dalam jam/hari yang sama dibagi sesuai porsi ritase. Ringkasan di TV. |
+
+Catatan: Monthly/Yearly baru bermakna setelah ada lebih dari satu bulan data PUBLISHED.
+
 ## Progres
 - [x] Studi data `Eq.Event.xlsb`, report PDF, `Prod.Act`, `Populasi Unit.xlsx`, `Target.xlsx`
 - [x] Keputusan desain & 12 poin review selesai
@@ -262,4 +273,5 @@ eq_dashboard/
 - [x] Dashboard: Overview, PA/UA, Time Distribution, Reliability
 - [x] Dashboard: Produksi OB, Coal Getting, Loader & Fleet, Fuel, Data Quality
 - [x] Admin: Users & Roles, Sites & Mapping, Audit Log (51 test lulus)
+- [x] Review UI #1–5 diterapkan (60 test lulus)
 - [ ] Uji end-to-end per role oleh user di browser (lokal); uji Docker; deploy VPS saat production

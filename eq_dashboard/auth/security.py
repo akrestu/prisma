@@ -32,11 +32,11 @@ def check_password(pw: str, hashed: str) -> bool:
 
 def password_problem(pw: str, username: str = "") -> str | None:
     if len(pw) < MIN_PASSWORD:
-        return f"Password minimal {MIN_PASSWORD} karakter."
+        return f"Password must be at least {MIN_PASSWORD} characters."
     if username and username.lower() in pw.lower():
-        return "Password tidak boleh memuat username."
+        return "Password must not contain the username."
     if pw.isdigit() or pw.isalpha():
-        return "Password harus berisi campuran huruf dan angka/simbol."
+        return "Password must mix letters with numbers or symbols."
     return None
 
 
@@ -70,11 +70,11 @@ def sync_failed_attempts(s: Session, creds: dict) -> list[str]:
         if n >= MAX_FAILED:
             u.failed_logins, u.locked_until = 0, now() + dt.timedelta(minutes=LOCK_MINUTES)
             s.add(m.AuditLog(username=username, action="account_locked",
-                             detail=f"{MAX_FAILED}x gagal login, terkunci {LOCK_MINUTES} menit"))
+                             detail=f"{MAX_FAILED} failed logins, locked for {LOCK_MINUTES} minutes"))
             locked.append(username)
         else:
             u.failed_logins = n
-            s.add(m.AuditLog(username=username, action="login_failed", detail=f"percobaan ke-{n}"))
+            s.add(m.AuditLog(username=username, action="login_failed", detail=f"attempt {n}"))
     return locked
 
 
@@ -85,7 +85,7 @@ def create_user(s: Session, username: str, full_name: str, role: str, password: 
     if problem:
         raise ValueError(problem)
     if s.scalar(select(m.User.id).where(m.User.username == username)):
-        raise ValueError(f"Username '{username}' sudah dipakai.")
+        raise ValueError(f"Username '{username}' is already taken.")
     u = m.User(username=username, full_name=full_name, role=role, email=email,
                password_hash=hash_password(password), all_sites=all_sites,
                must_change_password=must_change_password)

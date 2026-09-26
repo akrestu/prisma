@@ -1,4 +1,4 @@
-"""Ganti password. Juga dipakai sebagai halaman wajib saat login pertama."""
+"""Change password. Also the mandatory page on first sign-in."""
 import streamlit as st
 
 from auth import security
@@ -7,32 +7,32 @@ from db import models as m
 from db.engine import session_scope
 
 user = require("account")
-st.title("Ganti password")
+st.title("Change password")
 if user.must_change_password:
-    st.warning("Ini login pertama Anda. Ganti password sebelum melanjutkan.")
+    st.warning("This is your first sign-in. Change your password to continue.")
 
 with st.form("change_pw", clear_on_submit=True):
-    old = st.text_input("Password lama", type="password")
-    new = st.text_input(f"Password baru (minimal {security.MIN_PASSWORD} karakter, campuran huruf dan angka)",
+    old = st.text_input("Current password", type="password")
+    new = st.text_input(f"New password (at least {security.MIN_PASSWORD} characters, letters and numbers)",
                         type="password")
-    rep = st.text_input("Ulangi password baru", type="password")
-    ok = st.form_submit_button("Simpan", type="primary")
+    rep = st.text_input("Repeat new password", type="password")
+    ok = st.form_submit_button("Save", type="primary")
 
 if ok:
     with session_scope() as s:
         u = s.get(m.User, user.id)
         if not security.check_password(old, u.password_hash):
-            st.error("Password lama salah.")
+            st.error("Current password is incorrect.")
         elif new != rep:
-            st.error("Ulangan password baru tidak sama.")
+            st.error("The new passwords do not match.")
         elif new == old:
-            st.error("Password baru harus berbeda dari yang lama.")
+            st.error("The new password must differ from the current one.")
         else:
             try:
                 security.set_password(s, user.id, new)
                 s.add(m.AuditLog(username=user.username, action="password_changed"))
                 st.session_state["user"] = type(user)(**{**user.__dict__, "must_change_password": False})
-                st.success("Password diperbarui.")
+                st.success("Password updated.")
                 st.rerun()
             except ValueError as e:
                 st.error(str(e))

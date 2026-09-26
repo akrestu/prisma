@@ -30,10 +30,10 @@ def parse_eq_event(data: bytes, alias: dict[str, str] | None = None,
     units = clean.clean_units(frames["Populasi Unit"])
     events = clean.clean_events(frames["Eq.Event"], units)
     if events.empty:
-        raise StructureError(["Sheet 'Eq.Event' tidak berisi baris data."])
+        raise StructureError(["Sheet 'Eq.Event' has no data rows."])
     months = sorted(set(events["month"]))
     if len(months) > 1:
-        raise StructureError([f"Satu file harus berisi satu bulan; ditemukan {', '.join(map(str, months))}."])
+        raise StructureError([f"A file must contain one month only; found {', '.join(map(str, months))}."])
     stoppages = clean.build_stoppages(events)
     ritase = clean.clean_ritasi(frames["Ritasi Unit"], units, alias)
     coal = clean.clean_timbangan(frames["Data Timbangan"], units, alias)

@@ -65,7 +65,7 @@ def ingest(s: Session, data: bytes, filename: str, user_id: int | None = None,
     """`parsed` boleh diisi hasil preview (parse_eq_event) agar file tidak diparse dua kali."""
     digest = sha256(data)
     if s.scalar(select(m.Upload.id).where(m.Upload.sha256 == digest)):
-        raise DuplicateUpload("File identik sudah pernah diupload.")
+        raise DuplicateUpload("An identical file has already been uploaded.")
     if parsed is None:
         alias, tanks = lookups(s)
         parsed = parse_eq_event(data, alias, tanks)
@@ -123,7 +123,7 @@ def publish(s: Session, us: m.UploadSite, reviewer_id: int | None, username: str
 
 def reject(s: Session, us: m.UploadSite, reviewer_id: int | None, username: str | None, comment: str) -> None:
     if us.status != PENDING:
-        raise ValueError(f"Hanya data PENDING yang bisa ditolak (status sekarang {us.status}).")
+        raise ValueError(f"Only PENDING data can be rejected (current status {us.status}).")
     us.status, us.reviewer_id, us.comment = REJECTED, reviewer_id, comment
     us.reviewed_at = dt.datetime.now(dt.timezone.utc)
     audit(s, username, "reject", us.site_code, f"upload #{us.upload_id}: {comment}")
@@ -132,6 +132,6 @@ def reject(s: Session, us: m.UploadSite, reviewer_id: int | None, username: str 
 def rollback(s: Session, us: m.UploadSite, admin_id: int | None, username: str | None) -> None:
     """Kembalikan versi SUPERSEDED menjadi PUBLISHED (versi aktif sekarang → SUPERSEDED)."""
     if us.status != SUPERSEDED:
-        raise ValueError("Rollback hanya ke versi yang pernah PUBLISHED (SUPERSEDED).")
+        raise ValueError("Rollback is only possible to a previously published (SUPERSEDED) version.")
     publish(s, us, admin_id, username, comment="rollback")
-    audit(s, username, "rollback", us.site_code, f"ke upload #{us.upload_id}")
+    audit(s, username, "rollback", us.site_code, f"to upload #{us.upload_id}")

@@ -1,4 +1,4 @@
-"""Kelola user: buat, ubah role & site, nonaktifkan, reset password, buka kunci."""
+"""Manage users: create, change role & sites, deactivate, reset password, unlock."""
 import secrets
 
 import pandas as pd
@@ -14,7 +14,7 @@ from db import models as m
 from db.engine import session_scope
 
 user = require("users_roles")
-st.title("User & role")
+st.title("Users & roles")
 all_sites = [x for x in sites_for(user) if x != UNMAPPED]
 
 msg = st.session_state.pop("users_msg", None)
@@ -22,20 +22,20 @@ if msg:
     st.success(msg[0])
     if msg[1]:
         st.code(msg[1], language=None)
-        st.caption("Password sementara hanya ditampilkan sekali. User wajib menggantinya saat login pertama.")
+        st.caption("The temporary password is shown only once. The user must change it at first sign-in.")
 
-with st.expander("Tambah user", expanded=False):
+with st.expander("Add user", expanded=False):
     with st.form("add_user", clear_on_submit=True):
         a, b = st.columns(2)
         username = a.text_input("Username").strip().lower()
-        name = b.text_input("Nama lengkap").strip()
+        name = b.text_input("Full name").strip()
         role = a.selectbox("Role", ROLES, format_func=ROLE_LABEL.get)
-        email = b.text_input("Email (opsional)").strip()
-        sites = st.multiselect("Site", all_sites)
-        allsite = st.checkbox("Akses semua site (mis. management)")
-        if st.form_submit_button("Buat user", type="primary"):
+        email = b.text_input("Email (optional)").strip()
+        sites = st.multiselect("Sites", all_sites)
+        allsite = st.checkbox("Access to all sites (e.g. management)")
+        if st.form_submit_button("Create user", type="primary"):
             if not username or not name:
-                st.error("Isi username dan nama.")
+                st.error("Enter a username and a name.")
             else:
                 temp = secrets.token_urlsafe(9) + "7a"
                 try:
@@ -43,7 +43,7 @@ with st.expander("Tambah user", expanded=False):
                         security.create_user(s, username, name, role, temp, sites=sites,
                                              all_sites=allsite or role == "admin", email=email)
                         audit(s, user.username, "create_user", None, f"{username} ({role})")
-                    st.session_state["users_msg"] = (f"User {username} dibuat.", temp)
+                    st.session_state["users_msg"] = (f"User {username} created.", temp)
                     st.rerun()
                 except ValueError as e:
                     st.error(str(e))
@@ -52,23 +52,22 @@ with session_scope() as s:
     users = list(s.scalars(select(m.User).order_by(m.User.role, m.User.username)))
     links = pd.DataFrame(list(s.execute(select(m.UserSite.user_id, m.UserSite.site_code))),
                          columns=["user_id", "site"])
-    rows = [(u.id, u.username, u.full_name, u.role, u.all_sites, u.active, security.is_locked(u), u.last_seen)
-            for u in users]
+    rows = [(u.id, u.username, u.full_name, u.role, u.all_sites, u.active, security.is_locked(u)) for u in users]
 
-st.subheader(f"{len(rows)} user")
-for uid, uname, name, role, allsite, active, locked, seen in rows:
+st.subheader(f"{len(rows)} users")
+for uid, uname, name, role, allsite, active, locked in rows:
     own = links.loc[links["user_id"] == uid, "site"].tolist()
-    badge = (":red-badge[terkunci]" if locked else "") + ("" if active else " :gray-badge[nonaktif]")
+    badge = (":red-badge[locked]" if locked else "") + ("" if active else " :gray-badge[inactive]")
     with st.expander(f"**{uname}** · {name} · {ROLE_LABEL[role]} · "
-                     f"{'semua site' if allsite else ', '.join(own) or 'tanpa site'} {badge}"):
+                     f"{'all sites' if allsite else ', '.join(own) or 'no site'} {badge}"):
         with st.form(f"edit_{uid}"):
             a, b = st.columns(2)
             new_role = a.selectbox("Role", ROLES, index=ROLES.index(role), format_func=ROLE_LABEL.get, key=f"r{uid}",
                                    disabled=uid == user.id)
-            new_sites = b.multiselect("Site", all_sites, default=[x for x in own if x in all_sites], key=f"s{uid}")
-            new_all = a.checkbox("Akses semua site", value=allsite, key=f"al{uid}")
-            new_active = b.checkbox("Aktif", value=active, key=f"ac{uid}", disabled=uid == user.id)
-            if st.form_submit_button("Simpan"):
+            new_sites = b.multiselect("Sites", all_sites, default=[x for x in own if x in all_sites], key=f"s{uid}")
+            new_all = a.checkbox("Access to all sites", value=allsite, key=f"al{uid}")
+            new_active = b.checkbox("Active", value=active, key=f"ac{uid}", disabled=uid == user.id)
+            if st.form_submit_button("Save"):
                 with session_scope() as s:
                     u = s.get(m.User, uid)
                     u.role, u.all_sites, u.active = new_role, new_all or new_role == "admin", new_active
@@ -76,8 +75,8 @@ for uid, uname, name, role, allsite, active, locked, seen in rows:
                     for code in new_sites:
                         s.add(m.UserSite(user_id=uid, site_code=code))
                     audit(s, user.username, "update_user", None,
-                          f"{uname}: role={new_role} sites={new_sites} all={new_all} aktif={new_active}")
-                st.session_state["users_msg"] = (f"{uname} diperbarui.", None)
+                          f"{uname}: role={new_role} sites={new_sites} all={new_all} active={new_active}")
+                st.session_state["users_msg"] = (f"{uname} updated.", None)
                 st.rerun()
         c1, c2, _ = st.columns([1, 1, 3])
         if c1.button("Reset password", key=f"rp{uid}"):
@@ -85,9 +84,9 @@ for uid, uname, name, role, allsite, active, locked, seen in rows:
             with session_scope() as s:
                 security.set_password(s, uid, temp, must_change=True)
                 audit(s, user.username, "reset_password", None, uname)
-            st.session_state["users_msg"] = (f"Password {uname} direset.", temp)
+            st.session_state["users_msg"] = (f"Password of {uname} reset.", temp)
             st.rerun()
-        if locked and c2.button("Buka kunci", key=f"ul{uid}"):
+        if locked and c2.button("Unlock", key=f"ul{uid}"):
             with session_scope() as s:
                 u = s.get(m.User, uid)
                 u.locked_until, u.failed_logins = None, 0

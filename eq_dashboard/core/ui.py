@@ -1,4 +1,4 @@
-"""Komponen UI bersama untuk halaman Streamlit."""
+"""Shared UI helpers for Streamlit pages (English text, English number format 1,234.5)."""
 from __future__ import annotations
 
 import io
@@ -18,10 +18,10 @@ def current_user() -> CurrentUser | None:
 
 
 def require(page: str) -> CurrentUser:
-    """Guard di awal setiap halaman (lapisan kedua setelah st.navigation)."""
+    """Guard at the top of every page (second layer after st.navigation)."""
     user = current_user()
     if not can_open(user, page):
-        st.error("Anda tidak punya akses ke halaman ini.")
+        st.error("You do not have access to this page.")
         st.stop()
     return user
 
@@ -34,14 +34,14 @@ def sites_for(user: CurrentUser) -> list[str]:
 def fmt_num(v, d: int = 0) -> str:
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return "—"
-    return f"{v:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{v:,.{d}f}"
 
 
 def fmt_pct(v, d: int = 1) -> str:
-    return "—" if v is None or pd.isna(v) else fmt_num(v * 100, d) + "%"
+    return "—" if v is None or pd.isna(v) else f"{v * 100:.{d}f}%"
 
 
-def excel_download(df: pd.DataFrame, filename: str, label: str = "Unduh Excel", key: str | None = None) -> None:
+def excel_download(df: pd.DataFrame, filename: str, label: str = "Download Excel", key: str | None = None) -> None:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         df.to_excel(w, index=False)

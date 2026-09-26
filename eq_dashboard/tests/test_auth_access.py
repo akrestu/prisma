@@ -91,13 +91,13 @@ def test_page_guard_blocks_wrong_role(page, role, denied):
     at = AppTest.from_file(str(APP_DIR / page), default_timeout=30)
     at.session_state["user"] = CurrentUser(9, "x", "X", role, False, ("WBK-MAS",))
     at.run()
-    assert any("tidak punya akses" in e.value for e in at.error) == denied
+    assert any("do not have access" in e.value for e in at.error) == denied
 
 
 def test_page_guard_without_login():
     at = AppTest.from_file(str(APP_DIR / "pages/data/approval.py"), default_timeout=30)
     at.run()
-    assert any("tidak punya akses" in e.value for e in at.error)
+    assert any("do not have access" in e.value for e in at.error)
 
 
 def test_approval_page_lists_only_own_site(db_session, sample_bytes, monkeypatch):

@@ -1,5 +1,7 @@
 # cookieSecret diambil dari env STREAMLIT_SERVER_COOKIE_SECRET (lihat .env)
 [server]
+# ./static disajikan di /app/static (font IBM Plex Sans di-host sendiri, TV tidak butuh internet)
+enableStaticServing = true
 headless = true
 maxUploadSize = 50
 enableXsrfProtection = true
@@ -16,3 +18,31 @@ gatherUsageStats = false
 
 [theme]
 base = "dark"
+font = "ibm-plex-sans"
+codeFont = "ibm-plex-sans"
+headingFont = "ibm-plex-sans"
+
+
+[[theme.fontFaces]]
+family = "ibm-plex-sans"
+url = "app/static/fonts/ibm-plex-sans-400.woff2"
+weight = 400
+style = "normal"
+
+[[theme.fontFaces]]
+family = "ibm-plex-sans"
+url = "app/static/fonts/ibm-plex-sans-500.woff2"
+weight = 500
+style = "normal"
+
+[[theme.fontFaces]]
+family = "ibm-plex-sans"
+url = "app/static/fonts/ibm-plex-sans-600.woff2"
+weight = 600
+style = "normal"
+
+[[theme.fontFaces]]
+family = "ibm-plex-sans"
+url = "app/static/fonts/ibm-plex-sans-700.woff2"
+weight = 700
+style = "normal"
