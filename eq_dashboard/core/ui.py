@@ -9,8 +9,9 @@ import streamlit as st
 from auth.access import CurrentUser, allowed_sites, can_open
 from db.engine import session_scope
 
-STATUS_BADGE = {"PENDING": ":orange-badge[PENDING]", "PUBLISHED": ":green-badge[PUBLISHED]",
-                "REJECTED": ":red-badge[REJECTED]", "SUPERSEDED": ":gray-badge[SUPERSEDED]"}
+# design system: hi-vis yellow = live/published, orange = needs action, gray = inactive/history
+STATUS_BADGE = {"PENDING": ":orange-badge[PENDING]", "PUBLISHED": ":yellow-badge[PUBLISHED]",
+                "REJECTED": ":orange-badge[REJECTED]", "SUPERSEDED": ":gray-badge[SUPERSEDED]"}
 
 
 def current_user() -> CurrentUser | None:

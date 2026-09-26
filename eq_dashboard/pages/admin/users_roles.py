@@ -57,7 +57,7 @@ with session_scope() as s:
 st.subheader(f"{len(rows)} users")
 for uid, uname, name, role, allsite, active, locked in rows:
     own = links.loc[links["user_id"] == uid, "site"].tolist()
-    badge = (":red-badge[locked]" if locked else "") + ("" if active else " :gray-badge[inactive]")
+    badge = (":orange-badge[locked]" if locked else "") + ("" if active else " :gray-badge[inactive]")
     with st.expander(f"**{uname}** · {name} · {ROLE_LABEL[role]} · "
                      f"{'all sites' if allsite else ', '.join(own) or 'no site'} {badge}"):
         with st.form(f"edit_{uid}"):

@@ -239,7 +239,8 @@ def kpi(col, label: str, value, target=None, kind: str = "pct", higher_better: b
         return
     diff = value - target
     dtxt = (f"{diff * 100:+.1f} pt" if kind == "pct" else f"{diff:+,.1f}") + f" vs target {fmt(target)}"
-    col.metric(label, fmt(value), dtxt, delta_color="normal" if higher_better else "inverse", help=help)
+    miss = T.miss_level(value, target, higher_better) == 2
+    col.metric(label, fmt(value), dtxt, delta_color="orange" if miss else "gray", help=help)
 
 
 def plot(fig: go.Figure, height: int = 360) -> None:
@@ -285,7 +286,7 @@ def pareto(df: pd.DataFrame, cat: str, val: str, title: str, color: str = T.DOWN
 
 def summary(*parts: str) -> None:
     """One plain sentence under the page title that says what matters most."""
-    text = ". ".join(p.rstrip(".") for p in parts if p)
+    text = ". ".join(p.rstrip(".")[:1].upper() + p.rstrip(".")[1:] for p in parts if p)
     if text:
         st.markdown(f'<div style="border-left:3px solid {T.ACCENT};padding:2px 0 2px 12px;margin:-4px 0 14px;'
                     f'font-size:1.02rem;color:{T.TEXT}">{text}.</div>', unsafe_allow_html=True)
@@ -302,7 +303,7 @@ def gap_text(name: str, value, target, unit: str = "%", higher_better: bool = Tr
     better = diff >= 0 if higher_better else diff <= 0
     size = f"{abs(diff) * 100:.1f} pt" if unit == "%" else f"{abs(diff):,.1f} {unit}"
     side = ("above" if diff >= 0 else "below")
-    return f"{name} {val}, {size} {side} target" + ("" if better else "")
+    return f"{name} {val}, {size} {side} target"
 
 
 def weighted_target_hours(ev: pd.DataFrame) -> pd.Series:

@@ -3,7 +3,7 @@ import streamlit as st
 
 from auth.access import can_review
 from core import ingest as ing
-from core import metrics
+from core import dash, metrics
 from core.ui import fmt_num, fmt_pct, require, sites_for
 from db import models as m
 from db import repo
@@ -21,8 +21,12 @@ if queue.empty:
     st.success("Nothing is waiting for approval.")
     st.stop()
 
-st.caption(f"{len(queue)} item(s) waiting. Data reaches Viewers and TVs only after approval; the previous "
-           "version for the same site & month automatically becomes SUPERSEDED.")
+n_crit = sum(1 for d in queue["dq_summary"] if (d or {}).get("critical"))
+dash.summary(f"{len(queue)} site upload(s) waiting for approval",
+             f"{n_crit} with critical data quality findings" if n_crit else "none with critical data quality findings",
+             f"oldest from {queue['uploaded_at'].min():%d %b %H:%M}")
+st.caption("Data reaches Viewers and TVs only after approval; the previous version for the same site & month "
+           "automatically becomes SUPERSEDED.")
 
 for _, row in queue.iterrows():
     dq = row["dq_summary"] or {}

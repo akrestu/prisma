@@ -59,7 +59,7 @@ now = dt.datetime.now(dt.timezone.utc)
 st.subheader("TVs")
 for did, name, site, period, active, seen in rows:
     online = active and seen is not None and now - seen < dt.timedelta(minutes=10)
-    state = ":green-badge[online]" if online else (":gray-badge[offline]" if active else ":red-badge[revoked]")
+    state = ":yellow-badge[online]" if online else (":gray-badge[offline]" if active else ":orange-badge[revoked]")
     seen_txt = seen.astimezone(dt.timezone(dt.timedelta(hours=7))).strftime("%d %b %H:%M") if seen else "never"
     with st.container(border=True):
         a, p, b, c, d = st.columns([3.2, 1.6, 1.6, 1, 1])

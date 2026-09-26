@@ -24,6 +24,12 @@ backgroundColor = "#141517"
 secondaryBackgroundColor = "#1C1E21"
 textColor = "#EDEAE3"
 borderColor = "#2C2F33"
+# basic palette mapped to tokens: orange = missed target, yellow = hi-vis, blue = ready, gray = neutral
+orangeColor = "#F08A3C"
+yellowColor = "#F2C230"
+blueColor = "#4E9BD8"
+grayColor = "#9C9A93"
+chartCategoricalColors = ["#F2C230", "#4E9BD8", "#EDEAE3", "#F08A3C", "#9CC7EA", "#8C8A84"]
 font = "ibm-plex-sans"
 codeFont = "ibm-plex-sans"
 headingFont = "ibm-plex-sans"
