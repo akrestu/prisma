@@ -258,7 +258,7 @@ eq_dashboard/
 - [x] Ingest: io + validate + clean + split site + stoppage + DQ + golden test (16 test lulus)
 - [~] Target: import Target.xlsx (CLI) ✓ · halaman Target & Plan, interval PM, mapping standby (UI) belum
 - [x] Upload (preview → submit), Approval (auto-approve), Riwayat Upload + rollback (26 test lulus)
-- [ ] **Layar TV**: core/tv.py, halaman TV 1080p, perangkat Display & token, Preview TV
+- [x] **Layar TV**: core/tv.py + tv_render (HTML/SVG tanpa JS via st.html), kiosk `?display=token` refresh 5 menit, perangkat Display & token, Preview TV (34 test lulus)
 - [ ] Dashboard: Overview, PA/UA, Time Distribution, Reliability
 - [ ] Dashboard: Produksi OB, Coal Getting, Loader & Fleet, Fuel, Data Quality
 - [ ] Admin: Users & Roles, Sites & Mapping, Audit Log
