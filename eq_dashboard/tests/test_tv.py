@@ -70,6 +70,19 @@ def test_other_periods(published, period, buckets):
         assert d.kpis[0].value == pytest.approx(0.727, abs=5e-4)
 
 
+def test_hourly_all_sites_and_missing_ticket_time(published):
+    """BAU has weighbridge tickets without an entry time; hourly must not crash and totals keep them."""
+    s = published
+    ing.publish(s, s.query(m.UploadSite).filter_by(site_code="WBK-BAU").one(), None, "t")
+    s.commit()
+    for site in ("WBK-MAS", "WBK-BAU"):
+        for period in PERIODS:
+            d = tv.build(s, site, period=period)
+            assert not d.empty and "<script" not in render(d)
+    daily = {k.key: k for k in tv.build(s, "WBK-BAU", period="daily").kpis}
+    assert daily["coal"].value == pytest.approx(34684.5, abs=0.1)
+
+
 def test_tv_empty_until_published(published):
     assert tv.build(published, "WBK-BAU").empty  # BAU not approved yet
     assert "No published data" in render(tv.build(published, "WBK-BAU"))

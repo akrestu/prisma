@@ -170,8 +170,9 @@ def build(s: Session, site: str, intervals: pd.DataFrame | None = None, period: 
     ritb = rit.assign(bucket=bucket(rit, period)) if len(rit) else rit.assign(bucket=pd.Series(dtype=str))
     if len(coal):
         if period == "hourly":
+            # tickets without an entry time still count in totals, just not in the hourly breakdown
             h = pd.to_datetime(coal["time_in"]).dt.hour
-            coal = coal.assign(hour_slot=h.map(lambda x: f"{x:02d}-{(x + 1) % 24:02d}"))
+            coal = coal.assign(hour_slot=h.map(lambda x: None if pd.isna(x) else f"{int(x):02d}-{(int(x) + 1) % 24:02d}"))
         coal = with_week(coal).assign(bucket=lambda d: bucket(d, period))
     else:
         coal = coal.assign(bucket=pd.Series(dtype=str))
