@@ -40,8 +40,7 @@ def authenticate() -> tuple[CurrentUser | None, stauth.Authenticate]:
         auth.login(location="unrendered", max_login_attempts=security.MAX_FAILED, callback=_on_login)
         return _finish_login(st.session_state.get("username"), auth), auth
 
-    shell = st.empty()
-    with shell.container(key="login_shell"):
+    with st.container(key="login_shell"):
         brand_col, form_col = st.columns([1.05, 1])
         with form_col:
             user = _login_form(auth, creds)
@@ -52,7 +51,9 @@ def authenticate() -> tuple[CurrentUser | None, stauth.Authenticate]:
             with form_col:
                 brand.login_help()
     if user is not None:
-        shell.empty()
+        # hide, don't empty: the cookie component rendered inside the form must stay mounted
+        # long enough to write the re-auth cookie, otherwise every browser refresh logs out
+        st.html("<style>.st-key-login_shell{display:none}</style>")
     return user, auth
 
 
