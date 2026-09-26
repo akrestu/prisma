@@ -87,7 +87,12 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
     with session_scope() as s:
         pub = repo.published_versions(s, allowed)
     if pub.empty:
-        st.info("Belum ada data yang dipublikasikan untuk site Anda.")
+        msg = "Belum ada data yang dipublikasikan untuk site Anda."
+        if user.role in ("admin", "site_manager"):
+            msg += " Buka menu **Data → Approval** untuk menyetujui upload yang menunggu."
+        elif user.role == "data_officer":
+            msg += " Upload file di menu **Data → Upload data**, lalu tunggu persetujuan Site Manager."
+        st.info(msg)
         st.stop()
     sb = st.sidebar
     sb.markdown("### Filter")
