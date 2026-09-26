@@ -229,7 +229,7 @@ def plan_daily(sites: tuple[str, ...], month: dt.date) -> pd.DataFrame:
 # ------------------------------------------------------------------ display
 def kpi(col, label: str, value, target=None, kind: str = "pct", higher_better: bool = True, help: str | None = None):
     """KPI card: actual, target, difference (coloured). No target → 'no target'."""
-    fmt = {"pct": fmt_pct, "h": lambda v: fmt_num(v, 1) + " h", "n": fmt_num, "n1": lambda v: fmt_num(v, 1),
+    fmt = {"pct": fmt_pct, "h": lambda v: fmt_num(v, 1) + " hrs", "n": fmt_num, "n1": lambda v: fmt_num(v, 1),
            "n2": lambda v: fmt_num(v, 2)}[kind]
     if value is None or pd.isna(value):
         col.metric(label, "—", help=help)
@@ -238,7 +238,7 @@ def kpi(col, label: str, value, target=None, kind: str = "pct", higher_better: b
         col.metric(label, fmt(value), "no target", delta_color="gray", delta_arrow="off", help=help)
         return
     diff = value - target
-    dtxt = (f"{diff * 100:+.1f} pt" if kind == "pct" else f"{diff:+,.1f}") + f" vs target {fmt(target)}"
+    dtxt = (f"{diff * 100:+.1f}%" if kind == "pct" else f"{diff:+,.1f}") + f" vs target {fmt(target)}"
     miss = T.miss_level(value, target, higher_better) == 2
     col.metric(label, fmt(value), dtxt, delta_color="orange" if miss else "gray", help=help)
 
@@ -280,7 +280,7 @@ def pareto(df: pd.DataFrame, cat: str, val: str, title: str, color: str = T.DOWN
     fig = go.Figure()
     fig.add_bar(x=d.index.astype(str), y=d.values, marker_color=color, name=val)
     fig.add_scatter(x=d.index.astype(str), y=cum.values, yaxis="y2", mode="lines+markers", name="cumulative",
-                    line=dict(color=T.MUTED))
+                    line=dict(color=T.ACCENT))
     fig.update_layout(title=title, yaxis2=dict(overlaying="y", side="right", tickformat=".0%", range=[0, 1.05]),
                       xaxis=dict(type="category"), showlegend=False)
     plot(fig, 380)
@@ -295,7 +295,7 @@ def summary(*parts: str) -> None:
 
 
 def gap_text(name: str, value, target, unit: str = "%", higher_better: bool = True) -> str:
-    """'UoA 47.3%, 12.7 pt below target' / '' when no target."""
+    """'UoA 47.3%, 12.7% below target' / '' when no target."""
     if value is None or pd.isna(value):
         return ""
     val = f"{value * 100:.1f}%" if unit == "%" else f"{value:,.1f} {unit}"
@@ -303,7 +303,7 @@ def gap_text(name: str, value, target, unit: str = "%", higher_better: bool = Tr
         return f"{name} {val} (no target set)"
     diff = value - target
     better = diff >= 0 if higher_better else diff <= 0
-    size = f"{abs(diff) * 100:.1f} pt" if unit == "%" else f"{abs(diff):,.1f} {unit}"
+    size = f"{abs(diff) * 100:.1f}%" if unit == "%" else f"{abs(diff):,.1f} {unit}"
     side = ("above" if diff >= 0 else "below")
     return f"{name} {val}, {size} {side} target"
 

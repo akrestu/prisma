@@ -71,6 +71,6 @@ def test_overview_numbers_weighted_across_sites(world):
     at = run("overview", load_user(world, "adm"))
     vals = {mt.label: mt.value for mt in at.metric}
     # MAS (T 63.252 jam, PA 71,07%) + BAU (T 35.028 jam, PA 54,49%) berbobot jam = 65,16%
-    assert vals["PA"] == "65.2%"
+    assert vals["PA (%)"] == "65.2%"
     assert vals["OB (BCM)"] == "778,796"
     assert vals["Coal (t)"] == "93,724.8"  # excludes tickets with an unknown loader (UNMAPPED 984.3 t)

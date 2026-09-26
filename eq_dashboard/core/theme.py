@@ -16,12 +16,12 @@ MUTED = "#9C9A93"
 DIM = "#6E6C66"
 ACCENT = "#F2C230"    # hi-vis
 MISS = "#F08A3C"      # off target
-READY, IDLE, STANDBY, DOWN = "#4E9BD8", "#9CC7EA", "#55595F", "#F08A3C"
+READY, IDLE, STANDBY, DOWN = "#4E9BD8", "#9CC7EA", "#C98DA8", "#F08A3C"  # standby = dusty rose
 CAT = {"R": READY, "I": IDLE, "S": STANDBY, "D": DOWN}
-NEUTRAL_BAR = "#BDB8AE"  # category bars (type/model/unit): light chalk, never status colours
+NEUTRAL_BAR = "#7CCFB9"  # default category bars: soft teal, never grey/white
 FUEL_COLOR = "#C08BE0"   # violet: fuel litres (never status colours)
 PA_COLOR = "#4FC1A6"     # teal: PA series (distinct from chalk text, blue UoA, orange miss)
-METRIC_COLOR = {"PA": PA_COLOR, "UoA": READY, "MA": IDLE, "EU": "#C9C5BB"}  # same as trend lines and the TV
+METRIC_COLOR = {"PA": PA_COLOR, "UoA": READY, "MA": IDLE, "EU": "#A7D38B"}  # same as trend lines and the TV
 FONT = "IBM Plex Sans, Segoe UI, Arial, sans-serif"
 MISS_THRESHOLD = 0.10    # more than 10% worse than target = real miss (orange)
 
@@ -39,7 +39,7 @@ def register_plotly() -> None:
     pio.templates["haulroad"] = go.layout.Template(layout=go.Layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family=FONT, color=TEXT, size=13), title=dict(font=dict(size=15, color=TEXT), x=0, xanchor="left"),
-        colorway=[ACCENT, READY, TEXT, MISS, IDLE, NEUTRAL_BAR, STANDBY],
+        colorway=[ACCENT, READY, PA_COLOR, FUEL_COLOR, IDLE, STANDBY, "#A7D38B", MISS],
         xaxis=dict(gridcolor=LINE, linecolor=LINE, zeroline=False, tickcolor=LINE, tickfont=dict(color=MUTED)),
         yaxis=dict(gridcolor=LINE, linecolor="rgba(0,0,0,0)", zeroline=False, tickfont=dict(color=MUTED)),
         legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=MUTED), orientation="h", y=1.08, x=0),

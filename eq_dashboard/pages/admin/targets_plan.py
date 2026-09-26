@@ -52,9 +52,9 @@ with tab_t:
                             disabled=["month"],
                             column_config={"month": st.column_config.NumberColumn("Month"),
                                            "pa": pct("PA %"), "uoa": pct("UoA %"),
-                                           "mtbs": st.column_config.NumberColumn("MTBS (h)", min_value=0),
-                                           "mttr": st.column_config.NumberColumn("MTTR (h)", min_value=0),
-                                           "sched_down": pct("Sched. down %"), "pm_accuracy": pct("PM accuracy %")})
+                                           "mtbs": st.column_config.NumberColumn("MTBS (hrs)", min_value=0),
+                                           "mttr": st.column_config.NumberColumn("MTTR (hrs)", min_value=0),
+                                           "sched_down": pct("Sched. down (%)"), "pm_accuracy": pct("PM accuracy (%)")})
     if st.button("Save targets", type="primary"):
         e = edited.copy()
         for c in ("pa", "uoa", "sched_down", "pm_accuracy"):

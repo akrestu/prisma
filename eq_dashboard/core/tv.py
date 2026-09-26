@@ -222,12 +222,12 @@ def build(s: Session, site: str, intervals: pd.DataFrame | None = None, period: 
     ob_by = ob_rows.groupby("bucket")["volume"].sum() if len(ob_rows) else pd.Series(dtype=float)
     coal_by = coal.groupby("bucket")["ton"].sum() if len(coal) else pd.Series(dtype=float)
     tv.kpis = [
-        Kpi("pa", "PA", k["PA"], "%", t["pa"], sub=sub_for("PA")),
-        Kpi("uoa", "UoA", k["UoA"], "%", t["uoa"], sub=sub_for("UoA")),
-        Kpi("mtbs", "MTBS", rel["MTBS"], "h", t["mtbs"], sub=f"{int(rel['stoppages']):,} stoppages"),
-        Kpi("mttr", "MTTR", rel["MTTR"], "h", t["mttr"], higher_better=False, sub="lower is better"),
-        Kpi("sched", "Sched. down", rel["SchedDown"], "%", t["sched_down"], sub="SM hours / down hours"),
-        Kpi("pm", "PM accuracy", pm_row["PMAccuracy"] if assessable else None, "%", t["pm_accuracy"],
+        Kpi("pa", "PA (%)", k["PA"], "%", t["pa"], sub=sub_for("PA")),
+        Kpi("uoa", "UoA (%)", k["UoA"], "%", t["uoa"], sub=sub_for("UoA")),
+        Kpi("mtbs", "MTBS (hrs)", rel["MTBS"], "h", t["mtbs"], sub=f"{int(rel['stoppages']):,} stoppages"),
+        Kpi("mttr", "MTTR (hrs)", rel["MTTR"], "h", t["mttr"], higher_better=False, sub="lower is better"),
+        Kpi("sched", "Sched. down (%)", rel["SchedDown"], "%", t["sched_down"], sub="SM hours / down hours"),
+        Kpi("pm", "PM accuracy (%)", pm_row["PMAccuracy"] if assessable else None, "%", t["pm_accuracy"],
             sub=f"{int(pm_row['pm_events']) if pm_row is not None else 0} PM events",
             note="" if assessable else "PM intervals not set"),
         Kpi("ob", "OB", ob_total, "BCM", ob_plan if pd.notna(ob_plan) else None,

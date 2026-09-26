@@ -16,10 +16,10 @@ worst_type = metrics.kpis(c.ev, ["type"])["PA"].sort_values()
 dash.summary(dash.gap_text("UoA", k["UoA"], t["uoa"]), dash.gap_text("PA", k["PA"], t["pa"]),
              f"Lowest PA by type: {worst_type.index[0]} at {worst_type.iloc[0]:.0%}" if len(worst_type) else "")
 r = st.columns(4)
-dash.kpi(r[0], "PA", k["PA"], t["pa"], help="(Ready + Idle + Standby) / total hours")
-dash.kpi(r[1], "UoA", k["UoA"], t["uoa"], help="(Ready + Idle) / (Ready + Idle + Standby)")
-dash.kpi(r[2], "MA", k["MA"], help="(Ready + Idle) / (Ready + Idle + Down)")
-dash.kpi(r[3], "EU", k["EU"], help="(Ready + Idle) / total hours")
+dash.kpi(r[0], "PA (%)", k["PA"], t["pa"], help="(Ready + Idle + Standby) / total hours")
+dash.kpi(r[1], "UoA (%)", k["UoA"], t["uoa"], help="(Ready + Idle) / (Ready + Idle + Standby)")
+dash.kpi(r[2], "MA (%)", k["MA"], help="(Ready + Idle) / (Ready + Idle + Down)")
+dash.kpi(r[3], "EU (%)", k["EU"], help="(Ready + Idle) / total hours")
 
 metric = st.segmented_control("Ranking metric", ["PA", "UoA", "MA"], default="PA", key="rank_metric") or "PA"
 a, b, cc = st.columns(3)
@@ -54,7 +54,7 @@ st.subheader("PA heatmap by unit and day")
 hm = metrics.kpis(c.ev, ["unit_id", "date"])["PA"].unstack("date")
 order = metrics.kpis(c.ev, ["unit_id"])["PA"].sort_values().index
 hm = hm.reindex(order).head(60)
-fig = px.imshow(hm, color_continuous_scale=[T.MISS, T.STANDBY, T.READY], zmin=0, zmax=1, aspect="auto",
+fig = px.imshow(hm, color_continuous_scale=[T.MISS, T.ACCENT, T.READY], zmin=0, zmax=1, aspect="auto",
                 labels=dict(color="PA", x="Date", y="Unit"))
 fig.update_layout(title=f"{len(hm)} units with the lowest PA")
 dash.plot(fig, max(380, 16 * len(hm) + 100))

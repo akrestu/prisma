@@ -36,7 +36,7 @@ with bb:
     dash.pareto(sb, "reason_text", "hours", "Standby hours Pareto", T.STANDBY)
 with cc:
     g = sb.groupby("grp")["hours"].sum()
-    fig = go.Figure(go.Pie(labels=g.index, values=g.values, hole=.55, marker_colors=[T.MUTED, T.STANDBY]))
+    fig = go.Figure(go.Pie(labels=g.index, values=g.values, hole=.55, marker_colors=[T.IDLE, T.STANDBY]))
     fig.update_layout(title="Standby: client vs internal")
     dash.plot(fig, 380)
     st.caption("Client reason codes are set by the Admin on the PM intervals & standby page.")

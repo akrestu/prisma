@@ -18,13 +18,13 @@ dash.summary(dash.gap_text("MTBS", rel["MTBS"], t["mtbs"], "h"),
              dash.gap_text("MTTR", rel["MTTR"], t["mttr"], "h", higher_better=False),
              f"{str(comp.index[0]).capitalize()} is the largest down cause ({comp.iloc[0] / comp.sum():.0%})" if len(comp) else "")
 r = st.columns(6)
-dash.kpi(r[0], "MTBS", rel["MTBS"], t["mtbs"], "h", help="Working hours / number of stoppages (SM + USM)")
-dash.kpi(r[1], "MTTR", rel["MTTR"], t["mttr"], "h", higher_better=False, help="Down hours / number of stoppages")
-dash.kpi(r[2], "MTBF", rel["MTBF"], None, "h", help="Working hours / number of USM (breakdown) stoppages")
-dash.kpi(r[3], "Scheduled down", rel["SchedDown"], t["sched_down"], help="SM hours / down hours")
+dash.kpi(r[0], "MTBS (hrs)", rel["MTBS"], t["mtbs"], "h", help="Working hours / number of stoppages (SM + USM)")
+dash.kpi(r[1], "MTTR (hrs)", rel["MTTR"], t["mttr"], "h", higher_better=False, help="Down hours / number of stoppages")
+dash.kpi(r[2], "MTBF (hrs)", rel["MTBF"], None, "h", help="Working hours / number of USM (breakdown) stoppages")
+dash.kpi(r[3], "Scheduled down (%)", rel["SchedDown"], t["sched_down"], help="SM hours / down hours")
 pm_row = pm.iloc[0] if len(pm) else None
 if pm_row is not None and pm_row["assessable"] > 0:
-    dash.kpi(r[4], "PM accuracy", pm_row["PMAccuracy"], t["pm_accuracy"],
+    dash.kpi(r[4], "PM accuracy (%)", pm_row["PMAccuracy"], t["pm_accuracy"],
              help="PMs within HM interval ± tolerance / assessable PMs")
 else:
     r[4].metric("PM accuracy", "—", "PM intervals not set" if iv.empty else "no assessable PM yet", delta_color="off")
@@ -40,11 +40,11 @@ with b:
     rt = metrics.reliability(c.ev, c.st, [by]).reset_index()
     rt = rt[rt["stoppages"] > 0]
     fig = px.scatter(rt, x="MTBS", y="MTTR", size="down_hours", color=by, hover_name=by,
-                     labels={"MTBS": "MTBS (h)", "MTTR": "MTTR (h)"})
+                     labels={"MTBS": "MTBS (hrs)", "MTTR": "MTTR (hrs)"})
     if t["mtbs"]:
-        fig.add_vline(x=t["mtbs"], line_dash="dash", line_color=T.MUTED)
+        fig.add_vline(x=t["mtbs"], line_dash="dash", line_color=T.ACCENT)
     if t["mttr"]:
-        fig.add_hline(y=t["mttr"], line_dash="dash", line_color=T.MUTED)
+        fig.add_hline(y=t["mttr"], line_dash="dash", line_color=T.ACCENT)
     fig.update_layout(title=f"MTBS vs MTTR by {by} (bottom-right is better)", showlegend=False)
     dash.plot(fig, 380)
 

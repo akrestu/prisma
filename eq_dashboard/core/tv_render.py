@@ -67,7 +67,7 @@ def _t(x, y, s, size=16, anchor="start", fill=None, weight=None) -> str:
 
 
 def _delta(value, target, unit, higher_better=True) -> str:
-    """'▼ 31.9 pt vs 60%' — orange only for a real miss (> 10% of target)."""
+    """'▼ 31.9% vs 60%' — orange only for a real miss (> 10% of target)."""
     if value is None or pd.isna(value):
         return ""
     if target is None:
@@ -75,7 +75,7 @@ def _delta(value, target, unit, higher_better=True) -> str:
     diff = value - target
     arrow = "▲" if diff >= 0 else "▼"
     if unit == "%":
-        body = f"{arrow} {abs(diff) * 100:.1f} pt vs {n(target * 100, 0 if round(target * 100, 1) % 1 == 0 else 1)}%"
+        body = f"{arrow} {abs(diff) * 100:.1f}% vs {n(target * 100, 0 if round(target * 100, 1) % 1 == 0 else 1)}%"
     elif unit in ("BCM", "t"):
         body = f"{arrow} {n(abs(diff))} vs plan ({n(value / target * 100, 0)}%)" if target else ""
     else:
@@ -106,7 +106,7 @@ def _headline(d: TvData, uoa_target) -> str:
     parts = []
     lvl = T.miss_level(h.get("uoa"), uoa_target)
     if lvl is not None and lvl > 0:
-        parts.append(f"UoA {abs(h['uoa'] - uoa_target) * 100:.0f} pt below target ({h['label'].split('·')[-1].strip()})")
+        parts.append(f"UoA {abs(h['uoa'] - uoa_target) * 100:.0f}% below target ({h['label'].split('·')[-1].strip()})")
     elif lvl == 0:
         parts.append("UoA on target")
     if len(d.components):
@@ -124,7 +124,7 @@ def _kpi_html(k: Kpi) -> str:
     elif k.unit == "%":
         val, dl = f"{k.value * 100:.1f}<small>%</small>", _delta(k.value, k.target, "%", k.higher_better)
     elif k.unit == "h":
-        val, dl = f"{k.value:,.1f}<small>h</small>", _delta(k.value, k.target, "h", k.higher_better)
+        val, dl = f"{k.value:,.1f}<small>hrs</small>", _delta(k.value, k.target, "hrs", k.higher_better)
     else:
         val = f"{k.value:,.0f}<small>{k.unit}</small>"
         dl = _delta(k.value, k.target, k.unit) if k.target is not None else '<span class="dim">no plan</span>'
@@ -194,7 +194,7 @@ def _bars(out, vals, plans, x0, x1, ya, yb, color, label):
                    f'height="{yb - Y(v):.1f}" fill="{color}"/>')
     if any(pd.notna(p) for p in plans):
         pts = " ".join(f"{x0 + (i + .5) * bw:.1f},{Y(p):.1f}" for i, p in enumerate(plans) if pd.notna(p))
-        out.append(f'<polyline points="{pts}" fill="none" stroke="{T.TEXT}" stroke-width="2" stroke-dasharray="5 5"/>')
+        out.append(f'<polyline points="{pts}" fill="none" stroke="{T.IDLE}" stroke-width="2" stroke-dasharray="5 5"/>')
     out.append(_t(x0, ya - 4, label, 16, fill=T.TEXT, weight=600))
     return bw
 
@@ -253,7 +253,7 @@ def _components_html(d: TvData) -> str:
     if c.empty:
         return '<div class="dim">No down hours.</div>'
     top, tot = c["hours"].max(), d.components["hours"].sum()
-    return "".join(f'<div class="row"><span>{escape(nice(r.reason))}</span><span class="rn">{n(r.hours)} h · '
+    return "".join(f'<div class="row"><span>{escape(nice(r.reason))}</span><span class="rn">{n(r.hours)} hrs · '
                    f'{r.hours / tot:.0%}</span><div class="rb"><i style="width:{r.hours / top * 100:.1f}%"></i></div></div>'
                    for r in c.itertuples())
 
@@ -267,7 +267,7 @@ def _units_html(d: TvData) -> str:
         tag = " · all period" if r.full_period else (" · down now" if r.down_now else "")
         rows.append(f'<div class="row"><span><b>{escape(r.unit)}</b> <span class="dim">{escape(str(r.model or ""))}</span>'
                     f'<br><span class="dim">{escape(nice(r.reason))}</span></span>'
-                    f'<span class="rn">{n(r.hours)} h<span class="miss">{tag}</span></span></div>')
+                    f'<span class="rn">{n(r.hours)} hrs<span class="miss">{tag}</span></span></div>')
     if len(bu) > 3:
         rows.append(f'<div class="more dim">+ {len(bu) - 3} more: {", ".join(escape(u) for u in bu["unit"].iloc[3:])}</div>')
     return "".join(rows)

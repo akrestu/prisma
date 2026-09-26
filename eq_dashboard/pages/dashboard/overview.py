@@ -24,10 +24,10 @@ dash.summary(dash.gap_text("UoA", k["UoA"], t["uoa"]), dash.gap_text("PA", k["PA
              f"OB {fmt_num(ob)} BCM and coal {fmt_num(coal)} t in the selected dates")
 
 r1 = st.columns(4)
-dash.kpi(r1[0], "PA", k["PA"], t["pa"])
-dash.kpi(r1[1], "UoA", k["UoA"], t["uoa"])
-dash.kpi(r1[2], "MTBS", rel["MTBS"], t["mtbs"], "h")
-dash.kpi(r1[3], "MTTR", rel["MTTR"], t["mttr"], "h", higher_better=False)
+dash.kpi(r1[0], "PA (%)", k["PA"], t["pa"])
+dash.kpi(r1[1], "UoA (%)", k["UoA"], t["uoa"])
+dash.kpi(r1[2], "MTBS (hrs)", rel["MTBS"], t["mtbs"], "h")
+dash.kpi(r1[3], "MTTR (hrs)", rel["MTTR"], t["mttr"], "h", higher_better=False)
 r2 = st.columns(4)
 plan = dash.plan_daily(tuple(c.sites), c.month)
 plan = plan[(plan["date"] >= c.date_from) & (plan["date"] <= c.date_to)]
@@ -57,7 +57,7 @@ with right:
         cc = c.coal.groupby("date")["ton"].sum()
         fig.add_scatter(x=cc.index, y=cc.values, name="Coal (t)", yaxis="y2", line=dict(color=T.READY, width=3))
     if plan["ob_plan"].notna().any():
-        fig.add_scatter(x=plan["date"], y=plan["ob_plan"], name="OB plan", line=dict(color=T.TEXT, dash="dash"))
+        fig.add_scatter(x=plan["date"], y=plan["ob_plan"], name="OB plan", line=dict(color=T.IDLE, dash="dash"))
     fig.update_layout(title="Daily production", yaxis2=dict(overlaying="y", side="right", title="t"))
     dash.plot(fig)
 
@@ -68,8 +68,8 @@ obs = c.rit[c.rit["material_group"] == "OB"].groupby("site")["volume"].sum() if 
 cs = c.coal.groupby("site")["ton"].sum() if len(c.coal) else pd.Series(dtype=float)
 fs = c.fuel.groupby("site")["liters"].sum() if len(c.fuel) else pd.Series(dtype=float)
 tab = pd.DataFrame({"PA": b["PA"].map(fmt_pct), "UoA": b["UoA"].map(fmt_pct), "MA": b["MA"].map(fmt_pct),
-                    "MTBS (h)": rs["MTBS"].map(lambda v: fmt_num(v, 1)),
-                    "MTTR (h)": rs["MTTR"].map(lambda v: fmt_num(v, 1)),
+                    "MTBS (hrs)": rs["MTBS"].map(lambda v: fmt_num(v, 1)),
+                    "MTTR (hrs)": rs["MTTR"].map(lambda v: fmt_num(v, 1)),
                     "OB (BCM)": obs.reindex(b.index).map(fmt_num), "Coal (t)": cs.reindex(b.index).map(fmt_num),
                     "Fuel (L)": fs.reindex(b.index).map(fmt_num)})
 st.dataframe(tab, width="stretch")

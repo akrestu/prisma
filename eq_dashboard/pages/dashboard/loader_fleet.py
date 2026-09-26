@@ -28,39 +28,40 @@ st.caption({
     "yearly": "Per year across all published data (sidebar dates ignored).",
 }[period])
 
-if scope == "month":
-    ev, rit = c.ev, c.rit
-else:
-    vers = c.versions_for(scope)
-    ev = scope_filter(dash.combine("events", vers), c.allowed)
-    rit = scope_filter(dash.combine("ritase", vers), c.allowed)
-if rit.empty or rit[rit["material_group"] == group].empty:
-    st.info(f"No {group} trips for this selection.")
-    st.stop()
+with st.spinner(f"Calculating {group} productivity ({PERIOD_LABEL[period].lower()})…", show_time=True):
+    if scope == "month":
+        ev, rit = c.ev, c.rit
+    else:
+        vers = c.versions_for(scope)
+        ev = scope_filter(dash.combine("events", vers), c.allowed)
+        rit = scope_filter(dash.combine("ritase", vers), c.allowed)
+    if rit.empty or rit[rit["material_group"] == group].empty:
+        st.info(f"No {group} trips for this selection.")
+        st.stop()
 
-rit = with_week(rit)
-if period == "hourly":
-    evb = split_hourly(ev)
-    key = ["hour_slot"]
-else:
-    evb = ev
-    key = ["date"]
-# productivity per unit per base key (hour slot or date), then rolled up to the chosen period
-ld = productivity(rit, evb, "loader", key, group)
-hl = productivity(rit, evb, "hauler", key, group)
-for df in (ld, hl):
-    if len(df):
-        if period == "hourly":
-            df["bucket"] = df["hour_slot"]
-        else:
-            tmp = with_week(df.assign(date=pd.to_datetime(df["date"])))
-            df["bucket"] = bucket(tmp, period).to_numpy()
+    rit = with_week(rit)
+    if period == "hourly":
+        evb = split_hourly(ev)
+        key = ["hour_slot"]
+    else:
+        evb = ev
+        key = ["date"]
+    # productivity per unit per base key (hour slot or date), then rolled up to the chosen period
+    ld = productivity(rit, evb, "loader", key, group)
+    hl = productivity(rit, evb, "hauler", key, group)
+    for df in (ld, hl):
+        if len(df):
+            if period == "hourly":
+                df["bucket"] = df["hour_slot"]
+            else:
+                tmp = with_week(df.assign(date=pd.to_datetime(df["date"])))
+                df["bucket"] = bucket(tmp, period).to_numpy()
 
-fl = fleet_summary(ld, ["bucket"])
-fh = fleet_summary(hl, ["bucket"])
-order = bucket_order(fl.index, period)
-fl, fh = fl.reindex(order), fh.reindex(order)
-labels = [pretty(x, period) for x in order]
+    fl = fleet_summary(ld, ["bucket"])
+    fh = fleet_summary(hl, ["bucket"])
+    order = bucket_order(fl.index, period)
+    fl, fh = fl.reindex(order), fh.reindex(order)
+    labels = [pretty(x, period) for x in order]
 
 tot_l, tot_h = fleet_summary(ld, []), fleet_summary(hl, [])
 best = ld.groupby("unit").agg(v=("volume", "sum"), h=("ready_h", "sum"))
@@ -83,7 +84,7 @@ with left:
     fig = go.Figure()
     fig.add_bar(x=labels, y=fl["volume"], name=f"Volume ({unit})", marker_color=T.ACCENT if group == "OB" else T.READY,
                 opacity=.55)
-    fig.add_scatter(x=labels, y=fl["per_hour"], name=f"Loader {unit}/h", yaxis="y2", line=dict(color=T.TEXT, width=3))
+    fig.add_scatter(x=labels, y=fl["per_hour"], name=f"Loader {unit}/h", yaxis="y2", line=dict(color=T.PA_COLOR, width=3))
     fig.add_scatter(x=labels, y=fh["per_hour"], name=f"Hauler {unit}/h", yaxis="y2", line=dict(color=T.MISS, width=3))
     per = {"hourly": "hour", "daily": "day", "weekly": "week", "monthly": "month", "yearly": "year"}[period]
     fig.update_layout(title=f"{group} volume & productivity per {per}",
@@ -92,7 +93,7 @@ with left:
     dash.plot(fig, 380)
 with right:
     fig = go.Figure()
-    fig.add_scatter(x=labels, y=fl["dist_h"], name="Horizontal (m)", line=dict(color=T.STANDBY, width=3))
+    fig.add_scatter(x=labels, y=fl["dist_h"], name="Horizontal (m)", line=dict(color=T.PA_COLOR, width=3))
     fig.add_scatter(x=labels, y=fl["dist_v"], name="Vertical (m)", yaxis="y2", line=dict(color=T.ACCENT, width=3))
     fig.update_layout(title=f"{group} haul distance (trip-weighted)", xaxis=dict(type="category"),
                       yaxis=dict(title="horizontal (m)"), yaxis2=dict(overlaying="y", side="right", title="vertical (m)"))
@@ -121,7 +122,7 @@ with t1:
     a, b = st.columns([1, 1.6])
     with a:
         dash.ranking(tl.dropna(subset=[f"{unit}/Ready h"]), "Loader", f"{unit}/Ready h", f"Loader {unit} per Ready hour",
-                     dash.COL_MODEL, pct=False, digits=1)
+                     T.ACCENT if group == "OB" else T.READY, pct=False, digits=1)
     with b:
         st.dataframe(tl, hide_index=True, width="stretch", height=420, column_config=cfg(tl.columns[2:]))
         excel_download(tl, f"loader_productivity_{group}_{period}.xlsx", key="dl_ld")
@@ -132,7 +133,7 @@ with t2:
     a, b = st.columns([1, 1.6])
     with a:
         dash.ranking(mdl.dropna(subset=["per_hour"]), "model", "per_hour", f"Hauler {unit} per Ready hour by model",
-                     dash.COL_UNIT, pct=False, digits=1)
+                     T.PA_COLOR, pct=False, digits=1)
     with b:
         st.dataframe(th, hide_index=True, width="stretch", height=420, column_config=cfg(th.columns[2:]))
         excel_download(th, f"hauler_productivity_{group}_{period}.xlsx", key="dl_hl")

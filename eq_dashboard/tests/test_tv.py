@@ -92,7 +92,7 @@ def test_hero_follows_period(published):
     assert w.hero["label"] == "Latest week · Week 4" and w.hero["uoa"] != pytest.approx(w.hero["uoa_range"])
     assert set(tv.build(s, "WBK-MAS", period="hourly").hero["shifts"]) == {"DS", "NS"}
     html = render(d)
-    assert "28.1%" in html and "Month to date 51.3%" in html and "UoA 32 pt below target" in html
+    assert "28.1%" in html and "Month to date 51.3%" in html and "UoA 32% below target" in html
 
 
 def test_tv_empty_until_published(published):

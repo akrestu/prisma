@@ -23,7 +23,7 @@ for col, key in zip(r, SEV):
 
 g = dq.groupby(["rule", "severity"]).size().reset_index(name="findings")
 fig = px.bar(g.sort_values("findings"), x="findings", y="rule", color="severity", orientation="h",
-             color_discrete_map={"critical": T.MISS, "warn": T.ACCENT, "info": T.STANDBY})
+             color_discrete_map={"critical": T.MISS, "warn": T.ACCENT, "info": T.READY})
 fig.update_layout(title="Findings by rule", yaxis_title="")
 dash.plot(fig, max(300, 28 * len(g) + 80))
 

@@ -42,7 +42,7 @@ for s_, col in (("DS", T.READY), ("NS", "#2F6497")):
     if s_ in sh:
         fig.add_bar(x=sh.index, y=sh[s_], name=s_, marker_color=col)
 if plan.notna().any():
-    fig.add_scatter(x=plan.index, y=plan.values, name="Plan", line=dict(color=T.TEXT, dash="dash"))
+    fig.add_scatter(x=plan.index, y=plan.values, name="Plan", line=dict(color=T.ACCENT, dash="dash"))
 cgd = cg.groupby("date")["volume"].sum() if len(cg) else pd.Series(dtype=float)
 if len(cgd):
     fig.add_scatter(x=cgd.index, y=cgd.values, name="CG ritase (t, estimate)", line=dict(color=T.ACCENT, dash="dot"))
@@ -58,7 +58,7 @@ if len(cg):
         dd = cg.groupby("date").apply(lambda g: pd.Series({"H": weighted(g, "dist_h"), "V": weighted(g, "dist_v")}),
                                       include_groups=False)
         fig = go.Figure()
-        fig.add_scatter(x=dd.index, y=dd["H"], name="Horizontal (m)", line=dict(color=T.STANDBY, width=3))
+        fig.add_scatter(x=dd.index, y=dd["H"], name="Horizontal (m)", line=dict(color=T.PA_COLOR, width=3))
         fig.add_scatter(x=dd.index, y=dd["V"], name="Vertical (m)", yaxis="y2", line=dict(color=T.ACCENT, width=3))
         fig.update_layout(title="Daily CG haul distance (trip-weighted)", yaxis=dict(title="horizontal (m)"),
                           yaxis2=dict(overlaying="y", side="right", title="vertical (m)"))
@@ -76,13 +76,13 @@ if len(cg):
 a, b, cc = st.columns(3)
 with a:
     dash.ranking(t.groupby("seam", dropna=False)["ton"].sum().reset_index().fillna({"seam": "—"}), "seam", "ton",
-                 "By seam (t)", dash.COL_TYPE, pct=False, top=10)
+                 "By seam (t)", T.READY, pct=False, top=10)
 with b:
     dash.ranking(t.groupby("loader", dropna=False)["ton"].sum().reset_index().fillna({"loader": "—"}), "loader",
-                 "ton", "By loader (t)", dash.COL_MODEL, pct=False, top=12)
+                 "ton", "By loader (t)", T.READY, pct=False, top=12)
 with cc:
     dash.ranking(t.groupby("dt_unit")["ton"].sum().reset_index(), "dt_unit", "ton", "By DT (t, top 15)",
-                 dash.COL_UNIT, pct=False, top=15)
+                 T.READY, pct=False, top=15)
 
 st.subheader("By dump truck")
 rec = (t.assign(dur=dur).groupby("dt_unit")

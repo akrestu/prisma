@@ -45,7 +45,7 @@ for _, row in queue.iterrows():
         c[0].metric("Units", summ.get("units", 0))
         c[1].metric("PA", fmt_pct(k["PA"].iloc[0]) if k is not None else "—")
         c[2].metric("UoA", fmt_pct(k["UoA"].iloc[0]) if k is not None else "—")
-        c[3].metric("MTBS (h)", fmt_num(r["MTBS"].iloc[0], 1) if r is not None else "—")
+        c[3].metric("MTBS (hrs)", fmt_num(r["MTBS"].iloc[0], 1) if r is not None else "—")
         c[4].metric("OB (BCM)", fmt_num(summ.get("ob_bcm")))
         c[5].metric("Coal (t)", fmt_num(summ.get("coal_ton"), 1))
         c[6].metric("Fuel (L)", fmt_num(summ.get("fuel_liters")))

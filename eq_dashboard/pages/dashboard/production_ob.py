@@ -45,7 +45,7 @@ for s_, col in (("DS", T.ACCENT), ("NS", "#A8861F")):
     if s_ in sh:
         fig.add_bar(x=sh.index, y=sh[s_], name=s_, marker_color=col)
 if plan.notna().any():
-    fig.add_scatter(x=plan.index, y=plan.values, name="Plan", line=dict(color=T.TEXT, dash="dash"))
+    fig.add_scatter(x=plan.index, y=plan.values, name="Plan", line=dict(color=T.IDLE, dash="dash"))
 fig.update_layout(title="Daily OB by shift (BCM)", barmode="stack")
 dash.plot(fig)
 
@@ -59,7 +59,7 @@ with b:
     dd = ob.groupby("date").apply(lambda g: pd.Series({"H": weighted(g, "dist_h"), "V": weighted(g, "dist_v")}),
                                   include_groups=False)
     fig = go.Figure()
-    fig.add_scatter(x=dd.index, y=dd["H"], name="Horizontal (m)", line=dict(color=T.STANDBY, width=3))
+    fig.add_scatter(x=dd.index, y=dd["H"], name="Horizontal (m)", line=dict(color=T.PA_COLOR, width=3))
     fig.add_scatter(x=dd.index, y=dd["V"], name="Vertical (m)", yaxis="y2", line=dict(color=T.ACCENT, width=3))
     fig.update_layout(title="Daily haul distance (trip-weighted)", yaxis=dict(title="horizontal (m)"),
                       yaxis2=dict(overlaying="y", side="right", title="vertical (m)"))
@@ -71,10 +71,10 @@ with a:
                  T.ACCENT, pct=False, top=10)
 with b:
     dash.ranking(ob.groupby("pit")["volume"].sum().reset_index(), "pit", "volume", "By loading location",
-                 dash.COL_TYPE, pct=False, top=12)
+                 T.ACCENT, pct=False, top=12)
 with cc:
     dash.ranking(ob.groupby("disposal")["volume"].sum().reset_index(), "disposal", "volume", "By disposal",
-                 dash.COL_MODEL, pct=False, top=12)
+                 T.ACCENT, pct=False, top=12)
 
 st.subheader("Haul distance by route (loading location → disposal)")
 route = (ob.groupby(["pit", "disposal"]).apply(lambda g: pd.Series({
