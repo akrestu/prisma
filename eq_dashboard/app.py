@@ -64,6 +64,8 @@ OTHER = {
     "upload": P("pages/data/upload.py", "Upload data", "upload_file"),
     "approval": P("pages/data/approval.py", "Approval", "fact_check"),
     "upload_history": P("pages/data/upload_history.py", "Upload history", "history"),
+    "data_explorer": P("pages/data/explorer.py", "Data explorer", "table_view"),
+    "delete_data": P("pages/admin/delete_data.py", "Delete data", "delete_forever"),
     "users_roles": P("pages/admin/users_roles.py", "Users & roles", "group"),
     "targets_plan": P("pages/admin/targets_plan.py", "Targets & plan", "flag"),
     "pm_interval": P("pages/admin/pm_interval.py", "PM intervals & standby", "schedule"),
@@ -93,8 +95,8 @@ else:
     sections = {
         "Dashboard": pick(DASH, DASH),
         "TV screen": pick(["preview_tv"]),
-        "Data": pick(["upload", "approval", "upload_history"]),
-        "Admin": pick(["users_roles", "targets_plan", "pm_interval", "sites_mapping", "display_devices", "audit_log"]),
+        "Data": pick(["upload", "approval", "upload_history", "data_explorer"]),
+        "Admin": pick(["users_roles", "targets_plan", "pm_interval", "sites_mapping", "display_devices", "audit_log", "delete_data"]),
         "Account": pick(["home", "account"]),
     }
     nav = st.navigation({k: v for k, v in sections.items() if v})

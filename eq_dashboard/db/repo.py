@@ -63,3 +63,43 @@ def dq_findings(s: Session, upload_id: int, site: str) -> pd.DataFrame:
     return frame(s, select(t.severity, t.rule, t.sheet, t.row_ref, t.unit_id, t.date, t.detail)
                  .where(t.upload_id == upload_id, t.site == site)
                  .order_by(t.severity, t.rule, t.row_ref))
+
+
+# ---------------------------------------------------------------- data explorer (read-only raw tables)
+EXPLORER_TABLES = {
+    "Events": (m.FactEvent, "date"),
+    "Stoppages": (m.FactStoppage, "start_date"),
+    "Ritase (trips per hour)": (m.FactRitase, "date"),
+    "Coal tickets": (m.FactCoalTicket, "date"),
+    "Fuel consumption": (m.FactFuel, "date"),
+    "Fuel receipts": (m.FactFuelReceipt, "date"),
+    "Units (population)": (m.DimUnit, None),
+    "Data quality findings": (m.DQFinding, "date"),
+}
+_HIDDEN = {"id", "upload_id", "month"}
+
+
+def explorer_rows(s: Session, table: str, versions: list[tuple[int, str]], date_from=None, date_to=None,
+                  limit: int = 200_000) -> pd.DataFrame:
+    """Raw rows of one table for the given (upload_id, site) versions, optionally within a date range."""
+    from sqlalchemy import and_, or_
+    model, date_col = EXPLORER_TABLES[table]
+    cols = [c for c in model.__table__.columns if c.key not in _HIDDEN]
+    if not versions:
+        return pd.DataFrame(columns=[c.key for c in cols])
+    q = select(*cols).where(or_(*[and_(model.upload_id == u, model.site == st_) for u, st_ in versions]))
+    if date_col and date_from is not None and date_to is not None:
+        dc = getattr(model, date_col)
+        q = q.where(dc >= date_from, dc <= date_to)
+    order = [getattr(model, date_col)] if date_col else []
+    return frame(s, q.order_by(model.site, *order, model.id).limit(limit))
+
+
+def delete_all_data(s: Session) -> dict[str, int]:
+    """Remove every upload and all data derived from it. Users, sites, targets, plans and settings stay."""
+    from sqlalchemy import delete
+    counts = {}
+    for model in (m.FactEvent, m.FactStoppage, m.FactRitase, m.FactCoalTicket, m.FactFuel, m.FactFuelReceipt,
+                  m.DimUnit, m.DQFinding, m.UploadSite, m.Upload):
+        counts[model.__tablename__] = s.execute(delete(model)).rowcount or 0
+    return counts

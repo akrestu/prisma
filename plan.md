@@ -290,3 +290,8 @@ Hasil design critique: tampilan lama generik (8 kartu setara, merah di mana-mana
 - Tab browser: judul WANPIS + favicon logo. Sidebar: wordmark (`st.logo`, ikon saat sidebar ditutup). Layar TV: logo + "WANPIS" di header.
 - Halaman login baru: panel brand (logo, nama, kepanjangan, deskripsi singkat, garis jalan tambang dari lengkung logo) + form "Sign in to WANPIS" dengan tombol kuning hi-vis; tampil hanya saat belum login.
 - Satuan konsisten: PA/UoA/MA/EU/Sched. down/PM accuracy dalam %, MTBS/MTTR/MTBF dalam hrs, selisih target dalam % (bukan "pt"). Chart tanpa abu-abu/putih: PA teal, UoA biru, standby rose, fuel ungu.
+
+## Revisi 10 — Data explorer & hapus data (2026-09-26)
+- **Data explorer** (menu Data, semua role login): tabel mentah Events, Stoppages, Ritase, Coal tickets, Fuel consumption, Fuel receipts, Units, DQ findings. Filter site × bulan (PUBLISHED) atau pilih upload PENDING (Admin/Site Manager sesuai site, Data Officer upload miliknya), rentang tanggal, Unit ID, pencarian teks semua kolom. Unduh CSV (semua) / Excel (≤ 100 rb baris). Hanya-baca; maksimal 200 rb baris per tampilan.
+- **Delete data** (menu Admin, hanya Admin): hapus semua upload & data turunan untuk semua site; user, site, target, plan, interval PM, standby, TV devices, audit log tetap. Konfirmasi dengan mengetik `DELETE ALL DATA`; tercatat di audit log; cache dibersihkan.
+- Belum: nomor baris Excel asal per baris data (saat ini hanya di DQ findings) — perlu kolom baru + parse ulang.

@@ -74,3 +74,40 @@ def test_overview_numbers_weighted_across_sites(world):
     assert vals["PA (%)"] == "65.2%"
     assert vals["OB (BCM)"] == "778,796"
     assert vals["Coal (t)"] == "93,724.8"  # excludes tickets with an unknown loader (UNMAPPED 984.3 t)
+
+
+def run_path(path, user):
+    at = AppTest.from_file(str(APP_DIR / path), default_timeout=180)
+    at.session_state["user"] = user
+    at.run()
+    return at
+
+
+def test_data_explorer_scoped_to_user_sites(world):
+    at = run_path("pages/data/explorer.py", load_user(world, "adm"))
+    assert not at.exception, [e.value for e in at.exception]
+    at = run_path("pages/data/explorer.py", load_user(world, "sm"))  # Site Manager BAU
+    assert not at.exception
+    assert at.multiselect(key="dx_site").options == ["WBK-BAU"]
+    df = at.dataframe[0].value
+    assert len(df) and set(df["site"]) == {"WBK-BAU"}
+
+
+def test_delete_all_data_admin_only_and_keeps_settings(world):
+    from sqlalchemy import func, select
+    assert any("do not have access" in e.value for e in run("delete_data", load_user(world, "vw")).error)
+    at = run("delete_data", load_user(world, "adm"))
+    assert not at.exception
+    at.text_input[0].input("delete all data")  # wrong case → refused
+    at.button[0].click().run()
+    assert any("exactly" in e.value for e in at.error)
+    assert world.scalar(select(func.count()).select_from(m.FactEvent)) > 0
+    n_targets = world.scalar(select(func.count()).select_from(m.Target))
+    at.text_input[0].input("DELETE ALL DATA")
+    at.button[0].click().run()
+    assert not at.exception
+    world.expire_all()
+    for model in (m.Upload, m.UploadSite, m.FactEvent, m.FactRitase, m.DQFinding):
+        assert world.scalar(select(func.count()).select_from(model)) == 0
+    assert world.scalar(select(func.count()).select_from(m.Target)) == n_targets
+    assert world.scalar(select(func.count()).select_from(m.User)) == 3
