@@ -235,7 +235,7 @@ def kpi(col, label: str, value, target=None, kind: str = "pct", higher_better: b
         col.metric(label, "—", help=help)
         return
     if target is None or pd.isna(target):
-        col.metric(label, fmt(value), "no target", delta_color="off", help=help)
+        col.metric(label, fmt(value), "no target", delta_color="gray", delta_arrow="off", help=help)
         return
     diff = value - target
     dtxt = (f"{diff * 100:+.1f} pt" if kind == "pct" else f"{diff:+,.1f}") + f" vs target {fmt(target)}"
@@ -254,7 +254,9 @@ def ranking(df: pd.DataFrame, cat: str, val: str, title: str, color: str, pct: b
     text = d[val].map(fmt_pct) if pct else d[val].map(lambda v: fmt_num(v, digits))
     fig = go.Figure(go.Bar(x=d[val], y=d[cat].astype(str), orientation="h", marker_color=color, text=text,
                            textposition="outside", cliponaxis=False))
-    fig.update_layout(title=title, xaxis=dict(tickformat=".0%" if pct else ",", showgrid=True),
+    top = float(d[val].max()) if len(d) and pd.notna(d[val].max()) else 0.0
+    upper = max(top, 1.0 if pct else 0.0) * 1.18 or 1.0
+    fig.update_layout(title=title, xaxis=dict(tickformat=".0%" if pct else ",", showgrid=True, range=[0, upper]),
                       yaxis=dict(type="category"))
     plot(fig, height or max(260, 26 * len(d) + 80))
 

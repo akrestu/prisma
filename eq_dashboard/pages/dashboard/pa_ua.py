@@ -24,13 +24,13 @@ dash.kpi(r[3], "EU", k["EU"], help="(Ready + Idle) / total hours")
 metric = st.segmented_control("Ranking metric", ["PA", "UoA", "MA"], default="PA", key="rank_metric") or "PA"
 a, b, cc = st.columns(3)
 with a:
-    dash.ranking(metrics.kpis(c.ev, ["type"]).reset_index(), "type", metric, f"{metric} by type", dash.COL_TYPE)
+    dash.ranking(metrics.kpis(c.ev, ["type"]).reset_index(), "type", metric, f"{metric} by type", T.METRIC_COLOR[metric])
 with b:
-    dash.ranking(metrics.kpis(c.ev, ["model"]).reset_index(), "model", metric, f"{metric} by model", dash.COL_MODEL)
+    dash.ranking(metrics.kpis(c.ev, ["model"]).reset_index(), "model", metric, f"{metric} by model", T.METRIC_COLOR[metric])
 with cc:
     worst = st.toggle("Show lowest units", value=True)
     dash.ranking(metrics.kpis(c.ev, ["unit_id"]).reset_index(), "unit_id", metric,
-                 f"{metric} by unit ({'lowest' if worst else 'highest'} 15)", dash.COL_UNIT, ascending=worst)
+                 f"{metric} by unit ({'lowest' if worst else 'highest'} 15)", T.METRIC_COLOR[metric], ascending=worst)
 
 left, right = st.columns([2, 1])
 with left:
@@ -64,8 +64,9 @@ uw = metrics.availability(metrics.time_buckets(c.ev, ["unit_id", "type", "model"
 table = uw.rename(columns={"unit_id": "Unit", "type": "Type", "model": "Model", "week": "Week",
                            "R": "Ready", "I": "Idle", "S": "Standby", "D": "Down", "T": "Total"})
 table = table[["Unit", "Type", "Model", "Week", "Ready", "Idle", "Standby", "Down", "Total", "PA", "UoA", "MA"]]
+for col in ("PA", "UoA", "MA"):
+    table[col] = table[col].map(fmt_pct)
 st.dataframe(table, hide_index=True, width="stretch",
              column_config={x: st.column_config.NumberColumn(format="%.1f") for x in
-                            ["Ready", "Idle", "Standby", "Down", "Total"]} |
-             {x: st.column_config.NumberColumn(format="percent") for x in ["PA", "UoA", "MA"]})
+                            ["Ready", "Idle", "Standby", "Down", "Total"]})
 excel_download(table, "pa_uoa_unit_week.xlsx")
