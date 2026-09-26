@@ -244,6 +244,12 @@ def kpi(col, label: str, value, target=None, kind: str = "pct", higher_better: b
 
 
 def plot(fig: go.Figure, height: int = 360, bottom: int = 10) -> None:
+    named = [tr for tr in fig.data if getattr(tr, "showlegend", None) is not False and getattr(tr, "name", None)]
+    if len(named) > 1 and fig.layout.showlegend is not False and fig.layout.legend.y is None:
+        # a legend at the top collides with the chart title: put it under the x axis instead
+        fig.update_layout(legend=dict(orientation="h", traceorder="normal", x=0, xanchor="left",
+                                      yref="container", y=0, yanchor="bottom"))
+        bottom, height = max(bottom, 56), height + 30
     fig.update_layout(template="haulroad", height=height, margin=dict(l=10, r=10, t=48, b=bottom), legend_title_text="")
     st.plotly_chart(fig, width="stretch", config={"displaylogo": False})
 
