@@ -36,9 +36,9 @@ with a:
     d = f.groupby("date")["liters"].sum().cumsum()
     rr = c.receipt.groupby("date")["liters"].sum().cumsum() if len(c.receipt) else pd.Series(dtype=float)
     fig = go.Figure()
-    fig.add_scatter(x=d.index, y=d.values, name="Cumulative consumption", line=dict(color=T.MISS, width=3))
+    fig.add_scatter(x=d.index, y=d.values, name="Cumulative consumption", line=dict(color=T.FUEL_COLOR, width=3))
     if len(rr):
-        fig.add_scatter(x=rr.index, y=rr.values, name="Cumulative receipts", line=dict(color=T.TEXT, width=3))
+        fig.add_scatter(x=rr.index, y=rr.values, name="Cumulative receipts", line=dict(color=T.READY, width=3))
     fig.update_layout(title="Receipts vs consumption, cumulative (L)")
     dash.plot(fig)
 with b:
@@ -50,13 +50,13 @@ with b:
 a, b, cc = st.columns(3)
 with a:
     dash.ranking(f.groupby("type", dropna=False)["liters"].sum().reset_index().fillna({"type": "UNMAPPED"}), "type",
-                 "liters", "Litres by type", dash.COL_TYPE, pct=False)
+                 "liters", "Litres by type", T.FUEL_COLOR, pct=False)
 with b:
     dash.ranking(f.groupby("model", dropna=False)["liters"].sum().reset_index().fillna({"model": "—"}), "model",
-                 "liters", "Litres by model (top 15)", dash.COL_MODEL, pct=False)
+                 "liters", "Litres by model (top 15)", T.FUEL_COLOR, pct=False)
 with cc:
     dash.ranking(f.groupby("unit_id")["liters"].sum().reset_index(), "unit_id", "liters", "Litres by unit (top 15)",
-                 dash.COL_UNIT, pct=False)
+                 T.FUEL_COLOR, pct=False)
 
 st.subheader("Litres per HM hour by unit")
 hm = c.ev.groupby("unit_id").agg(hm_start=("hm_start", "min"), hm_end=("hm_end", "max"))

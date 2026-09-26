@@ -19,6 +19,7 @@ MISS = "#F08A3C"      # off target
 READY, IDLE, STANDBY, DOWN = "#4E9BD8", "#9CC7EA", "#55595F", "#F08A3C"
 CAT = {"R": READY, "I": IDLE, "S": STANDBY, "D": DOWN}
 NEUTRAL_BAR = "#BDB8AE"  # category bars (type/model/unit): light chalk, never status colours
+FUEL_COLOR = "#C08BE0"   # violet: fuel litres (never status colours)
 PA_COLOR = "#4FC1A6"     # teal: PA series (distinct from chalk text, blue UoA, orange miss)
 METRIC_COLOR = {"PA": PA_COLOR, "UoA": READY, "MA": IDLE, "EU": "#C9C5BB"}  # same as trend lines and the TV
 FONT = "IBM Plex Sans, Segoe UI, Arial, sans-serif"
