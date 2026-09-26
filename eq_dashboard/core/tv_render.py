@@ -158,7 +158,7 @@ def _trend_svg(d: TvData) -> str:
         yt = Y(d.uoa_target)
         out.append(f'<line x1="{x0}" x2="{x1}" y1="{yt:.1f}" y2="{yt:.1f}" stroke="{T.ACCENT}" stroke-width="2" stroke-dasharray="2 7"/>')
         out.append(_t(x0 + 6, yt - 9, f"UoA target {d.uoa_target * 100:.0f}%", 16, "start", T.ACCENT))
-    for col, color in (("PA", T.TEXT), ("UoA", T.READY)):
+    for col, color in (("PA", T.PA_COLOR), ("UoA", T.READY)):
         pts = [(X(i), Y(v)) for i, (v, ok) in enumerate(zip(df[col], df["complete"])) if ok and pd.notna(v)]
         if len(pts) > 1:
             out.append(f'<polyline points="{" ".join(f"{a:.1f},{b:.1f}" for a, b in pts)}" fill="none" '

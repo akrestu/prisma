@@ -40,12 +40,12 @@ left, right = st.columns(2)
 with left:
     d = metrics.kpis(c.ev, ["date"]).reset_index()
     fig = go.Figure()
-    fig.add_scatter(x=d["date"], y=d["PA"], name="PA", line=dict(color=T.TEXT, width=3))
+    fig.add_scatter(x=d["date"], y=d["PA"], name="PA", line=dict(color=T.PA_COLOR, width=3))
     fig.add_scatter(x=d["date"], y=d["UoA"], name="UoA", line=dict(color=T.READY, width=3))
     if t["uoa"] is not None:
         fig.add_hline(y=t["uoa"], line_dash="dot", line_color=T.ACCENT, annotation_text="UoA target")
     if t["pa"] is not None:
-        fig.add_hline(y=t["pa"], line_dash="dot", line_color=T.TEXT, annotation_text="PA target")
+        fig.add_hline(y=t["pa"], line_dash="dot", line_color=T.PA_COLOR, annotation_text="PA target")
     fig.update_layout(title="Daily PA & UoA", yaxis=dict(tickformat=".0%", range=[0, 1]))
     dash.plot(fig)
 with right:
