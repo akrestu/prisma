@@ -101,7 +101,8 @@ else:
 
 brand.sidebar_logo()
 # Streamlit's default ~6rem top padding leaves a large empty band above every page title
-st.html("<style>[data-testid='stMainBlockContainer']{padding-top:2.25rem}</style>")
+st.html("<style>[data-testid='stMainBlockContainer']{padding-top:1rem}"
+        "[data-testid='stMainBlockContainer'] h1{padding-top:0}</style>")
 with st.sidebar:
     st.markdown(f"**{user.name}**  \n{ROLE_LABEL[user.role]}")
     auth.logout("Sign out", location="sidebar", key="logout_btn",
