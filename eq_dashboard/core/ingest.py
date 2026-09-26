@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from core.config import UNMAPPED
 from core.io import sha256
-from core.parse import Parsed, parse_eq_event
+from core.parse import Parsed, parse_data_prod
 from db import models as m
 
 PENDING, PUBLISHED, REJECTED, SUPERSEDED = "PENDING", "PUBLISHED", "REJECTED", "SUPERSEDED"
@@ -62,13 +62,13 @@ def lookups(s: Session) -> tuple[dict[str, str], dict[str, str]]:
 
 def ingest(s: Session, data: bytes, filename: str, user_id: int | None = None,
            username: str | None = None, parsed: Parsed | None = None) -> tuple[m.Upload, list[m.UploadSite]]:
-    """`parsed` boleh diisi hasil preview (parse_eq_event) agar file tidak diparse dua kali."""
+    """`parsed` boleh diisi hasil preview (parse_data_prod) agar file tidak diparse dua kali."""
     digest = sha256(data)
     if s.scalar(select(m.Upload.id).where(m.Upload.sha256 == digest)):
         raise DuplicateUpload("An identical file has already been uploaded.")
     if parsed is None:
         alias, tanks = lookups(s)
-        parsed = parse_eq_event(data, alias, tanks)
+        parsed = parse_data_prod(data, alias, tanks)
     p = parsed
     month = p.month
 

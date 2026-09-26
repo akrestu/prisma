@@ -1,4 +1,4 @@
-"""Cleaning tiap sheet Eq.Event menjadi tabel fakta yang rapi dan bersite."""
+"""Cleaning each Data_Prod sheet into tidy, site-tagged fact tables."""
 from __future__ import annotations
 
 import re
@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from core.config import DOWN, NO_DATA, STATUS_TO_CATEGORY, UNMAPPED
-from core.io import excel_date, num, text
+from core.io import day_fraction, excel_date, num, text
 from core.validate import HOUR_SLOTS
 
 SHIFT_MAP = {"day": "DS", "night": "NS", "ds": "DS", "ns": "NS", "i": "DS", "ii": "NS"}
@@ -66,7 +66,7 @@ def clean_events(df: pd.DataFrame, units: pd.DataFrame, week_fn=week_of) -> pd.D
     status = text(df["Status"])
     reason = text(df["Reason"])
     code = num(reason.str.extract(r"^\s*(\d{3})", expand=False))
-    t0 = num(df["Jam Awal"])
+    t0 = day_fraction(df["Jam Awal"])
     shift = _shift(df["Shift"])
     model_file = text(df["Model.1"]) if "Model.1" in df.columns else pd.Series(pd.NA, index=df.index)
     out = pd.DataFrame({
@@ -80,7 +80,7 @@ def clean_events(df: pd.DataFrame, units: pd.DataFrame, week_fn=week_of) -> pd.D
         "site": _lookup(unit, units, "site", UNMAPPED),
         "operator": text(df["Operator"]),
         "time_start": t0,
-        "time_end": num(df["Jam Akhir"]),
+        "time_end": day_fraction(df["Jam Akhir"]),
         "hours": num(df["Total Jam"]).fillna(0.0),
         "hm_start": num(df["HM awal"]),
         "hm_end": num(df["HM Akhir"]),
@@ -202,7 +202,7 @@ def clean_fuel(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str] | No
         "row_ref": df.index + 2,
         "date": dt_.dt.date,
         "shift": _shift(df["SHIFT"]),
-        "time": num(df["TIME"]),
+        "time": day_fraction(df["TIME"]),
         "unit_id": unit,
         "type": _lookup(unit, units, "type"),
         "model": _lookup(unit, units, "model").fillna(text(df["MODEL"])),

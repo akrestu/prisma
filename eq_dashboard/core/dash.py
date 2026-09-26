@@ -106,7 +106,7 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
         if user.role in ("admin", "site_manager"):
             msg += " Open **Data → Approval** to approve pending uploads."
         elif user.role == "data_officer":
-            msg += " Upload a file in **Data → Upload data**, then wait for Site Manager approval."
+            msg += " Import a workbook in **Data → Data_Prod**, then wait for Site Manager approval."
         st.info(msg)
         st.stop()
     sb = st.sidebar

@@ -99,5 +99,5 @@ with c2:
         excel_download(df, f"{fname}.xlsx", key="dx_xlsx")
     else:
         st.caption(f"Excel download up to {EXCEL_MAX:,} rows; use CSV.")
-st.caption("Read-only. To correct data, fix the Eq.Event file and upload it again; the old version stays in "
+st.caption("Read-only. To correct data, export it from Data_Prod, fix it in Excel and import it again; the old version stays in "
            "Upload history.")

@@ -68,7 +68,7 @@ def brand_panel() -> None:
 <div class="wp-name">{NAME}</div>
 <div class="wp-full">{FULL_NAME}</div>
 <div class="wp-what">Equipment availability, reliability, production and fuel for every site,
-from the monthly Eq.Event file to the control-room TV.</div>
+from the monthly Data_Prod workbook to the control-room TV.</div>
 </div><div class="wp-co">{COMPANY}</div></div>""")
 
 

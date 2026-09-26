@@ -61,7 +61,7 @@ DASH = {
 }
 OTHER = {
     "preview_tv": P("pages/tv/preview.py", "TV preview", "tv"),
-    "upload": P("pages/data/upload.py", "Upload data", "upload_file"),
+    "upload": P("pages/data/upload.py", "Data_Prod", "upload_file"),
     "approval": P("pages/data/approval.py", "Approval", "fact_check"),
     "upload_history": P("pages/data/upload_history.py", "Upload history", "history"),
     "data_explorer": P("pages/data/explorer.py", "Data explorer", "table_view"),

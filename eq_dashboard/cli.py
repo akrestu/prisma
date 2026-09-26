@@ -1,7 +1,7 @@
 """Administration commands.
 
     python cli.py migrate                       # create / update tables (alembic upgrade head)
-    python cli.py ingest ../Eq.Event.xlsb       # upload an Eq.Event file (PENDING / auto-approve)
+    python cli.py ingest ../Data_Prod_2026-09.xlsb  # import a Data_Prod workbook (PENDING / auto-approve)
     python cli.py import-target ../Target.xlsx [--site WBK-MAS --site WBK-BAU]
     python cli.py approve <upload_site_id>      # publish one site of an upload
     python cli.py status                        # list uploads per site

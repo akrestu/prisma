@@ -7,7 +7,7 @@ psycopg==3.3.6
 psycopg-binary==3.3.6
 pytest==9.1.1
 python-dotenv==1.2.3
-pyxlsb==1.0.10
+python-calamine==0.8.2
 SQLAlchemy==2.1.1
 streamlit==1.64.0
 streamlit-authenticator==0.4.2

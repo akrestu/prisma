@@ -103,3 +103,21 @@ def delete_all_data(s: Session) -> dict[str, int]:
                   m.DimUnit, m.DQFinding, m.UploadSite, m.Upload):
         counts[model.__tablename__] = s.execute(delete(model)).rowcount or 0
     return counts
+
+
+EXPORT_TABLES = {"units": "Units (population)", "events": "Events", "ritase": "Ritase (trips per hour)",
+                 "coal": "Coal tickets", "fuel": "Fuel consumption", "receipt": "Fuel receipts"}
+
+
+def export_tables(s: Session, versions: list[tuple[int, str]]) -> dict[str, pd.DataFrame]:
+    """Stored tables of the given versions, keyed for core.dataprod.export_workbook."""
+    return {k: explorer_rows(s, t, versions, limit=2_000_000) for k, t in EXPORT_TABLES.items()}
+
+
+def latest_units(s: Session, sites: list[str]) -> pd.DataFrame:
+    """Unit population of the newest PUBLISHED version per site (pre-fills the template)."""
+    pub = published_versions(s, sites)
+    if pub.empty:
+        return pd.DataFrame()
+    newest = pub.sort_values("month").groupby("site").tail(1)
+    return explorer_rows(s, "Units (population)", [(int(r.upload_id), r.site) for r in newest.itertuples()])

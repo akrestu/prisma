@@ -138,6 +138,6 @@ with t2:
         st.dataframe(th, hide_index=True, width="stretch", height=420, column_config=cfg(th.columns[2:]))
         excel_download(th, f"hauler_productivity_{group}_{period}.xlsx", key="dl_hl")
 
-st.caption("Ready hours come from Eq.Event. A unit working on both OB and CG in the same "
+st.caption("Ready hours come from the Eq.Event sheet. A unit working on both OB and CG in the same "
            f"{'hour' if period == 'hourly' else 'day'} has its hours shared by its trip share. "
            "Distances are averages weighted by trips.")

@@ -1,4 +1,4 @@
-"""Satu pintu: bytes file Eq.Event → semua tabel bersih + temuan DQ (tanpa database)."""
+"""Single entry point: Data_Prod workbook bytes → all clean tables + data quality findings (no database)."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -24,7 +24,7 @@ class Parsed:
     sites: list[str] = field(default_factory=list)
 
 
-def parse_eq_event(data: bytes, alias: dict[str, str] | None = None,
+def parse_data_prod(data: bytes, alias: dict[str, str] | None = None,
                    tank_site: dict[str, str] | None = None) -> Parsed:
     frames = validate(read_workbook(data))
     units = clean.clean_units(frames["Populasi Unit"])
@@ -45,3 +45,6 @@ def parse_eq_event(data: bytes, alias: dict[str, str] | None = None,
     sites = sorted(set(events["site"]) | set(ritase["site"]) | set(coal["site"]) | set(fuel["site"])
                    | set(receipt["site"]))
     return Parsed(months[0], units, events, stoppages, ritase, coal, fuel, receipt, findings, sites)
+
+
+parse_eq_event = parse_data_prod  # old name, kept for scripts and tests

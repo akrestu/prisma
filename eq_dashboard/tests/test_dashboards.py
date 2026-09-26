@@ -111,3 +111,14 @@ def test_delete_all_data_admin_only_and_keeps_settings(world):
         assert world.scalar(select(func.count()).select_from(model)) == 0
     assert world.scalar(select(func.count()).select_from(m.Target)) == n_targets
     assert world.scalar(select(func.count()).select_from(m.User)) == 3
+
+
+def test_data_prod_page_tabs_by_role(world):
+    at = run_path("pages/data/upload.py", load_user(world, "adm"))
+    assert not at.exception, [e.value for e in at.exception]
+    assert [t.label for t in at.tabs] == ["Import", "Template", "Export"]
+    at = run_path("pages/data/upload.py", load_user(world, "sm"))   # Site Manager: template + export only
+    assert not at.exception
+    assert any("Only Admins and Data Officers can import" in i.value for i in at.info)
+    assert at.multiselect(key="exp_sites").options == ["WBK-BAU"]
+    assert any("do not have access" in e.value for e in run_path("pages/data/upload.py", load_user(world, "vw")).error)

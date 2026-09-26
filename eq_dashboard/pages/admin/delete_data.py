@@ -34,7 +34,7 @@ st.markdown(
     "coal tickets, fuel, units and data quality findings, for all sites.  \n"
     "**Kept:** users and roles, sites and mapping, targets and production plans, PM intervals, standby groups, "
     "TV devices and the audit log.")
-st.warning("This cannot be undone. Dashboards and TVs will show no data until a new Eq.Event file is uploaded "
+st.warning("This cannot be undone. Dashboards and TVs will show no data until a new Data_Prod workbook is uploaded "
            "and approved. Keep the original Excel files before deleting.")
 
 if n_up == 0:

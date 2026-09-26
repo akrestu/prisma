@@ -18,7 +18,7 @@ ROLE_LABEL = {ADMIN: "Admin", SITE_MANAGER: "Site Manager", DATA_OFFICER: "Data 
 # halaman → role yang boleh membuka
 PAGE_ROLES: dict[str, set[str]] = {
     "home": {ADMIN, SITE_MANAGER, DATA_OFFICER, VIEWER},
-    "upload": {ADMIN, DATA_OFFICER},
+    "upload": {ADMIN, DATA_OFFICER, SITE_MANAGER},  # import: Admin/Data Officer; template & export: + SM
     "approval": {ADMIN, SITE_MANAGER},
     "upload_history": {ADMIN, SITE_MANAGER, DATA_OFFICER},
     "data_explorer": {ADMIN, SITE_MANAGER, DATA_OFFICER, VIEWER},
