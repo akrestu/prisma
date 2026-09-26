@@ -122,3 +122,20 @@ def test_data_prod_page_tabs_by_role(world):
     assert any("Only Admins and Data Officers can import" in i.value for i in at.info)
     assert at.multiselect(key="exp_sites").options == ["WBK-BAU"]
     assert any("do not have access" in e.value for e in run_path("pages/data/upload.py", load_user(world, "vw")).error)
+
+
+def test_page_summary_escapes_html(monkeypatch):
+    from core import dash
+    shown = []
+    monkeypatch.setattr(dash.st, "markdown", lambda body, **k: shown.append(body))
+    dash.summary("<img src=x onerror=alert(1)> causes 32% of down hours")
+    assert "<img" not in shown[0] and "&lt;img" in shown[0]
+
+
+def test_tv_version_key_changes_when_a_target_value_is_edited(world):
+    from pages.tv.screen import version_key
+    before = version_key("WBK-MAS")
+    t = world.query(m.Target).filter(m.Target.site == "WBK-MAS").first()
+    t.uoa = 0.61
+    world.commit()
+    assert version_key("WBK-MAS") != before

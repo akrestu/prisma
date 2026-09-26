@@ -14,8 +14,8 @@ iv = dash.pm_intervals()
 pm = metrics.pm_accuracy(c.ev, iv)
 t = dash.targets(c.sites, c.month, dash.weighted_target_hours(c.ev))
 comp = c.ev[c.ev["category"] == "D"].groupby("reason_text")["hours"].sum().sort_values(ascending=False)
-dash.summary(dash.gap_text("MTBS", rel["MTBS"], t["mtbs"], "h"),
-             dash.gap_text("MTTR", rel["MTTR"], t["mttr"], "h", higher_better=False),
+dash.summary(dash.gap_text("MTBS", rel["MTBS"], t["mtbs"], "hrs"),
+             dash.gap_text("MTTR", rel["MTTR"], t["mttr"], "hrs", higher_better=False),
              f"{str(comp.index[0]).capitalize()} is the largest down cause ({comp.iloc[0] / comp.sum():.0%})" if len(comp) else "")
 r = st.columns(6)
 dash.kpi(r[0], "MTBS (hrs)", rel["MTBS"], t["mtbs"], "h", help="Working hours / number of stoppages (SM + USM)")

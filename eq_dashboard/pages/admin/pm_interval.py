@@ -1,7 +1,7 @@
 """PM interval per model (for PM accuracy) and client/internal grouping of standby reasons."""
 import pandas as pd
 import streamlit as st
-from sqlalchemy import delete, distinct, select
+from sqlalchemy import delete, select
 
 from core.config import DEFAULT_CLIENT_STANDBY
 from core.ingest import audit
@@ -19,7 +19,7 @@ with tab_pm:
                "Models without an interval are not assessed.")
     with session_scope() as s:
         cur = repo.frame(s, select(m.PMInterval.model, m.PMInterval.interval_hm, m.PMInterval.tolerance_pct))
-        models = sorted(x for x in s.scalars(select(distinct(m.FactEvent.model))) if x)
+        models = sorted(x for x in s.scalars(select(m.FactEvent.model).distinct()) if x)
     grid = pd.DataFrame({"model": models}).merge(cur, on="model", how="outer").sort_values("model")
     ed = st.data_editor(grid, hide_index=True, width="stretch", num_rows="dynamic", key="pm_grid",
                         column_config={"model": st.column_config.TextColumn("Model", required=True),

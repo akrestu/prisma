@@ -1,6 +1,7 @@
 """Login Streamlit: streamlit-authenticator (bcrypt + cookie JWT) dengan tabel users sebagai sumber kebenaran."""
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import os
 
@@ -20,9 +21,11 @@ LOGIN_FIELDS = {"Form name": "Sign in to WANPIS", "Username": "Username", "Passw
 
 
 def _cookie_key() -> str:
-    key = os.environ.get("AUTH_COOKIE_KEY")
-    if not key:
-        st.error("AUTH_COOKIE_KEY is not set in the environment.")
+    key = os.environ.get("AUTH_COOKIE_KEY", "")
+    # it signs the login cookie: a short or example key would let anyone forge a session
+    if len(key) < 32 or key.startswith("CHANGE_ME"):
+        st.error("AUTH_COOKIE_KEY must be a random secret of at least 32 characters "
+                 "(python -c \"import secrets; print(secrets.token_urlsafe(48))\").")
         st.stop()
     return key
 
@@ -102,8 +105,6 @@ def _finish_login(username: str, auth: stauth.Authenticate) -> CurrentUser | Non
 
 
 def _force_logout(auth: stauth.Authenticate) -> None:
-    try:
+    with contextlib.suppress(LogoutError):
         auth.logout(location="unrendered")
-    except LogoutError:
-        pass
     st.session_state.pop("_active", None)

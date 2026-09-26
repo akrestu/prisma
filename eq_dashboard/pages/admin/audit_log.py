@@ -15,7 +15,7 @@ user = require("audit_log")
 st.title("Audit log")
 a, b, c = st.columns(3)
 days = a.selectbox("Period", [1, 7, 30, 90, 365], index=2, format_func=lambda d: f"last {d} days")
-since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+since = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
 q = select(m.AuditLog.ts, m.AuditLog.username, m.AuditLog.action, m.AuditLog.site, m.AuditLog.detail) \
     .where(m.AuditLog.ts >= since).order_by(m.AuditLog.ts.desc()).limit(5000)
 if not user.is_admin:  # Site Manager: own sites only

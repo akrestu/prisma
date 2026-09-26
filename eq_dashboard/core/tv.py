@@ -13,14 +13,13 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core import metrics
 from core.config import DOWN, UNMAPPED
 from core.ingest import PUBLISHED
-from core.periods import (PERIODS, bucket, bucket_order, fleet_summary, pretty, productivity, split_hourly,
-                          with_week)
+from core.periods import PERIODS, bucket, bucket_order, fleet_summary, pretty, productivity, split_hourly, with_week
 from core.targets import METRICS
 from core.validate import HOUR_SLOTS
 from db import models as m

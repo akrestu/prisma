@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
-import re
 from functools import lru_cache
 from html import escape
 from pathlib import Path
@@ -19,10 +18,10 @@ import pandas as pd
 
 from core import brand
 from core import theme as T
+from core.config import WIB
 from core.periods import PERIOD_LABEL
 from core.tv import Kpi, TvData
 
-WIB = dt.timezone(dt.timedelta(hours=7))
 FONT = "'IBM Plex Sans', 'Segoe UI', Roboto, Arial, sans-serif"
 FONT_DIR = Path(__file__).resolve().parent.parent / "static" / "fonts"
 SHORT_TYPE = {"Supporting Equipment": "Support equip."}
@@ -72,7 +71,7 @@ def _delta(value, target, unit, higher_better=True) -> str:
     if value is None or pd.isna(value):
         return ""
     if target is None:
-        return f'<span class="dim">no target</span>'
+        return '<span class="dim">no target</span>'
     diff = value - target
     arrow = "▲" if diff >= 0 else "▼"
     if unit == "%":
@@ -160,16 +159,16 @@ def _trend_svg(d: TvData) -> str:
         out.append(f'<line x1="{x0}" x2="{x1}" y1="{yt:.1f}" y2="{yt:.1f}" stroke="{T.ACCENT}" stroke-width="2" stroke-dasharray="2 7"/>')
         out.append(_t(x0 + 6, yt - 9, f"UoA target {d.uoa_target * 100:.0f}%", 16, "start", T.ACCENT))
     for col, color in (("PA", T.PA_COLOR), ("UoA", T.READY)):
-        pts = [(X(i), Y(v)) for i, (v, ok) in enumerate(zip(df[col], df["complete"])) if ok and pd.notna(v)]
+        pts = [(X(i), Y(v)) for i, (v, ok) in enumerate(zip(df[col], df["complete"], strict=True)) if ok and pd.notna(v)]
         if len(pts) > 1:
             out.append(f'<polyline points="{" ".join(f"{a:.1f},{b:.1f}" for a, b in pts)}" fill="none" '
                        f'stroke="{color}" stroke-width="3.5" stroke-linejoin="round"/>')
-        for i, (v, ok) in enumerate(zip(df[col], df["complete"])):
+        for i, (v, ok) in enumerate(zip(df[col], df["complete"], strict=True)):
             if pd.notna(v) and (not ok or k <= 12):
                 fill = color if ok else T.BG
                 out.append(f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="5" fill="{fill}" stroke="{color}" stroke-width="2.5"/>')
         if pts:
-            v = [v for v, ok in zip(df[col], df["complete"]) if ok and pd.notna(v)][-1]
+            v = [v for v, ok in zip(df[col], df["complete"], strict=True) if ok and pd.notna(v)][-1]
             a, b = pts[-1]
             out.append(f'<circle cx="{a:.1f}" cy="{b:.1f}" r="6" fill="{color}"/>')
             out.append(_t(x1 + 14, b + 6, f"{col} {v * 100:.0f}%", 18, "start", color, 600))
@@ -358,7 +357,7 @@ html,body{{overflow:hidden!important;cursor:none}}
 
 
 def render(d: TvData, kiosk: bool = False, now: dt.datetime | None = None) -> str:
-    now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(WIB)
+    now = (now or dt.datetime.now(dt.UTC)).astimezone(WIB)
     mode = "kiosk" if kiosk else "preview"
     css = f"<style>{CSS}{KIOSK_CSS if kiosk else ''}</style>"
     period = PERIOD_LABEL.get(d.period, d.period)

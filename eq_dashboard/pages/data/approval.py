@@ -2,8 +2,8 @@
 import streamlit as st
 
 from auth.access import can_review
-from core import ingest as ing
 from core import dash, metrics
+from core import ingest as ing
 from core.ui import fmt_num, fmt_pct, require, sites_for
 from db import models as m
 from db import repo
@@ -58,8 +58,12 @@ for _, row in queue.iterrows():
         comment = st.text_input("Comment (required when rejecting)", key=f"c_{key}")
         a, b, _ = st.columns([1, 1, 4])
         if a.button("Approve", key=f"a_{key}", type="primary"):
-            with session_scope() as s:
-                ing.publish(s, s.get(m.UploadSite, int(row["id"])), user.id, user.username, comment=comment)
+            try:
+                with session_scope() as s:
+                    ing.publish(s, s.get(m.UploadSite, int(row["id"])), user.id, user.username, comment=comment)
+            except ValueError as e:
+                st.error(str(e))
+                st.stop()
             st.cache_data.clear()
             st.toast(f"{row['site']} {row['month']:%Y-%m} PUBLISHED")
             st.rerun()
@@ -67,7 +71,11 @@ for _, row in queue.iterrows():
             if not comment.strip():
                 st.error("Enter a reason for rejecting.")
             else:
-                with session_scope() as s:
-                    ing.reject(s, s.get(m.UploadSite, int(row["id"])), user.id, user.username, comment)
+                try:
+                    with session_scope() as s:
+                        ing.reject(s, s.get(m.UploadSite, int(row["id"])), user.id, user.username, comment)
+                except ValueError as e:
+                    st.error(str(e))
+                    st.stop()
                 st.toast(f"{row['site']} rejected")
                 st.rerun()

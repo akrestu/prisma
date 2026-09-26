@@ -21,7 +21,7 @@ def _ingest(s, data, monkeypatch=None, digest=None):
 
 def test_ingest_split_and_totals(db_session, sample_bytes):
     s = db_session
-    up, sites = _ingest(s, sample_bytes)
+    _, sites = _ingest(s, sample_bytes)
     assert set(sites) == {"UNMAPPED", "WBK-BAU", "WBK-MAS"}
     assert all(us.status == ing.PENDING for us in sites.values())
     ob = s.scalar(select(func.sum(m.FactRitase.volume)).where(m.FactRitase.material_group == "OB"))
@@ -47,14 +47,18 @@ def test_auto_approve_respects_critical_dq(db_session, sample_bytes):
 def test_publish_supersede_reject_rollback(db_session, sample_bytes, monkeypatch):
     s = db_session
     _, v1 = _ingest(s, sample_bytes)
-    ing.publish(s, v1["WBK-MAS"], None, "sm"); s.commit()
+    ing.publish(s, v1["WBK-MAS"], None, "sm")
+    s.commit()
     _, v2 = _ingest(s, sample_bytes, monkeypatch, digest="x" * 64)
-    ing.publish(s, v2["WBK-MAS"], None, "sm"); s.commit()
+    ing.publish(s, v2["WBK-MAS"], None, "sm")
+    s.commit()
     s.refresh(v1["WBK-MAS"])
     assert v1["WBK-MAS"].status == ing.SUPERSEDED and v2["WBK-MAS"].status == ing.PUBLISHED
-    ing.reject(s, v2["WBK-BAU"], None, "sm", "cek ulang"); s.commit()
+    ing.reject(s, v2["WBK-BAU"], None, "sm", "cek ulang")
+    s.commit()
     assert v2["WBK-BAU"].status == ing.REJECTED
-    ing.rollback(s, v1["WBK-MAS"], None, "admin"); s.commit()
+    ing.rollback(s, v1["WBK-MAS"], None, "admin")
+    s.commit()
     s.refresh(v2["WBK-MAS"])
     assert v1["WBK-MAS"].status == ing.PUBLISHED and v2["WBK-MAS"].status == ing.SUPERSEDED
     published = s.scalar(select(func.count()).select_from(m.UploadSite)
@@ -76,3 +80,24 @@ def test_import_targets(db_session):
     # re-importing for one site overwrites instead of duplicating
     import_targets(s, TARGET.read_bytes(), ["WBK-MAS"])
     assert s.scalar(select(func.count()).select_from(m.Target)) == 188
+
+
+def test_publish_refuses_stale_status_and_db_keeps_one_published(db_session, sample_bytes, monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+    s = db_session
+    _, v = _ingest(s, sample_bytes)
+    ing.reject(s, v["WBK-BAU"], None, "sm", "wrong file")
+    s.commit()
+    with pytest.raises(ValueError, match="already REJECTED"):   # approve clicked after someone rejected
+        ing.publish(s, v["WBK-BAU"], None, "sm2")
+    s.rollback()
+    ing.publish(s, v["WBK-MAS"], None, "sm")
+    s.commit()
+    with pytest.raises(ValueError, match="already PUBLISHED"):  # double click
+        ing.publish(s, v["WBK-MAS"], None, "sm")
+    s.rollback()
+    _, v2 = _ingest(s, sample_bytes, monkeypatch, digest="y" * 64)
+    v2["WBK-MAS"].status = ing.PUBLISHED                        # bypassing publish(): the index still refuses
+    with pytest.raises(IntegrityError):
+        s.flush()
+    s.rollback()

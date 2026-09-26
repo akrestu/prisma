@@ -18,7 +18,7 @@ cnt = dq["severity"].value_counts()
 dash.summary(f"{int(cnt.get('critical', 0))} critical findings block auto-approval",
              f"{int(cnt.get('warn', 0))} findings to check and {int(cnt.get('info', 0))} handled automatically")
 r = st.columns(3)
-for col, key in zip(r, SEV):
+for col, key in zip(r, SEV, strict=True):
     col.metric(SEV[key].capitalize(), int(cnt.get(key, 0)))
 
 g = dq.groupby(["rule", "severity"]).size().reset_index(name="findings")

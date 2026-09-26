@@ -24,29 +24,28 @@ if msg:
         st.code(msg[1], language=None)
         st.caption("The temporary password is shown only once. The user must change it at first sign-in.")
 
-with st.expander("Add user", expanded=False):
-    with st.form("add_user", clear_on_submit=True):
-        a, b = st.columns(2)
-        username = a.text_input("Username").strip().lower()
-        name = b.text_input("Full name").strip()
-        role = a.selectbox("Role", ROLES, format_func=ROLE_LABEL.get)
-        email = b.text_input("Email (optional)").strip()
-        sites = st.multiselect("Sites", all_sites)
-        allsite = st.checkbox("Access to all sites (e.g. management)")
-        if st.form_submit_button("Create user", type="primary"):
-            if not username or not name:
-                st.error("Enter a username and a name.")
-            else:
-                temp = secrets.token_urlsafe(9) + "7a"
-                try:
-                    with session_scope() as s:
-                        security.create_user(s, username, name, role, temp, sites=sites,
-                                             all_sites=allsite or role == "admin", email=email)
-                        audit(s, user.username, "create_user", None, f"{username} ({role})")
-                    st.session_state["users_msg"] = (f"User {username} created.", temp)
-                    st.rerun()
-                except ValueError as e:
-                    st.error(str(e))
+with st.expander("Add user", expanded=False), st.form("add_user", clear_on_submit=True):
+    a, b = st.columns(2)
+    username = a.text_input("Username").strip().lower()
+    name = b.text_input("Full name").strip()
+    role = a.selectbox("Role", ROLES, format_func=ROLE_LABEL.get)
+    email = b.text_input("Email (optional)").strip()
+    sites = st.multiselect("Sites", all_sites)
+    allsite = st.checkbox("Access to all sites (e.g. management)")
+    if st.form_submit_button("Create user", type="primary"):
+        if not username or not name:
+            st.error("Enter a username and a name.")
+        else:
+            temp = secrets.token_urlsafe(9) + "7a"
+            try:
+                with session_scope() as s:
+                    security.create_user(s, username, name, role, temp, sites=sites,
+                                         all_sites=allsite or role == "admin", email=email)
+                    audit(s, user.username, "create_user", None, f"{username} ({role})")
+                st.session_state["users_msg"] = (f"User {username} created.", temp)
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
 
 with session_scope() as s:
     users = list(s.scalars(select(m.User).order_by(m.User.role, m.User.username)))

@@ -5,7 +5,7 @@ import streamlit as st
 from sqlalchemy import select
 
 from auth import display
-from core.config import UNMAPPED
+from core.config import UNMAPPED, WIB
 from core.ingest import audit
 from core.periods import PERIOD_LABEL, PERIODS
 from core.ui import require, sites_for
@@ -55,12 +55,12 @@ if not rows:
     st.info("No TV devices yet.")
     st.stop()
 
-now = dt.datetime.now(dt.timezone.utc)
+now = dt.datetime.now(dt.UTC)
 st.subheader("TVs")
 for did, name, site, period, active, seen in rows:
     online = active and seen is not None and now - seen < dt.timedelta(minutes=10)
     state = ":yellow-badge[online]" if online else (":gray-badge[offline]" if active else ":orange-badge[revoked]")
-    seen_txt = seen.astimezone(dt.timezone(dt.timedelta(hours=7))).strftime("%d %b %H:%M") if seen else "never"
+    seen_txt = seen.astimezone(WIB).strftime("%d %b %H:%M") if seen else "never"
     with st.container(border=True):
         a, p, b, c, d = st.columns([3.2, 1.6, 1.6, 1, 1])
         a.markdown(f"**{name}** · {site} {state}  \nlast seen: {seen_txt} WIB")

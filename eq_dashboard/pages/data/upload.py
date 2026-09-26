@@ -6,6 +6,7 @@ from sqlalchemy import select
 from auth.access import ADMIN, DATA_OFFICER
 from core import dataprod, metrics
 from core import ingest as ing
+from core.config import today_wib
 from core.io import sha256
 from core.parse import parse_data_prod
 from core.ui import STATUS_BADGE, fmt_num, fmt_pct, require, sites_for
@@ -34,7 +35,7 @@ with t_imp:
                              key="upload_file", max_upload_size=MAX_MB)
         if f is None:
             st.session_state.pop("upload_preview", None)
-            st.caption(f"Name files {dataprod.file_name(pd.Timestamp.today().date().replace(day=1), ext='xlsb')}. "
+            st.caption(f"Name files {dataprod.file_name(today_wib().replace(day=1), ext='xlsb')}. "
                        "Nothing is saved until you press Submit.")
         else:
             data = f.getvalue()

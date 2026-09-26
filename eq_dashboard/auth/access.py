@@ -70,7 +70,7 @@ def allowed_sites(s: Session, user: CurrentUser) -> list[str]:
     """Site yang boleh dilihat user. Admin juga melihat UNMAPPED."""
     active = list(s.scalars(select(m.Site.code).where(m.Site.active).order_by(m.Site.code)))
     if user.is_admin:
-        return active + [UNMAPPED]
+        return [*active, UNMAPPED]
     if user.all_sites:
         return active
     return [c for c in active if c in user.sites]

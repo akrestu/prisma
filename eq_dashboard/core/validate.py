@@ -124,7 +124,7 @@ def template_meta(raw: dict[str, pd.DataFrame]) -> dict[str, str]:
     m = raw.get(META_SHEET)
     if m is None or m.shape[1] < 2:
         return {}
-    return {str(k).strip(): str(v).strip() for k, v in zip(m.iloc[:, 0], m.iloc[:, 1]) if pd.notna(k)}
+    return {str(k).strip(): str(v).strip() for k, v in zip(m.iloc[:, 0], m.iloc[:, 1], strict=True) if pd.notna(k)}
 
 
 def validate(raw: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:

@@ -17,6 +17,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
+from core.config import now_wib
 from core.validate import DATASET, HOUR_SLOTS, META_SHEET, SHEETS, TEMPLATE_VERSION, Sheet
 
 NAME_RE = re.compile(r"data[_ -]?prod[_ -]?(\d{4})[-_]?(\d{2})", re.I)
@@ -143,14 +144,14 @@ def _readme(wb: Workbook, title: str, lines: list[str]) -> None:
             desc = "Trips per production hour" if c.name == HOUR_SLOTS[0] else c.desc
             for j, v in enumerate([sh.name, name, c.kind, desc, "" if c.example is None else str(c.example)], 1):
                 ws.cell(r, j, v)
-    for letter, w in zip("ABCDE", (18, 26, 10, 80, 22)):
+    for letter, w in zip("ABCDE", (18, 26, 10, 80, 22), strict=True):
         ws.column_dimensions[letter].width = w
 
 
 def _meta(wb: Workbook, kind: str, extra: dict[str, str]) -> None:
     ws = wb.create_sheet(META_SHEET)
     rows = {"dataset": DATASET, "template_version": str(TEMPLATE_VERSION), "kind": kind,
-            "generated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"), "app": "WANPIS", **extra}
+            "generated_at": now_wib().strftime("%Y-%m-%d %H:%M WIB"), "app": "WANPIS", **extra}
     for k, v in rows.items():
         ws.append([k, v])
     ws.sheet_state = "hidden"
@@ -220,7 +221,7 @@ def _v(x):
 def _time(frac) -> dt.time | None:
     if frac is None or pd.isna(frac):
         return None
-    secs = int(round(float(frac) % 1.0 * 86400)) % 86400
+    secs = round(float(frac) % 1.0 * 86400) % 86400
     return dt.time(secs // 3600, secs % 3600 // 60, secs % 60)
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import calendar
 import datetime as dt
+import html
 from dataclasses import dataclass
 
 import numpy as np
@@ -298,6 +299,7 @@ def summary(*parts: str) -> None:
     """One plain sentence under the page title that says what matters most."""
     text = ". ".join(p.rstrip(".")[:1].upper() + p.rstrip(".")[1:] for p in parts if p)
     if text:
+        text = html.escape(text)  # parts contain names read from uploaded workbooks (reasons, units, sites)
         st.markdown(f'<div style="border-left:3px solid {T.ACCENT};padding:2px 0 2px 12px;margin:-4px 0 14px;'
                     f'font-size:1.02rem;color:{T.TEXT}">{text}.</div>', unsafe_allow_html=True)
 
@@ -310,7 +312,6 @@ def gap_text(name: str, value, target, unit: str = "%", higher_better: bool = Tr
     if target is None:
         return f"{name} {val} (no target set)"
     diff = value - target
-    better = diff >= 0 if higher_better else diff <= 0
     size = f"{abs(diff) * 100:.1f}%" if unit == "%" else f"{abs(diff):,.1f} {unit}"
     side = ("above" if diff >= 0 else "below")
     return f"{name} {val}, {size} {side} target"

@@ -4,8 +4,20 @@ from __future__ import annotations
 import datetime as dt
 
 from sqlalchemy import (
-    JSON, BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text,
-    UniqueConstraint, func,
+    JSON,
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -73,7 +85,12 @@ class Upload(Base):
 
 class UploadSite(Base):
     __tablename__ = "upload_sites"
-    __table_args__ = (UniqueConstraint("upload_id", "site_code"),)
+    __table_args__ = (
+        UniqueConstraint("upload_id", "site_code"),
+        # the database itself guarantees one PUBLISHED version per site × month (two approvals racing)
+        Index("uq_upload_sites_published", "site_code", "month", unique=True,
+              postgresql_where=text("status = 'PUBLISHED'")),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     upload_id: Mapped[int] = mapped_column(ForeignKey("uploads.id", ondelete="CASCADE"), index=True)
     site_code: Mapped[str] = mapped_column(String(40), index=True)

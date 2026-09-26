@@ -1,9 +1,11 @@
 """Draw the TV screen for one site. Used by kiosk mode (Display link) and TV Preview."""
 from __future__ import annotations
 
+import hashlib
+
 import pandas as pd
 import streamlit as st
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from core import tv
 from core.tv_render import render
@@ -21,16 +23,21 @@ def _payload(site: str, period: str, version_key: tuple) -> tv.TvData:
 
 
 def version_key(site: str) -> tuple:
-    """Changes on every publish/rollback and on target, plan or PM-interval changes."""
+    """Changes on every publish/rollback and on any edit of targets, plans or PM intervals (values, not counts)."""
     with session_scope() as s:
         pub = tuple((int(uid), str(ts)) for uid, ts in s.execute(
             select(m.UploadSite.upload_id, m.UploadSite.reviewed_at)
             .where(m.UploadSite.site_code == site, m.UploadSite.status == "PUBLISHED")
             .order_by(m.UploadSite.upload_id)))
-        cfg = tuple(int(x or 0) for x in (s.scalar(select(func.count()).select_from(m.Target).where(m.Target.site == site)),
-               s.scalar(select(func.sum(m.Target.id)).where(m.Target.site == site)),
-               s.scalar(select(func.count()).select_from(m.PlanProduction).where(m.PlanProduction.site == site)),
-               s.scalar(select(func.count()).select_from(m.PMInterval))))
+        T, P, PMI = m.Target, m.PlanProduction, m.PMInterval
+        rows = (
+            s.execute(select(T.year, T.month, T.pa, T.uoa, T.mtbs, T.mttr, T.sched_down, T.pm_accuracy)
+                      .where(T.site == site).order_by(T.year, T.month)).all(),
+            s.execute(select(P.year, P.month, P.date, P.ob_bcm, P.coal_ton)
+                      .where(P.site == site).order_by(P.year, P.month, P.date)).all(),
+            s.execute(select(PMI.model, PMI.interval_hm, PMI.tolerance_pct).order_by(PMI.model)).all(),
+        )
+    cfg = hashlib.sha1(repr(rows).encode(), usedforsecurity=False).hexdigest()
     return pub, cfg
 
 

@@ -1,0 +1,23 @@
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+extend-exclude = ["db/migrations"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, pyupgrade, bugbear, simplify, isort, security (bandit), pandas-vet,
+# datetime-tz, return, performance, ruff-specific
+select = ["E", "F", "W", "UP", "B", "SIM", "I", "S", "PD", "DTZ", "RET", "PERF", "RUF", "C4", "PIE"]
+ignore = [
+    "E501",    # long UI strings; kept readable rather than split
+    "C408",    # dict(...) reads better for Plotly layout kwargs
+    "RUF001", "RUF002", "RUF003",  # typographic dashes / × / … in UI text are intentional
+    "S101",
+    "PD010",   # .unstack() is clearer than pivot_table for these reshapes    # assert is used in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "PD", "DTZ"]
+"core/tv_render.py" = ["UP031"]  # %-style CSS template: its many braces make str.format unreadable
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

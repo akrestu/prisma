@@ -16,7 +16,7 @@ IDLE_MINUTES = 60
 
 
 def now() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+    return dt.datetime.now(dt.UTC)
 
 
 def hash_password(pw: str) -> str:

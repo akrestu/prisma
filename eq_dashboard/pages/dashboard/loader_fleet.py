@@ -6,8 +6,18 @@ import streamlit as st
 from auth.access import scope_filter
 from core import dash
 from core import theme as T
-from core.periods import (PERIOD_LABEL, PERIODS, UNIT, bucket, bucket_order, fleet_summary, pretty,
-                          productivity, split_hourly, with_week)
+from core.periods import (
+    PERIOD_LABEL,
+    PERIODS,
+    UNIT,
+    bucket,
+    bucket_order,
+    fleet_summary,
+    pretty,
+    productivity,
+    split_hourly,
+    with_week,
+)
 from core.ui import excel_download, fmt_num
 
 c = dash.context("loader_fleet", unit_filter=False)

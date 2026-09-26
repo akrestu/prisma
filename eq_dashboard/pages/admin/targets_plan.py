@@ -6,7 +6,7 @@ import streamlit as st
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from core.config import UNMAPPED
+from core.config import UNMAPPED, today_wib
 from core.ingest import audit
 from core.targets import METRICS, import_targets
 from core.ui import require, sites_for
@@ -39,7 +39,7 @@ with tab_t:
 
     a, b = st.columns(2)
     site = a.selectbox("Site", sites, key="tgt_site")
-    year = b.number_input("Year", 2018, 2100, dt.date.today().year, key="tgt_year")
+    year = b.number_input("Year", 2018, 2100, today_wib().year, key="tgt_year")
     with session_scope() as s:
         cur = repo.frame(s, select(m.Target.month, *[getattr(m.Target, c) for c in METRICS])
                          .where(m.Target.site == site, m.Target.year == year))
@@ -71,8 +71,8 @@ with tab_t:
 with tab_p:
     a, b, c = st.columns(3)
     site_p = a.selectbox("Site", sites, key="plan_site")
-    year_p = b.number_input("Year", 2018, 2100, dt.date.today().year, key="plan_year")
-    month_p = c.selectbox("Month", range(1, 13), index=dt.date.today().month - 1, key="plan_month",
+    year_p = b.number_input("Year", 2018, 2100, today_wib().year, key="plan_year")
+    month_p = c.selectbox("Month", range(1, 13), index=today_wib().month - 1, key="plan_month",
                           format_func=lambda x: dt.date(2000, x, 1).strftime("%B"))
     with session_scope() as s:
         rows = repo.frame(s, select(m.PlanProduction.date, m.PlanProduction.ob_bcm, m.PlanProduction.coal_ton)

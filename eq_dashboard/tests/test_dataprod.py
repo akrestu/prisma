@@ -39,7 +39,7 @@ def test_template_has_every_sheet_and_column_and_meta():
     raw = read_workbook(dataprod.build_template(["WBK-BAU", "WBK-MAS"]))
     frames = validate(raw)                       # passes the same check as an upload
     for sh in SHEETS:
-        assert [c.name for c in sh.cols] == [c for c in frames[sh.name].columns][:len(sh.cols)]
+        assert [c.name for c in sh.cols] == list(frames[sh.name].columns)[:len(sh.cols)]
     meta = template_meta(raw)
     assert meta["dataset"] == "Data_Prod" and meta["template_version"] == str(TEMPLATE_VERSION)
     with pytest.raises(StructureError, match="no data rows"):

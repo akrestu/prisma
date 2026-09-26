@@ -54,7 +54,7 @@ def clean_units(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _lookup(ids: pd.Series, units: pd.DataFrame, col: str, default=None) -> pd.Series:
-    m = dict(zip(units["unit_id"], units[col]))
+    m = dict(zip(units["unit_id"], units[col], strict=True))
     out = ids.map(m)
     return out.fillna(default) if default is not None else out
 

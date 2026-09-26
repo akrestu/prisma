@@ -28,7 +28,7 @@ def split_hourly(ev: pd.DataFrame) -> pd.DataFrame:
     last = np.maximum(np.ceil(end).astype(int) - 1, first)
     n = last - first + 1
     idx = np.repeat(np.arange(len(e)), n)
-    slot = np.concatenate([np.arange(a, b + 1) for a, b in zip(first, last)])
+    slot = np.concatenate([np.arange(a, b + 1) for a, b in zip(first, last, strict=True)])
     s0, s1 = start[idx], end[idx]
     hrs = np.clip(np.minimum(s1, slot + 1) - np.maximum(s0, slot), 0, None)
     out = e.iloc[idx].copy()

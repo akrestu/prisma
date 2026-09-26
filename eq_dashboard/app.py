@@ -1,7 +1,7 @@
 """App entrypoint: login → role-based navigation. `?display=<token>` opens the TV screen (kiosk)."""
 import streamlit as st
 
-from core import brand  # noqa: E402  (no Streamlit calls at import)
+from core import brand
 
 st.set_page_config(page_title=brand.NAME, page_icon=brand.FAVICON, layout="wide")
 

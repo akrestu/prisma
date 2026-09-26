@@ -8,8 +8,18 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from auth import security
-from auth.access import (ADMIN, DATA_OFFICER, SITE_MANAGER, VIEWER, CurrentUser, allowed_sites, can_open,
-                         can_review, load_user, scope_filter)
+from auth.access import (
+    ADMIN,
+    DATA_OFFICER,
+    SITE_MANAGER,
+    VIEWER,
+    CurrentUser,
+    allowed_sites,
+    can_open,
+    can_review,
+    load_user,
+    scope_filter,
+)
 from core.config import UNMAPPED
 from db import models as m
 

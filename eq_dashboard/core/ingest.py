@@ -109,23 +109,31 @@ def ingest(s: Session, data: bytes, filename: str, user_id: int | None = None,
 
 
 def publish(s: Session, us: m.UploadSite, reviewer_id: int | None, username: str | None,
-            auto: bool = False, comment: str = "") -> None:
-    """Jadikan versi ini PUBLISHED; versi PUBLISHED sebelumnya (site + bulan sama) → SUPERSEDED."""
+            auto: bool = False, comment: str = "", allow_superseded: bool = False) -> None:
+    """Make this version PUBLISHED; the previous PUBLISHED version of the same site + month → SUPERSEDED.
+
+    The row is locked and its status re-checked first, so a double click or two reviewers at once cannot publish
+    something that was rejected meanwhile (the partial unique index is the last line of defence)."""
+    s.refresh(us, with_for_update=True)
+    allowed = (PENDING, SUPERSEDED) if allow_superseded else (PENDING,)
+    if us.status not in allowed:
+        raise ValueError(f"{us.site_code} {us.month:%Y-%m} is already {us.status}; refresh the page.")
     s.execute(update(m.UploadSite)
               .where(m.UploadSite.site_code == us.site_code, m.UploadSite.month == us.month,
                      m.UploadSite.status == PUBLISHED, m.UploadSite.id != us.id)
               .values(status=SUPERSEDED))
     us.status, us.auto_approved = PUBLISHED, auto
-    us.reviewer_id, us.reviewed_at, us.comment = reviewer_id, dt.datetime.now(dt.timezone.utc), comment
+    us.reviewer_id, us.reviewed_at, us.comment = reviewer_id, dt.datetime.now(dt.UTC), comment
     audit(s, username, "auto_approve" if auto else "approve", us.site_code,
           f"upload #{us.upload_id} {us.month:%Y-%m}")
 
 
 def reject(s: Session, us: m.UploadSite, reviewer_id: int | None, username: str | None, comment: str) -> None:
+    s.refresh(us, with_for_update=True)
     if us.status != PENDING:
         raise ValueError(f"Only PENDING data can be rejected (current status {us.status}).")
     us.status, us.reviewer_id, us.comment = REJECTED, reviewer_id, comment
-    us.reviewed_at = dt.datetime.now(dt.timezone.utc)
+    us.reviewed_at = dt.datetime.now(dt.UTC)
     audit(s, username, "reject", us.site_code, f"upload #{us.upload_id}: {comment}")
 
 
@@ -133,5 +141,5 @@ def rollback(s: Session, us: m.UploadSite, admin_id: int | None, username: str |
     """Kembalikan versi SUPERSEDED menjadi PUBLISHED (versi aktif sekarang → SUPERSEDED)."""
     if us.status != SUPERSEDED:
         raise ValueError("Rollback is only possible to a previously published (SUPERSEDED) version.")
-    publish(s, us, admin_id, username, comment="rollback")
+    publish(s, us, admin_id, username, comment="rollback", allow_superseded=True)
     audit(s, username, "rollback", us.site_code, f"to upload #{us.upload_id}")

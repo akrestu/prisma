@@ -56,9 +56,8 @@ if not versions:
     st.info("Choose at least one site and month.")
     st.stop()
 
-with st.spinner(f"Loading {table.lower()}…"):
-    with session_scope() as s:
-        df = repo.explorer_rows(s, table, versions)
+with st.spinner(f"Loading {table.lower()}…"), session_scope() as s:
+    df = repo.explorer_rows(s, table, versions)
 
 date_col = repo.EXPLORER_TABLES[table][1]
 f1, f2, f3 = st.columns([1.3, 1, 1.7])
