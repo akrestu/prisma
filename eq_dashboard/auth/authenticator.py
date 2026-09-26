@@ -11,11 +11,12 @@ from streamlit_authenticator.utilities.exceptions import LoginError, LogoutError
 
 from auth import security
 from auth.access import CurrentUser, load_user
+from core import brand
 from db import models as m
 from db.engine import session_scope
 
 COOKIE_NAME = "eqdash_auth"
-LOGIN_FIELDS = {"Form name": "Sign in", "Username": "Username", "Password": "Password", "Login": "Sign in"}
+LOGIN_FIELDS = {"Form name": "Sign in to WANPIS", "Username": "Username", "Password": "Password", "Login": "Sign in"}
 
 
 def _cookie_key() -> str:
@@ -34,6 +35,28 @@ def authenticate() -> tuple[CurrentUser | None, stauth.Authenticate]:
     with session_scope() as s:
         creds = security.credentials(s)
     auth = stauth.Authenticate(creds, COOKIE_NAME, _cookie_key(), cookie_expiry_days=1, auto_hash=False)
+    if st.session_state.get("authentication_status"):
+        # already signed in this session: no sign-in layout at all
+        auth.login(location="unrendered", max_login_attempts=security.MAX_FAILED, callback=_on_login)
+        return _finish_login(st.session_state.get("username"), auth), auth
+
+    shell = st.empty()
+    with shell.container(key="login_shell"):
+        brand_col, form_col = st.columns([1.05, 1])
+        with form_col:
+            user = _login_form(auth, creds)
+        if user is None:
+            st.html(brand.LOGIN_CSS)
+            with brand_col:
+                brand.brand_panel()
+            with form_col:
+                brand.login_help()
+    if user is not None:
+        shell.empty()
+    return user, auth
+
+
+def _login_form(auth: stauth.Authenticate, creds: dict) -> CurrentUser | None:
     try:
         auth.login(location="main", max_login_attempts=security.MAX_FAILED, fields=LOGIN_FIELDS,
                    callback=_on_login)
@@ -41,7 +64,7 @@ def authenticate() -> tuple[CurrentUser | None, stauth.Authenticate]:
         st.error("This account is locked or not allowed to sign in." if "attempts" in str(e) or
                  "authorized" in str(e) else str(e))
         _force_logout(auth)
-        return None, auth
+        return None
 
     with session_scope() as s:
         locked = security.sync_failed_attempts(s, creds)
@@ -51,9 +74,8 @@ def authenticate() -> tuple[CurrentUser | None, stauth.Authenticate]:
     if status is False and not locked:
         st.error("Incorrect username or password.")
     if not status:
-        return None, auth
-
-    return _finish_login(st.session_state.get("username"), auth), auth
+        return None
+    return _finish_login(st.session_state.get("username"), auth)
 
 
 def _finish_login(username: str, auth: stauth.Authenticate) -> CurrentUser | None:

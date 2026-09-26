@@ -116,7 +116,7 @@ def cmd_reset_password(a):
 
 
 def main():
-    p = argparse.ArgumentParser(description="Eq Dashboard CLI")
+    p = argparse.ArgumentParser(description="WANPIS CLI")
     sub = p.add_subparsers(required=True)
     sub.add_parser("migrate").set_defaults(fn=cmd_migrate)
     x = sub.add_parser("ingest"); x.add_argument("file"); x.set_defaults(fn=cmd_ingest)

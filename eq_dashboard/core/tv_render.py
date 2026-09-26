@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from core import brand
 from core import theme as T
 from core.periods import PERIOD_LABEL
 from core.tv import Kpi, TvData
@@ -295,6 +296,8 @@ CSS = """
 .th .per{font-size:1.15cqw;font-weight:600;color:%(ACCENT)s;margin-left:1cqw}
 .th .rng{font-size:1.05cqw;color:%(MUTED)s;margin-left:1cqw}
 .th .clk{font-size:2cqw;font-weight:600}
+.th .brand{width:2.1cqw;height:2.1cqw;margin-right:.8cqw;vertical-align:-.3cqw}
+.th .app{font-size:1.05cqw;font-weight:700;letter-spacing:.08em;color:%(MUTED)s;margin-right:1.2cqw}
 .hero{display:flex;flex-direction:column;gap:.8cqw;border-right:.1cqw solid %(LINE)s;padding-right:1.4cqw;min-height:0}
 .hero .when{font-size:1.1cqw;color:%(MUTED)s}
 .hm{display:grid;gap:.05cqw}
@@ -359,8 +362,10 @@ def render(d: TvData, kiosk: bool = False, now: dt.datetime | None = None) -> st
     mode = "kiosk" if kiosk else "preview"
     css = f"<style>{CSS}{KIOSK_CSS if kiosk else ''}</style>"
     period = PERIOD_LABEL.get(d.period, d.period)
-    head = (f'<div class="th"><div><span class="site">{escape(d.site)}</span><span class="per">{period}</span>'
-            f'<span class="rng">{escape(d.range_label)}</span></div><div class="clk">{now:%H:%M}</div></div>')
+    head = (f'<div class="th"><div><img class="brand" alt="" src="{brand.data_uri("logo-64.png")}">'
+            f'<span class="site">{escape(d.site)}</span><span class="per">{period}</span>'
+            f'<span class="rng">{escape(d.range_label)}</span></div>'
+            f'<div><span class="app">{brand.NAME}</span><span class="clk">{now:%H:%M}</span></div></div>')
     if d.empty:
         return f'{css}<div class="tv {mode}">{head}<div class="tv-empty">No published data for this site yet.</div></div>'
     k = {x.key: x for x in d.kpis}

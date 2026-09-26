@@ -284,3 +284,9 @@ Hasil design critique: tampilan lama generik (8 kartu setara, merah di mana-mana
 - [x] Review UI #1–5 diterapkan (60 test lulus)
 - [x] Design system "haul road" untuk TV & dashboard (62 test lulus)
 - [ ] Uji end-to-end per role oleh user di browser (lokal); uji Docker; deploy VPS saat production
+
+## Revisi 9 — branding WANPIS (2026-09-26)
+- Nama aplikasi: **WANPIS — Wahana Production Analysis Information System**; logo `Logo-PT.WBK-Transparent.png` → aset di `eq_dashboard/static/brand/` (logo-64/128/512, wordmark sidebar).
+- Tab browser: judul WANPIS + favicon logo. Sidebar: wordmark (`st.logo`, ikon saat sidebar ditutup). Layar TV: logo + "WANPIS" di header.
+- Halaman login baru: panel brand (logo, nama, kepanjangan, deskripsi singkat, garis jalan tambang dari lengkung logo) + form "Sign in to WANPIS" dengan tombol kuning hi-vis; tampil hanya saat belum login.
+- Satuan konsisten: PA/UoA/MA/EU/Sched. down/PM accuracy dalam %, MTBS/MTTR/MTBF dalam hrs, selisih target dalam % (bukan "pt"). Chart tanpa abu-abu/putih: PA teal, UoA biru, standby rose, fuel ungu.

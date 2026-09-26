@@ -1,7 +1,9 @@
 """App entrypoint: login → role-based navigation. `?display=<token>` opens the TV screen (kiosk)."""
 import streamlit as st
 
-st.set_page_config(page_title="Eq Dashboard", page_icon=":material/monitoring:", layout="wide")
+from core import brand  # noqa: E402  (no Streamlit calls at import)
+
+st.set_page_config(page_title=brand.NAME, page_icon=brand.FAVICON, layout="wide")
 
 from auth.access import PAGE_ROLES, ROLE_LABEL  # noqa: E402
 from auth.authenticator import authenticate  # noqa: E402
@@ -37,7 +39,7 @@ if "display" in st.query_params:
 user, auth = authenticate()
 if user is None:
     st.session_state.pop("user", None)
-    st.navigation([st.Page(lambda: None, title="Sign in", url_path="login")], position="hidden").run()
+    st.navigation([st.Page(lambda: None, title=f"Sign in · {brand.NAME}", url_path="login")], position="hidden").run()
     st.stop()
 st.session_state["user"] = user
 
@@ -97,6 +99,7 @@ else:
     }
     nav = st.navigation({k: v for k, v in sections.items() if v})
 
+brand.sidebar_logo()
 with st.sidebar:
     st.markdown(f"**{user.name}**  \n{ROLE_LABEL[user.role]}")
     auth.logout("Sign out", location="sidebar", key="logout_btn",
