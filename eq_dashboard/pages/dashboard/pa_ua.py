@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core import dash, metrics
+from core import theme as T
 from core.ui import excel_download, fmt_pct
 
 c = dash.context("pa_ua")
@@ -11,6 +12,9 @@ st.title("PA & UoA")
 
 k = metrics.kpis(c.ev).iloc[0]
 t = dash.targets(c.sites, c.month, dash.weighted_target_hours(c.ev))
+worst_type = metrics.kpis(c.ev, ["type"])["PA"].sort_values()
+dash.summary(dash.gap_text("UoA", k["UoA"], t["uoa"]), dash.gap_text("PA", k["PA"], t["pa"]),
+             f"Lowest PA by type: {worst_type.index[0]} at {worst_type.iloc[0]:.0%}" if len(worst_type) else "")
 r = st.columns(4)
 dash.kpi(r[0], "PA", k["PA"], t["pa"], help="(Ready + Idle + Standby) / total hours")
 dash.kpi(r[1], "UoA", k["UoA"], t["uoa"], help="(Ready + Idle) / (Ready + Idle + Standby)")
@@ -32,17 +36,17 @@ left, right = st.columns([2, 1])
 with left:
     d = metrics.kpis(c.ev, ["date"]).reset_index()
     fig = go.Figure()
-    for col, color in (("PA", "#F0A63C"), ("UoA", "#6CB6FF"), ("MA", "#30A46C")):
+    for col, color in (("PA", T.TEXT), ("UoA", T.READY), ("MA", T.IDLE)):
         fig.add_scatter(x=d["date"], y=d[col], name=col, line=dict(color=color, width=3 if col != "MA" else 2))
     if t["uoa"] is not None:
-        fig.add_hline(y=t["uoa"], line_dash="dash", line_color="#93A0B2", annotation_text="UoA target")
+        fig.add_hline(y=t["uoa"], line_dash="dot", line_color=T.ACCENT, annotation_text="UoA target")
     fig.update_layout(title="Daily trend", yaxis=dict(tickformat=".0%", range=[0, 1]))
     dash.plot(fig)
 with right:
     w = metrics.kpis(c.ev, ["week"]).reset_index()
     fig = go.Figure()
-    fig.add_bar(x=w["week"], y=w["PA"], name="PA", marker_color="#F0A63C", text=w["PA"].map(fmt_pct))
-    fig.add_bar(x=w["week"], y=w["UoA"], name="UoA", marker_color="#6CB6FF", text=w["UoA"].map(fmt_pct))
+    fig.add_bar(x=w["week"], y=w["PA"], name="PA", marker_color=T.TEXT, text=w["PA"].map(fmt_pct))
+    fig.add_bar(x=w["week"], y=w["UoA"], name="UoA", marker_color=T.READY, text=w["UoA"].map(fmt_pct))
     fig.update_layout(title="By week", barmode="group", yaxis=dict(tickformat=".0%", range=[0, 1]))
     dash.plot(fig)
 
@@ -50,7 +54,7 @@ st.subheader("PA heatmap by unit and day")
 hm = metrics.kpis(c.ev, ["unit_id", "date"])["PA"].unstack("date")
 order = metrics.kpis(c.ev, ["unit_id"])["PA"].sort_values().index
 hm = hm.reindex(order).head(60)
-fig = px.imshow(hm, color_continuous_scale="RdYlGn", zmin=0, zmax=1, aspect="auto",
+fig = px.imshow(hm, color_continuous_scale=[T.MISS, T.STANDBY, T.READY], zmin=0, zmax=1, aspect="auto",
                 labels=dict(color="PA", x="Date", y="Unit"))
 fig.update_layout(title=f"{len(hm)} units with the lowest PA")
 dash.plot(fig, max(380, 16 * len(hm) + 100))

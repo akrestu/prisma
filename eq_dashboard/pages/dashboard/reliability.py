@@ -3,6 +3,7 @@ import plotly.express as px
 import streamlit as st
 
 from core import dash, metrics
+from core import theme as T
 from core.ui import excel_download, fmt_num
 
 c = dash.context("reliability")
@@ -12,6 +13,10 @@ rel = metrics.reliability(c.ev, c.st).iloc[0]
 iv = dash.pm_intervals()
 pm = metrics.pm_accuracy(c.ev, iv)
 t = dash.targets(c.sites, c.month, dash.weighted_target_hours(c.ev))
+comp = c.ev[c.ev["category"] == "D"].groupby("reason_text")["hours"].sum().sort_values(ascending=False)
+dash.summary(dash.gap_text("MTBS", rel["MTBS"], t["mtbs"], "h"),
+             dash.gap_text("MTTR", rel["MTTR"], t["mttr"], "h", higher_better=False),
+             f"{str(comp.index[0]).capitalize()} is the largest down cause ({comp.iloc[0] / comp.sum():.0%})" if len(comp) else "")
 r = st.columns(6)
 dash.kpi(r[0], "MTBS", rel["MTBS"], t["mtbs"], "h", help="Working hours / number of stoppages (SM + USM)")
 dash.kpi(r[1], "MTTR", rel["MTTR"], t["mttr"], "h", higher_better=False, help="Down hours / number of stoppages")
@@ -37,9 +42,9 @@ with b:
     fig = px.scatter(rt, x="MTBS", y="MTTR", size="down_hours", color=by, hover_name=by,
                      labels={"MTBS": "MTBS (h)", "MTTR": "MTTR (h)"})
     if t["mtbs"]:
-        fig.add_vline(x=t["mtbs"], line_dash="dash", line_color="#93A0B2")
+        fig.add_vline(x=t["mtbs"], line_dash="dash", line_color=T.MUTED)
     if t["mttr"]:
-        fig.add_hline(y=t["mttr"], line_dash="dash", line_color="#93A0B2")
+        fig.add_hline(y=t["mttr"], line_dash="dash", line_color=T.MUTED)
     fig.update_layout(title=f"MTBS vs MTTR by {by} (bottom-right is better)", showlegend=False)
     dash.plot(fig, 380)
 

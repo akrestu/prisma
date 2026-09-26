@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core import dash, metrics
+from core import theme as T
 from core.ui import fmt_num, fmt_pct
 
 c = dash.context("overview")
@@ -15,6 +16,12 @@ t = dash.targets(c.sites, c.month, dash.weighted_target_hours(c.ev))
 ob = c.rit.loc[c.rit["material_group"] == "OB", "volume"].sum() if len(c.rit) else 0
 coal = c.coal["ton"].sum() if len(c.coal) else 0
 fuel = c.fuel["liters"].sum() if len(c.fuel) else 0
+top_down = (c.ev[c.ev["category"] == "D"].groupby("reason_text")["hours"].sum().sort_values(ascending=False)
+            if len(c.ev) else None)
+dash.summary(dash.gap_text("UoA", k["UoA"], t["uoa"]), dash.gap_text("PA", k["PA"], t["pa"]),
+             f"{str(top_down.index[0]).capitalize()} causes {top_down.iloc[0] / top_down.sum():.0%} of down hours"
+             if top_down is not None and len(top_down) else "",
+             f"OB {fmt_num(ob)} BCM and coal {fmt_num(coal)} t in the selected dates")
 
 r1 = st.columns(4)
 dash.kpi(r1[0], "PA", k["PA"], t["pa"])
@@ -33,24 +40,24 @@ left, right = st.columns(2)
 with left:
     d = metrics.kpis(c.ev, ["date"]).reset_index()
     fig = go.Figure()
-    fig.add_scatter(x=d["date"], y=d["PA"], name="PA", line=dict(color="#F0A63C", width=3))
-    fig.add_scatter(x=d["date"], y=d["UoA"], name="UoA", line=dict(color="#6CB6FF", width=3))
+    fig.add_scatter(x=d["date"], y=d["PA"], name="PA", line=dict(color=T.TEXT, width=3))
+    fig.add_scatter(x=d["date"], y=d["UoA"], name="UoA", line=dict(color=T.READY, width=3))
     if t["uoa"] is not None:
-        fig.add_hline(y=t["uoa"], line_dash="dash", line_color="#93A0B2", annotation_text="UoA target")
+        fig.add_hline(y=t["uoa"], line_dash="dot", line_color=T.ACCENT, annotation_text="UoA target")
     if t["pa"] is not None:
-        fig.add_hline(y=t["pa"], line_dash="dot", line_color="#F0A63C", annotation_text="PA target")
+        fig.add_hline(y=t["pa"], line_dash="dot", line_color=T.TEXT, annotation_text="PA target")
     fig.update_layout(title="Daily PA & UoA", yaxis=dict(tickformat=".0%", range=[0, 1]))
     dash.plot(fig)
 with right:
     fig = go.Figure()
     if len(c.rit):
         o = c.rit[c.rit["material_group"] == "OB"].groupby("date")["volume"].sum()
-        fig.add_bar(x=o.index, y=o.values, name="OB (BCM)", marker_color="#F0A63C")
+        fig.add_bar(x=o.index, y=o.values, name="OB (BCM)", marker_color=T.ACCENT)
     if len(c.coal):
         cc = c.coal.groupby("date")["ton"].sum()
-        fig.add_scatter(x=cc.index, y=cc.values, name="Coal (t)", yaxis="y2", line=dict(color="#6CB6FF", width=3))
+        fig.add_scatter(x=cc.index, y=cc.values, name="Coal (t)", yaxis="y2", line=dict(color=T.READY, width=3))
     if plan["ob_plan"].notna().any():
-        fig.add_scatter(x=plan["date"], y=plan["ob_plan"], name="OB plan", line=dict(color="#E8ECF1", dash="dash"))
+        fig.add_scatter(x=plan["date"], y=plan["ob_plan"], name="OB plan", line=dict(color=T.TEXT, dash="dash"))
     fig.update_layout(title="Daily production", yaxis2=dict(overlaying="y", side="right", title="t"))
     dash.plot(fig)
 

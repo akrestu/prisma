@@ -259,6 +259,14 @@ eq_dashboard/
 
 Catatan: Monthly/Yearly baru bermakna setelah ada lebih dari satu bulan data PUBLISHED.
 
+## Revisi 8 — design system "haul road" (2026-09-26)
+Hasil design critique: tampilan lama generik (8 kartu setara, merah di mana-mana, merah/hijau dipakai untuk status **dan** kategori).
+- **Token** di `core/theme.py`: aspal `#141517`, road base `#1C1E21`, chalk `#EDEAE3`, hi-vis `#F2C230` (satu-satunya aksen), orange `#F08A3C` = meleset target, biru `#4E9BD8` = Ready/UoA (aman buta warna merah-hijau).
+- **Layar TV**: kolom kiri = angka utama periode terbaru (hari lengkap terakhir / minggu / bulan / tahun terbaru; hourly = satu hari + DS/NS) UoA & PA vs target + rentang penuh di bawahnya, time split, PA & jam per type, kalimat ringkasan otomatis. Kanan = 6 KPI sekunder, trend, produksi, productivity & jarak (OB & CG: per loader, per hauler, trips/h, H, V), penyebab down, unit down terlama. Footer: unit down, fuel & rasio, stoppage, PM, waktu approve. Teks terkecil ±18–20 px di 1080p.
+- **Warna status**: orange hanya jika > 10% lebih buruk dari target (MTTR: > 10% di atas).
+- **Dashboard**: template Plotly `haulroad`, bar kategori netral, PA chalk / UoA biru, tema Streamlit mengikuti token, satu kalimat ringkasan di bawah judul tiap halaman.
+- Perbandingan sebelum/sesudah: https://claude.ai/artifact/BN8rrxZbzxKn13MzLrZnCX
+
 ## Progres
 - [x] Studi data `Eq.Event.xlsb`, report PDF, `Prod.Act`, `Populasi Unit.xlsx`, `Target.xlsx`
 - [x] Keputusan desain & 12 poin review selesai
@@ -274,4 +282,5 @@ Catatan: Monthly/Yearly baru bermakna setelah ada lebih dari satu bulan data PUB
 - [x] Dashboard: Produksi OB, Coal Getting, Loader & Fleet, Fuel, Data Quality
 - [x] Admin: Users & Roles, Sites & Mapping, Audit Log (51 test lulus)
 - [x] Review UI #1–5 diterapkan (60 test lulus)
+- [x] Design system "haul road" untuk TV & dashboard (62 test lulus)
 - [ ] Uji end-to-end per role oleh user di browser (lokal); uji Docker; deploy VPS saat production

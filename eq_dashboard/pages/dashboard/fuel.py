@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core import dash
+from core import theme as T
 from core.ui import excel_download, fmt_num
 
 c = dash.context("fuel")
@@ -18,6 +19,9 @@ ob = c.rit[c.rit["material_group"] == "OB"] if len(c.rit) else c.rit
 ob_bcm = ob["volume"].sum() if len(ob) else 0
 fleet = f[f["type"].isin(["Hauling", "Loading"])]["liters"].sum()
 rec = c.receipt["liters"].sum() if len(c.receipt) else 0
+dash.summary(f"{fmt_num(f['liters'].sum())} L consumed against {fmt_num(rec)} L received",
+             f"site fuel ratio {fmt_num(f['liters'].sum() / ob_bcm, 2)} L/BCM" if ob_bcm else "",
+             f"{int(f['outlier'].sum())} refuels above the model's 99th percentile")
 r = st.columns(5)
 r[0].metric("Consumption", f"{fmt_num(f['liters'].sum())} L")
 r[1].metric("Receipts", f"{fmt_num(rec)} L")
@@ -32,16 +36,16 @@ with a:
     d = f.groupby("date")["liters"].sum().cumsum()
     rr = c.receipt.groupby("date")["liters"].sum().cumsum() if len(c.receipt) else pd.Series(dtype=float)
     fig = go.Figure()
-    fig.add_scatter(x=d.index, y=d.values, name="Cumulative consumption", line=dict(color="#E5484D", width=3))
+    fig.add_scatter(x=d.index, y=d.values, name="Cumulative consumption", line=dict(color=T.MISS, width=3))
     if len(rr):
-        fig.add_scatter(x=rr.index, y=rr.values, name="Cumulative receipts", line=dict(color="#30A46C", width=3))
+        fig.add_scatter(x=rr.index, y=rr.values, name="Cumulative receipts", line=dict(color=T.TEXT, width=3))
     fig.update_layout(title="Receipts vs consumption, cumulative (L)")
     dash.plot(fig)
 with b:
     if len(ob):
         per = pd.DataFrame({"L": f.groupby("site")["liters"].sum(), "BCM": ob.groupby("site")["volume"].sum()})
         per["ratio"] = per["L"] / per["BCM"]
-        dash.ranking(per.reset_index(), "site", "ratio", "Fuel ratio by site (L/BCM)", "#F0A63C", pct=False, digits=2)
+        dash.ranking(per.reset_index(), "site", "ratio", "Fuel ratio by site (L/BCM)", T.ACCENT, pct=False, digits=2)
 
 a, b, cc = st.columns(3)
 with a:

@@ -1,32 +1,35 @@
-"""Render the TV screen as HTML + SVG (no JavaScript) for st.html.
+"""Render the TV screen as HTML + SVG (no JavaScript) for st.html — 'haul road' design.
 
-Charts are SVG images (<img src="data:image/svg+xml;base64,...">) because st.html sanitises inline <svg>.
-One font family everywhere: IBM Plex Sans, self-hosted (/app/static/fonts) and embedded inside chart SVGs.
+Layout (1920×1080, one screen): the latest slice of the period leads on the left (UoA & PA vs target, time split,
+one summary sentence); the right side carries secondary KPIs, trend, production, PA & hours by type,
+productivity & haul distance, down components and longest-down units; the footer keeps fleet facts.
+Charts are SVG images (<img src="data:image/svg+xml;base64,...">) because st.html strips inline <svg>.
+One font everywhere: IBM Plex Sans, self-hosted (/app/static/fonts) and embedded in the chart SVGs.
 """
 from __future__ import annotations
 
 import base64
 import datetime as dt
+import re
 from functools import lru_cache
 from html import escape
 from pathlib import Path
 
 import pandas as pd
 
+from core import theme as T
 from core.periods import PERIOD_LABEL
 from core.tv import Kpi, TvData
 
-C = {"bg": "#0B0F14", "pn": "#131A23", "ln": "#243040", "tx": "#E8ECF1", "mt": "#93A0B2", "good": "#3FCF8E",
-     "bad": "#FF6B5E", "acc": "#F0A63C", "uoa": "#6CB6FF", "R": "#3FCF8E", "I": "#F2C14E", "S": "#7F95C4",
-     "D": "#FF6B5E", "track": "#1D2632"}
 WIB = dt.timezone(dt.timedelta(hours=7))
 FONT = "'IBM Plex Sans', 'Segoe UI', Roboto, Arial, sans-serif"
 FONT_DIR = Path(__file__).resolve().parent.parent / "static" / "fonts"
-SHORT_TYPE = {"Supporting Equipment": "Suppt. Equipment"}
+SHORT_TYPE = {"Supporting Equipment": "Support equip."}
+ACRONYMS = {"Pm": "PM", "Get": "GET", "Usm": "USM", "Sm": "SM", "Ac": "AC", "Ob": "OB", "Cg": "CG"}
 
 
 @lru_cache(maxsize=1)
-def _font_face_svg() -> str:
+def _font_face() -> str:
     """@font-face with the font embedded, for SVG images (they cannot load page fonts)."""
     f = FONT_DIR / "ibm-plex-sans-500.woff2"
     if not f.exists():
@@ -41,129 +44,136 @@ def n(v, d=0) -> str:
     return "—" if v is None or pd.isna(v) else f"{v:,.{d}f}"
 
 
+def pct(v, d=1) -> str:
+    return "—" if v is None or pd.isna(v) else f"{v * 100:.{d}f}%"
+
+
+def nice(text) -> str:
+    """'PERIODIC SERVICE - PM' → 'Periodic service - PM'."""
+    words = str(text or "").lower().capitalize().split(" ")
+    return " ".join(ACRONYMS.get(w.capitalize(), w) for w in words)
+
+
 def _svg(w: int, h: int, body: str) -> str:
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" preserveAspectRatio="xMidYMid meet" '
-           f'font-family="{FONT}">{_font_face_svg()}{body}</svg>')
+           f'font-family="{FONT}">{_font_face()}{body}</svg>')
     return f'<img class="chart" alt="" src="data:image/svg+xml;base64,{base64.b64encode(svg.encode()).decode()}">'
 
 
-def _t(x, y, s, size=11, anchor="start", fill=None, weight=None) -> str:
+def _t(x, y, s, size=16, anchor="start", fill=None, weight=None) -> str:
     w = f' font-weight="{weight}"' if weight else ""
     return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" text-anchor="{anchor}" '
-            f'fill="{fill or C["mt"]}"{w}>{escape(str(s))}</text>')
+            f'fill="{fill or T.MUTED}"{w}>{escape(str(s))}</text>')
 
 
-# ------------------------------------------------------------------ KPI cards
-def _kpi_value(k: Kpi) -> tuple[str, str]:
-    if k.value is None or pd.isna(k.value):
-        return "—", ""
-    if k.unit == "%":
-        return n(k.value * 100, 1), "%"
-    if k.unit == "h":
-        return n(k.value, 1), "h"
-    return n(k.value), k.unit
-
-
-def _kpi_target(k: Kpi) -> tuple[str, str]:
-    if k.key in ("ob", "coal"):
-        tgt = f"Plan: {n(k.target)} {k.unit}" if k.target is not None else "Plan: not set"
-    elif k.target is None:
-        tgt = "Target: not set"
-    elif k.unit == "%":
-        v = round(k.target * 100, 1)
-        tgt = f"Target {n(v, 0 if v == int(v) else 1)}%"
-    else:
-        tgt = f"Target {n(k.target, 0)} {k.unit}"
-    if k.status == "none" or k.value is None:
-        return tgt, ""
-    diff = k.value - k.target
+def _delta(value, target, unit, higher_better=True) -> str:
+    """'▼ 31.9 pt vs 60%' — orange only for a real miss (> 10% of target)."""
+    if value is None or pd.isna(value):
+        return ""
+    if target is None:
+        return f'<span class="dim">no target</span>'
+    diff = value - target
     arrow = "▲" if diff >= 0 else "▼"
-    if k.unit == "%":
-        delta = f"{arrow} {n(abs(diff) * 100, 1)} pt"
-    elif k.key in ("ob", "coal"):
-        delta = f"{arrow} {n(abs(diff))} ({n(k.value / k.target * 100, 0)}%)" if k.target else ""
+    if unit == "%":
+        body = f"{arrow} {abs(diff) * 100:.1f} pt vs {n(target * 100, 0 if round(target * 100, 1) % 1 == 0 else 1)}%"
+    elif unit in ("BCM", "t"):
+        body = f"{arrow} {n(abs(diff))} vs plan ({n(value / target * 100, 0)}%)" if target else ""
     else:
-        delta = f"{arrow} {n(abs(diff), 1)} {k.unit}"
-    return tgt, delta
+        body = f"{arrow} {n(abs(diff), 1)} {unit} vs {n(target, 0)}"
+    cls = "miss" if T.miss_level(value, target, higher_better) == 2 else "ok"
+    return f'<span class="{cls}">{body}</span>'
 
 
+# ------------------------------------------------------------------ hero (left column)
+def _hero_metric(label: str, value, target, range_name: str, range_value) -> str:
+    cls = "miss" if T.miss_level(value, target) == 2 else ""
+    return (f'<div class="hm"><div class="hl">{label}</div><div class="big {cls}">{pct(value)}</div>'
+            f'<div class="hd">{_delta(value, target, "%")}</div>'
+            f'<div class="hr">{escape(range_name)} {pct(range_value)}</div></div>')
+
+
+def _split_bar(h: dict) -> str:
+    parts = [("Ready", h.get("ready"), T.READY), ("Idle", h.get("idle"), T.IDLE),
+             ("Standby", h.get("standby"), T.STANDBY), ("Down", h.get("down"), T.DOWN)]
+    bar = "".join(f'<i style="width:{(v or 0) * 100:.2f}%;background:{c}"></i>' for _, v, c in parts)
+    legend = "".join(f'<span><i style="background:{c}"></i>{lab} {pct(v, 0)}</span>' for lab, v, c in parts)
+    return f'<div class="split"><div class="hl">Time split</div><div class="sb">{bar}</div><div class="lg">{legend}</div></div>'
+
+
+def _headline(d: TvData, uoa_target) -> str:
+    """One sentence that says what matters most, using the hero numbers."""
+    h = d.hero
+    parts = []
+    lvl = T.miss_level(h.get("uoa"), uoa_target)
+    if lvl is not None and lvl > 0:
+        parts.append(f"UoA {abs(h['uoa'] - uoa_target) * 100:.0f} pt below target ({h['label'].split('·')[-1].strip()})")
+    elif lvl == 0:
+        parts.append("UoA on target")
+    if len(d.components):
+        share = d.components.iloc[0]["hours"] / d.components["hours"].sum()
+        parts.append(f"{nice(d.components.iloc[0]['reason'])} is {share:.0%} of the top down hours")
+    if d.footer.get("down_now"):
+        parts.append(f"{d.footer['down_now']} units down at the latest record")
+    return ". ".join(parts) + "." if parts else "All tracked KPIs are on target."
+
+
+# ------------------------------------------------------------------ secondary KPIs
 def _kpi_html(k: Kpi) -> str:
-    val, unit = _kpi_value(k)
-    tgt, delta = _kpi_target(k)
-    color = C[k.status] if k.status in ("good", "bad") else "#3A4656"
-    dcol = C[k.status] if k.status in ("good", "bad") else C["mt"]
-    note = (f'<div class="dlt" style="color:{C["mt"]}">{escape(k.note)}</div>'
-            if k.note and k.key not in ("ob", "coal") else "")
-    dl = f'<div class="dlt" style="color:{dcol}">{delta}</div>' if delta else ""
-    return (f'<div class="tk" style="border-top-color:{color}"><div class="l">{escape(k.label)}</div>'
-            f'<div class="v">{val}<small>{unit}</small></div><div class="t">{escape(tgt)}</div>{dl}{note}'
-            f'<div class="last">{escape(k.sub)}</div></div>')
+    if k.value is None or pd.isna(k.value):
+        val, dl = "—", f'<span class="dim">{escape(k.note or "no data")}</span>'
+    elif k.unit == "%":
+        val, dl = f"{k.value * 100:.1f}<small>%</small>", _delta(k.value, k.target, "%", k.higher_better)
+    elif k.unit == "h":
+        val, dl = f"{k.value:,.1f}<small>h</small>", _delta(k.value, k.target, "h", k.higher_better)
+    else:
+        val = f"{k.value:,.0f}<small>{k.unit}</small>"
+        dl = _delta(k.value, k.target, k.unit) if k.target is not None else '<span class="dim">no plan</span>'
+    return (f'<div class="kp"><div class="kl">{escape(k.label)}</div><div class="kv">{val}</div>'
+            f'<div class="kd">{dl}</div><div class="ks">{escape(k.sub)}</div></div>')
 
 
 # ------------------------------------------------------------------ charts
-def _xlabels(labels: list[str], x_of, y: float, max_labels: int = 12) -> list[str]:
+def _xlabels(labels, x_of, y, max_labels=8, size=16):
     step = max(1, -(-len(labels) // max_labels))
     last = len(labels) - 1
     keep = [i for i in range(len(labels)) if i % step == 0]
-    if keep and last - keep[-1] >= step:  # add the last label only when it does not collide
+    if keep and last - keep[-1] >= step:
         keep.append(last)
-    return [_t(x_of(i), y, labels[i], 11, "middle") for i in keep]
+    return [_t(x_of(i), y, labels[i], size, "middle", T.DIM) for i in keep]
 
 
 def _trend_svg(d: TvData) -> str:
     df = d.trend
-    W, H, x0, x1, y0, y1 = 620, 210, 38, 606, 12, 182
+    W, H, x0, x1, y0, y1 = 800, 300, 56, 700, 18, 256
     if df.empty:
         return _svg(W, H, "")
     k = len(df)
     X = (lambda i: (x0 + x1) / 2) if k == 1 else (lambda i: x0 + i * (x1 - x0) / (k - 1))
     Y = lambda v: y1 - v * (y1 - y0)  # noqa: E731
     out = []
-    for g in (0, .25, .5, .75, 1):
-        out.append(f'<line x1="{x0}" x2="{x1}" y1="{Y(g):.1f}" y2="{Y(g):.1f}" stroke="{C["ln"]}"/>')
-        out.append(_t(x0 - 6, Y(g) + 4, f"{int(g * 100)}%", 11, "end"))
+    for g in (0, .5, 1):
+        out.append(f'<line x1="{x0}" x2="{x1}" y1="{Y(g):.1f}" y2="{Y(g):.1f}" stroke="{T.LINE}"/>')
+        out.append(_t(x0 - 10, Y(g) + 6, f"{int(g * 100)}%", 16, "end", T.DIM))
     if d.uoa_target is not None:
-        out.append(f'<line x1="{x0}" x2="{x1}" y1="{Y(d.uoa_target):.1f}" y2="{Y(d.uoa_target):.1f}" '
-                   f'stroke="{C["mt"]}" stroke-width="1.5" stroke-dasharray="6 5"/>')
-    inc = [i for i, ok in enumerate(df["complete"]) if not ok]
-    for i in inc:
-        out.append(f'<rect x="{X(i) - 8:.1f}" y="{y0}" width="16" height="{y1 - y0}" fill="#FFFFFF" fill-opacity=".06"/>')
-    if inc:
-        out.append(_t(x1 - 2, y0 + 12, f"{', '.join(df['label'].iloc[i] for i in inc)} incomplete", 10.5, "end"))
-    for col, color in (("PA", C["acc"]), ("UoA", C["uoa"])):
+        yt = Y(d.uoa_target)
+        out.append(f'<line x1="{x0}" x2="{x1}" y1="{yt:.1f}" y2="{yt:.1f}" stroke="{T.ACCENT}" stroke-width="2" stroke-dasharray="2 7"/>')
+        out.append(_t(x0 + 6, yt - 9, f"UoA target {d.uoa_target * 100:.0f}%", 16, "start", T.ACCENT))
+    for col, color in (("PA", T.TEXT), ("UoA", T.READY)):
         pts = [(X(i), Y(v)) for i, (v, ok) in enumerate(zip(df[col], df["complete"])) if ok and pd.notna(v)]
         if len(pts) > 1:
             out.append(f'<polyline points="{" ".join(f"{a:.1f},{b:.1f}" for a, b in pts)}" fill="none" '
-                       f'stroke="{color}" stroke-width="3" stroke-linejoin="round"/>')
+                       f'stroke="{color}" stroke-width="3.5" stroke-linejoin="round"/>')
         for i, (v, ok) in enumerate(zip(df[col], df["complete"])):
             if pd.notna(v) and (not ok or k <= 12):
-                fill = color if ok else C["bg"]
-                out.append(f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="4" fill="{fill}" stroke="{color}" stroke-width="2"/>')
+                fill = color if ok else T.BG
+                out.append(f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="5" fill="{fill}" stroke="{color}" stroke-width="2.5"/>')
         if pts:
-            a, b = pts[-1]
             v = [v for v, ok in zip(df[col], df["complete"]) if ok and pd.notna(v)][-1]
-            out.append(_t(a - 8 if k > 1 else a + 10, b - 9, f"{v * 100:.1f}%", 12, "end" if k > 1 else "start",
-                          color, 600))
-    out += _xlabels(list(df["label"]), X, y1 + 16)
+            a, b = pts[-1]
+            out.append(f'<circle cx="{a:.1f}" cy="{b:.1f}" r="6" fill="{color}"/>')
+            out.append(_t(x1 + 14, b + 6, f"{col} {v * 100:.0f}%", 18, "start", color, 600))
+    out += _xlabels(list(df["label"]), X, y1 + 30)
     return _svg(W, H, "".join(out))
-
-
-def _bars(out, vals, plans, x0, x1, ya, yb, color, label, fmt):
-    k = max(len(vals), 1)
-    top = max([*vals, *[p for p in plans if pd.notna(p)], 1]) * 1.1
-    bw = (x1 - x0) / k
-    Y = lambda v: yb - v / top * (yb - ya)  # noqa: E731
-    for g in (0, .5, 1):
-        out.append(f'<line x1="{x0}" x2="{x1}" y1="{Y(top * g / 1.1):.1f}" y2="{Y(top * g / 1.1):.1f}" stroke="{C["ln"]}"/>')
-        out.append(_t(x0 - 5, Y(top * g / 1.1) + 4, fmt(top * g / 1.1), 10.5, "end"))
-    for i, v in enumerate(vals):
-        out.append(f'<rect x="{x0 + i * bw + 1.5:.1f}" y="{Y(v):.1f}" width="{max(bw - 3, 1):.1f}" '
-                   f'height="{yb - Y(v):.1f}" fill="{color}"/>')
-    if any(pd.notna(p) for p in plans):
-        pts = " ".join(f"{x0 + (i + .5) * bw:.1f},{Y(p):.1f}" for i, p in enumerate(plans) if pd.notna(p))
-        out.append(f'<polyline points="{pts}" fill="none" stroke="{C["tx"]}" stroke-width="2" stroke-dasharray="4 4"/>')
-    out.append(_t(x0, ya - 3, label, 11, fill=C["tx"]))
-    return bw
 
 
 def _short(v: float) -> str:
@@ -172,101 +182,100 @@ def _short(v: float) -> str:
     return f"{v / 1000:,.0f}k" if v >= 10000 else (f"{v / 1000:,.1f}k" if v >= 1000 else f"{v:,.0f}")
 
 
+def _bars(out, vals, plans, x0, x1, ya, yb, color, label):
+    k = max(len(vals), 1)
+    top = max([*vals, *[p for p in plans if pd.notna(p)], 1]) * 1.12
+    bw = (x1 - x0) / k
+    Y = lambda v: yb - v / top * (yb - ya)  # noqa: E731
+    out.append(f'<line x1="{x0}" x2="{x1}" y1="{yb:.1f}" y2="{yb:.1f}" stroke="{T.LINE}"/>')
+    out.append(_t(x1, ya - 4, f"max {_short(max(vals) if vals else 0)}", 15, "end", T.DIM))
+    for i, v in enumerate(vals):
+        out.append(f'<rect x="{x0 + i * bw + 1.5:.1f}" y="{Y(v):.1f}" width="{max(bw - 3, 1):.1f}" '
+                   f'height="{yb - Y(v):.1f}" fill="{color}"/>')
+    if any(pd.notna(p) for p in plans):
+        pts = " ".join(f"{x0 + (i + .5) * bw:.1f},{Y(p):.1f}" for i, p in enumerate(plans) if pd.notna(p))
+        out.append(f'<polyline points="{pts}" fill="none" stroke="{T.TEXT}" stroke-width="2" stroke-dasharray="5 5"/>')
+    out.append(_t(x0, ya - 4, label, 16, fill=T.TEXT, weight=600))
+    return bw
+
+
 def _prod_svg(d: TvData) -> str:
     p = d.prod
-    W, H = 500, 210
+    W, H = 600, 300
     if p.empty:
-        return _svg(W, H, _t(250, 105, "No production data", 13, "middle"))
+        return _svg(W, H, _t(300, 150, "No production data", 18, "middle"))
     out = []
-    bw = _bars(out, p["ob"].tolist(), p["ob_plan"].tolist(), 46, 494, 18, 98, C["acc"], "OB (BCM)", _short)
-    _bars(out, p["coal"].tolist(), p["coal_plan"].tolist(), 46, 494, 122, 192, C["uoa"], "Coal (t)", _short)
-    out += _xlabels(list(p["label"]), lambda i: 46 + (i + .5) * bw, 206, 8)
+    bw = _bars(out, p["ob"].tolist(), p["ob_plan"].tolist(), 34, 590, 26, 128, T.ACCENT, "OB · BCM")
+    _bars(out, p["coal"].tolist(), p["coal_plan"].tolist(), 34, 590, 168, 262, T.READY, "Coal · t")
+    out += _xlabels(list(p["label"]), lambda i: 34 + (i + .5) * bw, 290, 6)
     return _svg(W, H, "".join(out))
-
-
-def _type_label(t) -> str:
-    t = str(t)
-    return SHORT_TYPE.get(t, t if len(t) <= 17 else t[:16] + "…")
 
 
 def _type_svg(d: TvData, pa_target) -> str:
+    """PA and hour split (Ready/Idle/Standby/Down) per equipment type, one row each."""
     bt = d.by_type.head(7)
-    W, H, lx, x1, rh = 300, 190, 118, 246, 26
+    W, rh = 480, 34
+    H = max(len(bt), 1) * rh + 6
+    lx, x1 = 170, 408
     out = []
     for i, r in enumerate(bt.itertuples()):
-        y = 6 + i * rh
-        out.append(_t(lx - 6, y + 15, _type_label(r.type), 11.5, "end", C["tx"]))
-        out.append(f'<rect x="{lx}" y="{y + 4}" width="{x1 - lx}" height="14" fill="{C["track"]}"/>')
-        col = C["acc"] if pa_target is None else (C["good"] if r.PA >= pa_target else C["bad"])
-        out.append(f'<rect x="{lx}" y="{y + 4}" width="{(x1 - lx) * (r.PA if pd.notna(r.PA) else 0):.1f}" height="14" fill="{col}"/>')
-        out.append(_t(x1 + 6, y + 15, f"{r.PA * 100:.1f}%", 11.5, fill=C["tx"], weight=600))
-    if pa_target is not None:
-        tx = lx + (x1 - lx) * pa_target
-        out.append(f'<line x1="{tx:.1f}" x2="{tx:.1f}" y1="4" y2="{6 + len(bt) * rh}" stroke="{C["tx"]}" stroke-dasharray="3 3"/>')
-    return _svg(W, H, "".join(out))
-
-
-def _dist_svg(d: TvData) -> str:
-    bt = d.by_type.head(7)
-    W, H, lx, x1, rh = 320, 190, 118, 316, 26
-    out = []
-    for i, r in enumerate(bt.itertuples()):
-        y, x = 6 + i * rh, lx
-        out.append(_t(lx - 6, y + 15, _type_label(r.type), 11.5, "end", C["tx"]))
-        for j, (v, c) in enumerate(((r.Rp, C["R"]), (r.Ip, C["I"]), (r.Sp, C["S"]), (r.Dp, C["D"]))):
+        y, x = 4 + i * rh, lx
+        label = SHORT_TYPE.get(str(r.type), str(r.type))
+        out.append(_t(lx - 10, y + 23, label[:17], 19, "end", T.TEXT))
+        for v, c in ((r.Rp, T.READY), (r.Ip, T.IDLE), (r.Sp, T.STANDBY), (r.Dp, T.DOWN)):
             w = (x1 - lx) * (v if pd.notna(v) else 0)
-            out.append(f'<rect x="{x:.1f}" y="{y + 4}" width="{max(w - 1, 0):.1f}" height="14" fill="{c}"/>')
-            if j == 3 and w > 26:
-                out.append(_t(x + w - 4, y + 15, f"{round(v * 100)}%", 10.5, "end", C["bg"], 600))
+            out.append(f'<rect x="{x:.1f}" y="{y + 8}" width="{max(w - 1, 0):.1f}" height="20" fill="{c}"/>')
             x += w
+        miss = T.miss_level(r.PA, pa_target) == 2
+        out.append(_t(x1 + 12, y + 24, f"{r.PA * 100:.0f}%", 20, "start", T.MISS if miss else T.TEXT, 600))
     return _svg(W, H, "".join(out))
 
 
 # ------------------------------------------------------------------ HTML panels
 def _productivity_html(d: TvData) -> str:
+    head = '<tr><th></th><th>per loader</th><th>per hauler</th><th>haul distance</th></tr>'
     rows = []
-    for grp, unit, label in (("OB", "BCM", "OB"), ("CG", "t", "Coal (CG)")):
+    for grp, unit, label in (("OB", "BCM/h", "OB"), ("CG", "t/h", "Coal")):
         p = d.productivity.get(grp) or {}
         if not p or not p.get("volume"):
-            rows.append(f'<tr class="hd"><td colspan="4">{label} <span class="m">· no trips</span></td></tr>')
+            rows.append(f'<tr><td class="g">{label}</td><td colspan="3" class="dim">no trips</td></tr>')
             continue
-        rows.append(f'<tr class="hd"><td colspan="4">{label} <span class="m">· {p["loaders"]} loaders · '
-                    f'{p["haulers"]} haulers · {n(p["volume"])} {unit}</span></td></tr>')
         rows.append(
-            f'<tr><td class="n"><b>{n(p["loader_per_hour"])}</b><br><span class="m">{unit}/h per loader</span></td>'
-            f'<td class="n"><b>{n(p["hauler_per_hour"], 1)}</b><br><span class="m">{unit}/h per hauler '
-            f'({n(p["rit_per_hour"], 2)} trips/h)</span></td>'
-            f'<td class="n"><b>{n(p["dist_h"])}</b><br><span class="m">m horizontal</span></td>'
-            f'<td class="n"><b>{n(p["dist_v"])}</b><br><span class="m">m vertical</span></td></tr>')
-    return f'<table class="tprod">{"".join(rows)}</table>'
+            f'<tr><td class="g">{label}<small>{p["loaders"]} loaders · {p["haulers"]} haulers</small></td>'
+            f'<td><b>{n(p["loader_per_hour"])}</b><small>{unit}</small></td>'
+            f'<td><b>{n(p["hauler_per_hour"], 1)}</b><small>{unit} · {n(p["rit_per_hour"], 2)} trips/h</small></td>'
+            f'<td><b>{n((p["dist_h"] or 0) / 1000, 2)} km</b><small>horizontal · {n(p["dist_v"])} m vertical</small></td></tr>')
+    return f'<table class="tprod">{head}{"".join(rows)}</table>'
 
 
 def _components_html(d: TvData) -> str:
-    if d.components.empty:
-        return '<div class="tlist"><span class="m">No down hours.</span></div>'
-    top = d.components["hours"].max()
-    rows = "".join(f'<div class="r"><span>{escape(str(r.reason).title())}</span><span class="n">{n(r.hours)}</span>'
-                   f'<div class="b"><i style="width:{r.hours / top * 100:.1f}%"></i></div></div>'
-                   for r in d.components.itertuples())
-    return f'<div class="tlist">{rows}</div>'
+    c = d.components.head(4)
+    if c.empty:
+        return '<div class="dim">No down hours.</div>'
+    top, tot = c["hours"].max(), d.components["hours"].sum()
+    return "".join(f'<div class="row"><span>{escape(nice(r.reason))}</span><span class="rn">{n(r.hours)} h · '
+                   f'{r.hours / tot:.0%}</span><div class="rb"><i style="width:{r.hours / top * 100:.1f}%"></i></div></div>'
+                   for r in c.itertuples())
 
 
 def _units_html(d: TvData) -> str:
     bu = d.bad_units
     if bu.empty:
-        return '<table class="tunits"><tr><td class="m">No units down.</td></tr></table>'
+        return '<div class="dim">No units down.</div>'
     rows = []
     for r in bu.head(3).itertuples():
-        badge = ('<span class="badge">down all period</span>' if r.full_period else
-                 ('<span class="badge">down now</span>' if r.down_now else ""))
-        rows.append(f'<tr><td><span class="u">{escape(r.unit)}</span> <span class="m">{escape(str(r.model or ""))}</span><br>'
-                    f'<span class="m">{escape(str(r.reason or "").title())}</span></td>'
-                    f'<td class="n">{n(r.hours)} h<br>{badge}</td></tr>')
-    rest = len(bu) - 3
-    if rest > 0:
-        names = ", ".join(escape(u) for u in bu["unit"].iloc[3:])
-        rows.append(f'<tr><td colspan="2" class="m" style="border-bottom:0">+ {rest} more ({names})</td></tr>')
-    return f'<table class="tunits">{"".join(rows)}</table>'
+        tag = " · all period" if r.full_period else (" · down now" if r.down_now else "")
+        rows.append(f'<div class="row"><span><b>{escape(r.unit)}</b> <span class="dim">{escape(str(r.model or ""))}</span>'
+                    f'<br><span class="dim">{escape(nice(r.reason))}</span></span>'
+                    f'<span class="rn">{n(r.hours)} h<span class="miss">{tag}</span></span></div>')
+    if len(bu) > 3:
+        rows.append(f'<div class="more dim">+ {len(bu) - 3} more: {", ".join(escape(u) for u in bu["unit"].iloc[3:])}</div>')
+    return "".join(rows)
+
+
+def _title(d: TvData) -> str:
+    return {"hourly": "by hour", "daily": "day by day", "weekly": "by week", "monthly": "by month",
+            "yearly": "by year"}[d.period]
 
 
 CSS = """
@@ -274,61 +283,74 @@ CSS = """
 @font-face{font-family:'IBM Plex Sans';font-weight:500;src:url(/app/static/fonts/ibm-plex-sans-500.woff2) format('woff2')}
 @font-face{font-family:'IBM Plex Sans';font-weight:600;src:url(/app/static/fonts/ibm-plex-sans-600.woff2) format('woff2')}
 @font-face{font-family:'IBM Plex Sans';font-weight:700;src:url(/app/static/fonts/ibm-plex-sans-700.woff2) format('woff2')}
-.tv{container-type:inline-size;background:%(bg)s;color:%(tx)s;font-family:%(font)s;font-variant-numeric:tabular-nums;
- display:grid;grid-template-rows:auto auto minmax(0,1.15fr) minmax(0,1fr) auto;gap:.7cqw;padding:1cqw;overflow:hidden;
- box-sizing:border-box;border-radius:6px}
-.tv.preview{aspect-ratio:16/9;width:100%%}
-.tv.kiosk{width:min(100vw,177.78vh);height:min(100vh,56.25vw);margin:0 auto;border-radius:0}
-.tv *{min-width:0;box-sizing:border-box;font-family:%(font)s}
-.tv-h{display:flex;justify-content:space-between;align-items:flex-end;gap:1cqw;border-bottom:.1cqw solid %(ln)s;padding-bottom:.5cqw}
-.tv-h .site{font-weight:700;font-size:2.4cqw;line-height:1;letter-spacing:-.01em}
-.tv-h .period{display:inline-block;margin-left:.8cqw;padding:.15cqw .6cqw;border-radius:.3cqw;background:%(acc)s;color:%(bg)s;
- font-size:.9cqw;font-weight:600;vertical-align:.4cqw;letter-spacing:.04em;text-transform:uppercase}
-.tv-h .sub{font-size:1cqw;color:%(mt)s;margin-top:.3cqw}
-.tv-h .right{text-align:right;font-size:.85cqw;color:%(mt)s;display:grid;gap:.2cqw}
-.tv-h .clock{font-size:1.9cqw;color:%(tx)s;font-weight:600}
-.tv-kpis{display:grid;grid-template-columns:repeat(8,1fr);gap:.6cqw}
-.tk{background:%(pn)s;border:.08cqw solid %(ln)s;border-top:.3cqw solid;border-radius:.4cqw;padding:.55cqw .7cqw;display:grid;gap:.15cqw;align-content:start}
-.tk .l{font-size:.8cqw;color:%(mt)s;text-transform:uppercase;letter-spacing:.06em;font-weight:500}
-.tk .v{font-weight:700;font-size:2.4cqw;line-height:1.05;letter-spacing:-.02em}
-.tk .v small{font-size:1cqw;font-weight:500;color:%(mt)s;margin-left:.2cqw;letter-spacing:0}
-.tk .t{font-size:.8cqw;color:%(mt)s}
-.tk .dlt{font-size:.85cqw;font-weight:600}
-.tk .last{font-size:.78cqw;color:%(mt)s;border-top:.08cqw solid %(ln)s;padding-top:.25cqw}
-.tv-mid{display:grid;grid-template-columns:1.15fr 1fr 1.05fr;gap:.6cqw}
-.tv-bot{display:grid;grid-template-columns:1fr 1.1fr 1fr 1.15fr;gap:.6cqw}
-.tp{background:%(pn)s;border:.08cqw solid %(ln)s;border-radius:.4cqw;padding:.55cqw .7cqw;display:flex;flex-direction:column;gap:.3cqw;overflow:hidden}
-.tp h4{margin:0;padding:0;font-weight:500;font-size:.8cqw;letter-spacing:.06em;text-transform:uppercase;color:%(mt)s;display:flex;justify-content:space-between;gap:.5cqw}
-.tp h4 span{text-transform:none;letter-spacing:0}
-.tp .chart{width:100%%;flex:1;min-height:0;display:block;object-fit:contain}
-.tlist{display:grid;gap:.35cqw;font-size:.9cqw}
-.tlist .r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.1cqw .5cqw;align-items:center}
-.tlist .b{grid-column:1/-1;height:.45cqw;background:%(track)s;border-radius:.2cqw;overflow:hidden}
-.tlist .b i{display:block;height:100%%;background:%(D)s}
-.tunits,.tprod{width:100%%;border-collapse:collapse;font-size:.85cqw}
-.tunits td,.tprod td{padding:.28cqw .2cqw;border:0;border-bottom:.08cqw solid %(ln)s;vertical-align:middle;text-align:left;color:%(tx)s;background:none}
-.tprod{height:100%%}
-.tprod td{padding:.35cqw .3cqw}
-.tprod td b{font-size:1.5cqw;font-weight:700}
-.tprod tr.hd td{font-weight:600;font-size:.95cqw;border-bottom:0;padding-bottom:0;text-align:left}
-.tunits td.n,.tprod td.n{text-align:right;white-space:nowrap}
-.tunits .u{font-weight:600}
-.m{color:%(mt)s;font-size:.8cqw}
-.badge{display:inline-block;font-size:.7cqw;padding:.05cqw .4cqw;border-radius:.2cqw;background:rgba(255,107,94,.16);color:%(bad)s;white-space:nowrap}
-.tv-f{display:flex;flex-wrap:wrap;gap:.4cqw 1.6cqw;font-size:.85cqw;color:%(mt)s;border-top:.1cqw solid %(ln)s;padding-top:.45cqw}
-.tv-f b{color:%(tx)s;font-weight:600}
-.tlegend{display:flex;gap:.9cqw;font-size:.75cqw;flex-wrap:wrap}
-.tlegend i{display:inline-block;width:.8cqw;height:.3cqw;margin-right:.3cqw;vertical-align:middle}
-.tv-empty{display:grid;place-items:center;font-size:2cqw;color:%(mt)s;text-align:center}
-""" % {**C, "font": FONT}
+.tv{container-type:inline-size;background:%(BG)s;color:%(TEXT)s;font-family:%(F)s;font-variant-numeric:tabular-nums;
+ box-sizing:border-box;padding:1.1cqw 1.4cqw;display:grid;grid-template-columns:26%% 1fr;
+ grid-template-rows:auto minmax(0,1fr) auto;gap:.9cqw 1.4cqw;overflow:hidden}
+.tv.preview{aspect-ratio:16/9;width:100%%;border-radius:4px}
+.tv.kiosk{width:min(100vw,177.78vh);height:min(100vh,56.25vw);margin:0 auto}
+.tv *{box-sizing:border-box;font-family:%(F)s;min-width:0}
+.tv .dim{color:%(DIM)s}.tv .miss{color:%(MISS)s}.tv .ok{color:%(MUTED)s}
+.th{grid-column:1/3;display:flex;justify-content:space-between;align-items:baseline;gap:1cqw;border-bottom:.1cqw solid %(LINE)s;padding-bottom:.55cqw}
+.th .site{font-size:2.2cqw;font-weight:700;letter-spacing:-.02em}
+.th .per{font-size:1.15cqw;font-weight:600;color:%(ACCENT)s;margin-left:1cqw}
+.th .rng{font-size:1.05cqw;color:%(MUTED)s;margin-left:1cqw}
+.th .clk{font-size:2cqw;font-weight:600}
+.hero{display:flex;flex-direction:column;gap:.8cqw;border-right:.1cqw solid %(LINE)s;padding-right:1.4cqw;min-height:0}
+.hero .when{font-size:1.1cqw;color:%(MUTED)s}
+.hm{display:grid;gap:.05cqw}
+.hl{font-size:1.1cqw;color:%(MUTED)s;font-weight:500}
+.big{font-size:4.6cqw;font-weight:700;line-height:.95;letter-spacing:-.04em}
+.big.miss{color:%(MISS)s}
+.hd{font-size:1.1cqw;font-weight:500}
+.hr{font-size:1.02cqw;color:%(DIM)s}
+.split .sb{display:flex;height:1.1cqw;margin:.35cqw 0;background:%(LINE)s}
+.split .sb i{display:block;height:100%%}
+.split .lg{display:grid;grid-template-columns:1fr 1fr;gap:.15cqw .8cqw;font-size:1.0cqw;color:%(MUTED)s}
+.split .lg i{display:inline-block;width:.75cqw;height:.75cqw;margin-right:.4cqw;vertical-align:-.05cqw}
+.ty{flex:1;min-height:0}
+.ty .chart{object-position:left top}
+.say{font-size:1.2cqw;line-height:1.35;border-left:.28cqw solid %(ACCENT)s;padding-left:.8cqw}
+.main{display:grid;grid-template-rows:auto minmax(0,1fr) minmax(0,1.05fr);gap:.9cqw;min-height:0}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:1.2cqw}
+.kl{font-size:1.0cqw;color:%(MUTED)s}
+.kv{font-size:2.1cqw;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.kv small{font-size:1.0cqw;color:%(MUTED)s;font-weight:500;margin-left:.2cqw;letter-spacing:0}
+.kd{font-size:1.0cqw}
+.ks{font-size:.95cqw;color:%(DIM)s}
+.mid{display:grid;grid-template-columns:1.2fr 1fr;gap:1.4cqw;min-height:0}
+.bot{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:1.6cqw;min-height:0}
+.pn{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.pt{font-size:1.1cqw;font-weight:600;margin-bottom:.35cqw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pt span{color:%(MUTED)s;font-weight:400}
+.chart{width:100%%;flex:1;min-height:0;display:block;object-fit:contain;object-position:left top}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.1cqw .8cqw;font-size:1.02cqw;padding:.3cqw 0;border-bottom:.08cqw solid %(LINE)s;align-items:start}
+.row .rn{color:%(MUTED)s;white-space:nowrap;text-align:right}
+.row .rb{grid-column:1/3;height:.35cqw;background:%(LINE)s}
+.row .rb i{display:block;height:100%%;background:%(DOWN)s}
+.more{font-size:.95cqw;padding-top:.3cqw}
+.tprod{width:100%%;border-collapse:collapse}
+.tprod th{font-size:.95cqw;color:%(DIM)s;font-weight:500;text-align:right;padding:0 0 .3cqw .5cqw;border-bottom:.08cqw solid %(LINE)s}
+.tprod td{text-align:right;padding:.55cqw 0 .55cqw .5cqw;border-bottom:.08cqw solid %(LINE)s;vertical-align:top;font-size:.95cqw;color:%(MUTED)s}
+.tprod td small{display:block}
+.tprod td b{display:block;font-size:1.45cqw;font-weight:600;color:%(TEXT)s;line-height:1.1}
+.tprod td.g{text-align:left;font-size:1.15cqw;font-weight:600;color:%(TEXT)s;padding-left:0}
+.tprod td.g small{display:block;font-size:.92cqw;font-weight:400;color:%(DIM)s;white-space:nowrap}
+.tprod{table-layout:fixed}
+.tprod th:first-child{width:28%%}
+.tprod td small{white-space:normal;line-height:1.25}
+.tf{grid-column:1/3;display:flex;flex-wrap:wrap;gap:.3cqw 2.4cqw;font-size:1.02cqw;color:%(MUTED)s;border-top:.1cqw solid %(LINE)s;padding-top:.5cqw}
+.tf b{color:%(TEXT)s;font-weight:600}
+.tv-empty{grid-column:1/3;display:grid;place-items:center;font-size:2cqw;color:%(MUTED)s}
+""" % {"BG": T.BG, "TEXT": T.TEXT, "MUTED": T.MUTED, "DIM": T.DIM, "LINE": T.LINE, "ACCENT": T.ACCENT,
+       "MISS": T.MISS, "DOWN": T.DOWN, "F": FONT}
 
-KIOSK_CSS = """
+KIOSK_CSS = f"""
 header[data-testid="stHeader"],[data-testid="stToolbar"],[data-testid="stSidebar"],[data-testid="stSidebarCollapsedControl"],
-[data-testid="stStatusWidget"],footer{display:none!important}
-.stApp,[data-testid="stAppViewContainer"],[data-testid="stMain"]{background:#0B0F14!important}
-[data-testid="stMainBlockContainer"],.block-container{padding:0!important;max-width:100%!important}
-[data-testid="stVerticalBlock"]{gap:0!important}
-html,body{overflow:hidden!important;cursor:none}
+[data-testid="stStatusWidget"],footer{{display:none!important}}
+.stApp,[data-testid="stAppViewContainer"],[data-testid="stMain"]{{background:{T.BG}!important}}
+[data-testid="stMainBlockContainer"],.block-container{{padding:0!important;max-width:100%!important}}
+[data-testid="stVerticalBlock"]{{gap:0!important}}
+html,body{{overflow:hidden!important;cursor:none}}
 """
 
 
@@ -336,42 +358,45 @@ def render(d: TvData, kiosk: bool = False, now: dt.datetime | None = None) -> st
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(WIB)
     mode = "kiosk" if kiosk else "preview"
     css = f"<style>{CSS}{KIOSK_CSS if kiosk else ''}</style>"
-    site = escape(d.site)
     period = PERIOD_LABEL.get(d.period, d.period)
+    head = (f'<div class="th"><div><span class="site">{escape(d.site)}</span><span class="per">{period}</span>'
+            f'<span class="rng">{escape(d.range_label)}</span></div><div class="clk">{now:%H:%M}</div></div>')
     if d.empty:
-        return (f'{css}<div class="tv {mode}"><div class="tv-h"><div class="site">{site}'
-                f'<span class="period">{period}</span></div>'
-                f'<div class="right"><div class="clock">{now:%H:%M}</div></div></div>'
-                f'<div class="tv-empty" style="grid-row:2/6">No published data for this site yet.</div></div>')
-    upd = d.updated_at.astimezone(WIB).strftime("%d %b %Y %H:%M") if d.updated_at else "—"
-    lc = f"{d.last_complete:%d %b}" if d.last_complete else "—"
-    pa_target = next((k.target for k in d.kpis if k.key == "pa"), None)
-    f = d.footer
-    legend_t = (f'<span><i style="background:{C["acc"]}"></i>PA</span><span><i style="background:{C["uoa"]}"></i>UoA</span>'
-                + (f'<span><i style="background:{C["mt"]}"></i>UoA target {n(d.uoa_target * 100, 0)}%</span>'
-                   if d.uoa_target is not None else ""))
+        return f'{css}<div class="tv {mode}">{head}<div class="tv-empty">No published data for this site yet.</div></div>'
+    k = {x.key: x for x in d.kpis}
+    h = d.hero
+    pa_t, uoa_t = k["pa"].target, k["uoa"].target
+    hero = [f'<div class="when">{escape(h.get("label", ""))}</div>',
+            _hero_metric("Use of availability (UoA)", h.get("uoa"), uoa_t, h.get("range_name", ""), h.get("uoa_range")),
+            _hero_metric("Physical availability (PA)", h.get("pa"), pa_t, h.get("range_name", ""), h.get("pa_range"))]
+    if d.period == "hourly" and h.get("shifts"):
+        hero[-1] = hero[-1].replace(
+            f'{escape(h.get("range_name", ""))} {pct(h.get("pa_range"))}',
+            " · ".join(f"{s} PA {pct(v[0])}" for s, v in h["shifts"].items()))
+        hero[-2] = hero[-2].replace(
+            f'{escape(h.get("range_name", ""))} {pct(h.get("uoa_range"))}',
+            " · ".join(f"{s} UoA {pct(v[1])}" for s, v in h["shifts"].items()))
+    hero += [_split_bar(h), f'<div class="pn ty"><div class="hl">PA and hours by type</div>{_type_svg(d, pa_t)}</div>',
+             f'<div class="say">{escape(_headline(d, uoa_t))}</div>']
+    kp = "".join(_kpi_html(k[x]) for x in ("mtbs", "mttr", "sched", "pm", "ob", "coal"))
     has_plan = d.prod[["ob_plan", "coal_plan"]].notna().any().any() if len(d.prod) else False
-    legend_d = "".join(f'<span><i style="background:{C[x]}"></i>{x}</span>' for x in "RISD")
-    return f"""{css}<div class="tv {mode}">
-<div class="tv-h"><div><div class="site">{site}<span class="period">{period}</span></div>
-<div class="sub">Equipment &amp; Production Performance · {escape(d.range_label)}</div></div>
-<div class="right"><div class="clock">{now:%H:%M}</div>
-<div>Latest data: {d.last_date:%d %b %Y} · last complete day: {lc}</div>
-<div><span style="color:{C['good']}">● PUBLISHED</span> · approved {upd} · auto-refresh every 5 min</div></div></div>
-<div class="tv-kpis">{''.join(_kpi_html(k) for k in d.kpis)}</div>
-<div class="tv-mid">
-<div class="tp"><h4>PA &amp; UoA trend <span class="tlegend">{legend_t}</span></h4>{_trend_svg(d)}</div>
-<div class="tp"><h4>Production <span>{'dashed line = plan' if has_plan else 'no plan set'}</span></h4>{_prod_svg(d)}</div>
-<div class="tp"><h4>Productivity &amp; haul distance <span>per Ready hour, trip-weighted</span></h4>{_productivity_html(d)}</div>
+    top_c = nice(d.components.iloc[0]["reason"]) if len(d.components) else ""
+    upd = d.updated_at.astimezone(WIB).strftime("%d %b %H:%M") if d.updated_at else "—"
+    f = d.footer
+    return f"""{css}<div class="tv {mode}">{head}
+<div class="hero">{''.join(hero)}</div>
+<div class="main">
+<div class="kpis">{kp}</div>
+<div class="mid">
+<div class="pn"><div class="pt">PA and UoA, {_title(d)} <span>· open dots = incomplete data</span></div>{_trend_svg(d)}</div>
+<div class="pn"><div class="pt">Production, {_title(d)} <span>· {'dashed = plan' if has_plan else 'no plan set'}</span></div>{_prod_svg(d)}</div>
 </div>
-<div class="tv-bot">
-<div class="tp"><h4>PA by type</h4>{_type_svg(d, pa_target)}</div>
-<div class="tp"><h4>Time distribution <span class="tlegend">{legend_d}</span></h4>{_dist_svg(d)}</div>
-<div class="tp"><h4>Top down components <span>hours</span></h4>{_components_html(d)}</div>
-<div class="tp"><h4>Problem units <span>down hours</span></h4>{_units_html(d)}</div>
-</div>
-<div class="tv-f"><span><b>{f['units']}</b> active units</span><span><b>{f['down_now']}</b> units down at latest record</span>
-<span>Fuel <b>{n(f['fuel'])} L</b></span><span>Fuel ratio <b>{n(f['fuel_ratio'], 2)} L/BCM</b></span>
-<span>Stoppages <b>{n(f['stoppages'])}</b></span><span>PM events <b>{f['pm_events']}</b></span>
-<span>Screen time {now:%d %b %H:%M} WIB</span></div>
+<div class="bot">
+<div class="pn"><div class="pt">Productivity and haul distance <span>· per Ready hour</span></div>{_productivity_html(d)}</div>
+<div class="pn"><div class="pt">{escape(top_c + " leads down time" if top_c else "Down time")}</div>{_components_html(d)}</div>
+<div class="pn"><div class="pt">Longest down</div>{_units_html(d)}</div>
+</div></div>
+<div class="tf"><span><b>{f['down_now']}</b> of {f['units']} units down now</span><span>Fuel <b>{n(f['fuel'])} L</b> · <b>{n(f['fuel_ratio'], 2)}</b> L/BCM</span>
+<span><b>{n(f['stoppages'])}</b> stoppages</span><span><b>{f['pm_events']}</b> PM events</span>
+<span>Approved {upd} · refreshes every 5 min</span></div>
 </div>"""

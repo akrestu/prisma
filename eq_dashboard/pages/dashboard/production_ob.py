@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core import dash
+from core import theme as T
 from core.periods import weighted
 from core.ui import excel_download, fmt_num
 from core.validate import HOUR_SLOTS
@@ -22,6 +23,10 @@ plan = dash.plan_daily(tuple(c.sites), c.month).set_index("date")["ob_plan"]
 plan_mtd = plan.reindex(daily.index).sum(min_count=1)
 days_in_month = calendar.monthrange(c.month.year, c.month.month)[1]
 proj = daily.mean() * days_in_month
+top_pit = ob.groupby("pit")["volume"].sum().sort_values(ascending=False)
+dash.summary(f"{fmt_num(daily.sum())} BCM over {len(daily)} days, {fmt_num(daily.mean())} BCM per day",
+             f"projected {fmt_num(proj)} BCM at month end" + (f" against a plan of {fmt_num(plan.sum())} BCM" if plan.notna().any() else ""),
+             f"{top_pit.index[0]} delivers {top_pit.iloc[0] / top_pit.sum():.0%}" if len(top_pit) else "")
 r = st.columns(6)
 r[0].metric("OB month to date", f"{fmt_num(daily.sum())} BCM")
 r[1].metric("Average per day", f"{fmt_num(daily.mean())} BCM")
@@ -36,26 +41,26 @@ r[5].metric("Haul distance", f"{fmt_num(weighted(ob, 'dist_h'))} m H", f"{fmt_nu
 
 fig = go.Figure()
 sh = ob.groupby(["date", "shift"])["volume"].sum().unstack(fill_value=0)
-for s_, col in (("DS", "#F0A63C"), ("NS", "#B7791F")):
+for s_, col in (("DS", T.ACCENT), ("NS", "#A8861F")):
     if s_ in sh:
         fig.add_bar(x=sh.index, y=sh[s_], name=s_, marker_color=col)
 if plan.notna().any():
-    fig.add_scatter(x=plan.index, y=plan.values, name="Plan", line=dict(color="#E8ECF1", dash="dash"))
+    fig.add_scatter(x=plan.index, y=plan.values, name="Plan", line=dict(color=T.TEXT, dash="dash"))
 fig.update_layout(title="Daily OB by shift (BCM)", barmode="stack")
 dash.plot(fig)
 
 a, b = st.columns(2)
 with a:
     h = ob.groupby("hour_slot")["rit"].sum().reindex(HOUR_SLOTS, fill_value=0) / max(ob["date"].nunique(), 1)
-    fig = go.Figure(go.Bar(x=h.index, y=h.values, marker_color=["#F0A63C" if i < 12 else "#B7791F" for i in range(24)]))
+    fig = go.Figure(go.Bar(x=h.index, y=h.values, marker_color=[T.ACCENT if i < 12 else "#A8861F" for i in range(24)]))
     fig.update_layout(title="Hourly trip profile (average per day)", xaxis=dict(type="category"))
     dash.plot(fig, 340)
 with b:
     dd = ob.groupby("date").apply(lambda g: pd.Series({"H": weighted(g, "dist_h"), "V": weighted(g, "dist_v")}),
                                   include_groups=False)
     fig = go.Figure()
-    fig.add_scatter(x=dd.index, y=dd["H"], name="Horizontal (m)", line=dict(color="#7F95C4", width=3))
-    fig.add_scatter(x=dd.index, y=dd["V"], name="Vertical (m)", yaxis="y2", line=dict(color="#F5B400", width=3))
+    fig.add_scatter(x=dd.index, y=dd["H"], name="Horizontal (m)", line=dict(color=T.STANDBY, width=3))
+    fig.add_scatter(x=dd.index, y=dd["V"], name="Vertical (m)", yaxis="y2", line=dict(color=T.ACCENT, width=3))
     fig.update_layout(title="Daily haul distance (trip-weighted)", yaxis=dict(title="horizontal (m)"),
                       yaxis2=dict(overlaying="y", side="right", title="vertical (m)"))
     dash.plot(fig, 340)
@@ -63,7 +68,7 @@ with b:
 a, b, cc = st.columns(3)
 with a:
     dash.ranking(ob.groupby("material")["volume"].sum().reset_index(), "material", "volume", "By material (BCM)",
-                 "#F0A63C", pct=False, top=10)
+                 T.ACCENT, pct=False, top=10)
 with b:
     dash.ranking(ob.groupby("pit")["volume"].sum().reset_index(), "pit", "volume", "By loading location",
                  dash.COL_TYPE, pct=False, top=12)

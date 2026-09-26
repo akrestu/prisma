@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core import dash
+from core import theme as T
 from core.periods import weighted
 from core.ui import excel_download, fmt_num
 
@@ -19,6 +20,9 @@ daily = t.groupby("date")["ton"].sum()
 plan = dash.plan_daily(tuple(c.sites), c.month).set_index("date")["coal_plan"]
 plan_mtd = plan.reindex(daily.index).sum(min_count=1)
 dur = (pd.to_datetime(t["time_out"]) - pd.to_datetime(t["time_in"])).dt.total_seconds() / 60
+top_seam = t.groupby("seam")["ton"].sum().sort_values(ascending=False)
+dash.summary(f"{fmt_num(daily.sum(), 1)} t from {fmt_num(len(t))} weighbridge tickets, average payload {fmt_num(t['ton'].mean(), 1)} t",
+             f"{top_seam.index[0]} gives {top_seam.iloc[0] / top_seam.sum():.0%} of coal" if len(top_seam) else "")
 r = st.columns(6)
 r[0].metric("Coal month to date", f"{fmt_num(daily.sum(), 1)} t")
 r[1].metric("Tickets", fmt_num(len(t)))
@@ -34,14 +38,14 @@ if len(cg):
 
 fig = go.Figure()
 sh = t.groupby(["date", "shift"])["ton"].sum().unstack(fill_value=0)
-for s_, col in (("DS", "#6CB6FF"), ("NS", "#2F6DB5")):
+for s_, col in (("DS", T.READY), ("NS", "#2F6497")):
     if s_ in sh:
         fig.add_bar(x=sh.index, y=sh[s_], name=s_, marker_color=col)
 if plan.notna().any():
-    fig.add_scatter(x=plan.index, y=plan.values, name="Plan", line=dict(color="#E8ECF1", dash="dash"))
+    fig.add_scatter(x=plan.index, y=plan.values, name="Plan", line=dict(color=T.TEXT, dash="dash"))
 cgd = cg.groupby("date")["volume"].sum() if len(cg) else pd.Series(dtype=float)
 if len(cgd):
-    fig.add_scatter(x=cgd.index, y=cgd.values, name="CG ritase (t, estimate)", line=dict(color="#F5B400", dash="dot"))
+    fig.add_scatter(x=cgd.index, y=cgd.values, name="CG ritase (t, estimate)", line=dict(color=T.ACCENT, dash="dot"))
 fig.update_layout(title="Daily coal (weighbridge) vs CG ritase", barmode="stack")
 dash.plot(fig)
 if len(cgd):
@@ -54,8 +58,8 @@ if len(cg):
         dd = cg.groupby("date").apply(lambda g: pd.Series({"H": weighted(g, "dist_h"), "V": weighted(g, "dist_v")}),
                                       include_groups=False)
         fig = go.Figure()
-        fig.add_scatter(x=dd.index, y=dd["H"], name="Horizontal (m)", line=dict(color="#7F95C4", width=3))
-        fig.add_scatter(x=dd.index, y=dd["V"], name="Vertical (m)", yaxis="y2", line=dict(color="#F5B400", width=3))
+        fig.add_scatter(x=dd.index, y=dd["H"], name="Horizontal (m)", line=dict(color=T.STANDBY, width=3))
+        fig.add_scatter(x=dd.index, y=dd["V"], name="Vertical (m)", yaxis="y2", line=dict(color=T.ACCENT, width=3))
         fig.update_layout(title="Daily CG haul distance (trip-weighted)", yaxis=dict(title="horizontal (m)"),
                           yaxis2=dict(overlaying="y", side="right", title="vertical (m)"))
         dash.plot(fig, 340)

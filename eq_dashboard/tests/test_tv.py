@@ -83,6 +83,18 @@ def test_hourly_all_sites_and_missing_ticket_time(published):
     assert daily["coal"].value == pytest.approx(34684.5, abs=0.1)
 
 
+def test_hero_follows_period(published):
+    s = published
+    d = tv.build(s, "WBK-MAS", period="daily")
+    assert d.hero["label"] == "Last complete day · 22 Sep" and d.hero["uoa"] == pytest.approx(0.281, abs=5e-4)
+    assert d.hero["range_name"] == "Month to date" and d.hero["uoa_range"] == pytest.approx(0.5127, abs=5e-4)
+    w = tv.build(s, "WBK-MAS", period="weekly")
+    assert w.hero["label"] == "Latest week · Week 4" and w.hero["uoa"] != pytest.approx(w.hero["uoa_range"])
+    assert set(tv.build(s, "WBK-MAS", period="hourly").hero["shifts"]) == {"DS", "NS"}
+    html = render(d)
+    assert "28.1%" in html and "Month to date 51.3%" in html and "UoA 32 pt below target" in html
+
+
 def test_tv_empty_until_published(published):
     assert tv.build(published, "WBK-BAU").empty  # BAU not approved yet
     assert "No published data" in render(tv.build(published, "WBK-BAU"))
@@ -97,7 +109,7 @@ def test_render_all_periods_safe(published, period):
     assert "<script" not in html.lower() and "<img src=x" not in html
     assert "<svg" not in html  # charts are data-URI images (st.html strips inline svg)
     assert "stHeader" in html and "IBM Plex Sans" in html
-    assert "Productivity &amp; haul distance" in html
+    assert "Productivity and haul distance" in html and "PA and hours by type" in html
 
 
 def test_display_token_lifecycle(db_session):

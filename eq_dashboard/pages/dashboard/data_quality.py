@@ -3,6 +3,7 @@ import plotly.express as px
 import streamlit as st
 
 from core import dash
+from core import theme as T
 from core.ui import excel_download
 
 SEV = {"critical": "critical", "warn": "to check", "info": "info (handled automatically)"}
@@ -14,13 +15,15 @@ if dq.empty:
     st.stop()
 
 cnt = dq["severity"].value_counts()
+dash.summary(f"{int(cnt.get('critical', 0))} critical findings block auto-approval",
+             f"{int(cnt.get('warn', 0))} findings to check and {int(cnt.get('info', 0))} handled automatically")
 r = st.columns(3)
 for col, key in zip(r, SEV):
     col.metric(SEV[key].capitalize(), int(cnt.get(key, 0)))
 
 g = dq.groupby(["rule", "severity"]).size().reset_index(name="findings")
 fig = px.bar(g.sort_values("findings"), x="findings", y="rule", color="severity", orientation="h",
-             color_discrete_map={"critical": "#E5484D", "warn": "#F5B400", "info": "#7F95C4"})
+             color_discrete_map={"critical": T.MISS, "warn": T.ACCENT, "info": T.STANDBY})
 fig.update_layout(title="Findings by rule", yaxis_title="")
 dash.plot(fig, max(300, 28 * len(g) + 80))
 

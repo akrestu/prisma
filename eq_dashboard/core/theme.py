@@ -1,0 +1,46 @@
+"""'Haul road' design tokens shared by the TV screen and the dashboard (Plotly template).
+
+Asphalt and dust greys, chalk text, hi-vis yellow as the only accent. Orange means "missed target" and nothing else.
+Ready/Down use blue/orange (safe for red-green colour blindness).
+"""
+from __future__ import annotations
+
+import plotly.graph_objects as go
+import plotly.io as pio
+
+BG = "#141517"        # asphalt
+SURFACE = "#1C1E21"   # road base
+LINE = "#2C2F33"
+TEXT = "#EDEAE3"      # chalk
+MUTED = "#9C9A93"
+DIM = "#6E6C66"
+ACCENT = "#F2C230"    # hi-vis
+MISS = "#F08A3C"      # off target
+READY, IDLE, STANDBY, DOWN = "#4E9BD8", "#9CC7EA", "#55595F", "#F08A3C"
+CAT = {"R": READY, "I": IDLE, "S": STANDBY, "D": DOWN}
+NEUTRAL_BAR = "#8C8A84"  # category bars (type/model/unit): neutral, never status colours
+FONT = "IBM Plex Sans, Segoe UI, Arial, sans-serif"
+MISS_THRESHOLD = 0.10    # more than 10% worse than target = real miss (orange)
+
+
+def miss_level(value, target, higher_better: bool = True):
+    """None = no target · 0 = on target · 1 = small miss (≤10%) · 2 = real miss."""
+    import pandas as pd
+    if value is None or target is None or pd.isna(value) or target == 0:
+        return None
+    gap = (value - target) / abs(target) * (1 if higher_better else -1)
+    return 0 if gap >= 0 else (1 if gap >= -MISS_THRESHOLD else 2)
+
+
+def register_plotly() -> None:
+    pio.templates["haulroad"] = go.layout.Template(layout=go.Layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family=FONT, color=TEXT, size=13), title=dict(font=dict(size=15, color=TEXT), x=0, xanchor="left"),
+        colorway=[ACCENT, READY, TEXT, MISS, IDLE, NEUTRAL_BAR, STANDBY],
+        xaxis=dict(gridcolor=LINE, linecolor=LINE, zeroline=False, tickcolor=LINE, tickfont=dict(color=MUTED)),
+        yaxis=dict(gridcolor=LINE, linecolor="rgba(0,0,0,0)", zeroline=False, tickfont=dict(color=MUTED)),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=MUTED), orientation="h", y=1.08, x=0),
+        hoverlabel=dict(bgcolor=SURFACE, bordercolor=LINE, font=dict(family=FONT, color=TEXT)),
+        separators=".,",
+    ))
+    pio.templates.default = "haulroad"

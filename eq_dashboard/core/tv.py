@@ -65,6 +65,7 @@ class TvData:
     bad_units: pd.DataFrame = field(default_factory=pd.DataFrame)
     footer: dict = field(default_factory=dict)
     uoa_target: float | None = None
+    hero: dict = field(default_factory=dict)  # lead numbers: latest day / week / month / year vs the full range
 
     @property
     def empty(self) -> bool:
@@ -300,6 +301,30 @@ def build(s: Session, site: str, intervals: pd.DataFrame | None = None, period: 
     bu["full_period"] = bu["hours"] >= 0.95 * span_hours
     bu["down_now"] = bu.index.to_series().map(latest_cat).eq(DOWN).to_numpy()
     tv.bad_units = bu.reset_index().rename(columns={"unit_id": "unit"})
+
+    # hero: the latest meaningful slice of the range, with the full range as context
+    if period == "hourly":
+        hero_ev, hero_label, range_name = ev, f"{tv.first_date:%d %b} · whole day", "Day shift / night shift"
+    elif period == "daily":
+        day = tv.last_complete or tv.last_date
+        hero_ev, hero_label, range_name = ev[ev["date"] == day], f"Last complete day · {day:%d %b}", "Month to date"
+    elif period == "weekly":
+        wk = sorted(ev["week"].dropna().unique())[-1]
+        hero_ev, hero_label, range_name = ev[ev["week"] == wk], f"Latest week · {wk}", "Month to date"
+    elif period == "monthly":
+        mo = ev["date"].max().replace(day=1)
+        hero_ev, hero_label, range_name = ev[ev["date"] >= mo], f"Latest month · {mo:%b %Y}", "Year to date"
+    else:
+        yr = ev["date"].max().year
+        hero_ev, hero_label, range_name = ev[[d.year == yr for d in ev["date"]]], f"Latest year · {yr}", "All data"
+    hk = metrics.kpis(hero_ev).iloc[0]
+    tv.hero = {"label": hero_label, "range_name": range_name, "pa": float(hk["PA"]), "uoa": float(hk["UoA"]),
+               "pa_range": float(k["PA"]), "uoa_range": float(k["UoA"]),
+               "ready": float(hk["R"] / hk["T"]) if hk["T"] else None, "idle": float(hk["I"] / hk["T"]) if hk["T"] else None,
+               "standby": float(hk["S"] / hk["T"]) if hk["T"] else None, "down": float(hk["D"] / hk["T"]) if hk["T"] else None}
+    if period == "hourly":
+        sh = metrics.kpis(ev, ["shift"])
+        tv.hero["shifts"] = {x: (float(sh.loc[x, "PA"]), float(sh.loc[x, "UoA"])) for x in ("DS", "NS") if x in sh.index}
 
     fuel_total = float(fuel["liters"].sum()) if len(fuel) else 0.0
     tv.footer = {

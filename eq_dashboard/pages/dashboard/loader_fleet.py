@@ -5,6 +5,7 @@ import streamlit as st
 
 from auth.access import scope_filter
 from core import dash
+from core import theme as T
 from core.periods import (PERIOD_LABEL, PERIODS, UNIT, bucket, bucket_order, fleet_summary, pretty,
                           productivity, split_hourly, with_week)
 from core.ui import excel_download, fmt_num
@@ -62,6 +63,13 @@ fl, fh = fl.reindex(order), fh.reindex(order)
 labels = [pretty(x, period) for x in order]
 
 tot_l, tot_h = fleet_summary(ld, []), fleet_summary(hl, [])
+best = ld.groupby("unit").agg(v=("volume", "sum"), h=("ready_h", "sum"))
+best = (best["v"] / best["h"].where(best["h"] > 0)).dropna().sort_values(ascending=False)
+dash.summary(f"Loaders move {fmt_num(tot_l['per_hour'].iloc[0], 1)} {unit} per Ready hour and haulers "
+             f"{fmt_num(tot_h['per_hour'].iloc[0], 1)} {unit}",
+             f"average haul {fmt_num(tot_l['dist_h'].iloc[0] / 1000, 2)} km horizontal and "
+             f"{fmt_num(tot_l['dist_v'].iloc[0])} m vertical",
+             f"best loader {best.index[0]} at {fmt_num(best.iloc[0], 1)} {unit}/h" if len(best) else "")
 k = st.columns(6)
 k[0].metric(f"{group} volume", f"{fmt_num(tot_l['volume'].iloc[0])} {unit}")
 k[1].metric("Trips", fmt_num(tot_l["rit"].iloc[0]))
@@ -73,10 +81,10 @@ k[5].metric("Vertical distance", f"{fmt_num(tot_l['dist_v'].iloc[0])} m", "trip-
 left, right = st.columns(2)
 with left:
     fig = go.Figure()
-    fig.add_bar(x=labels, y=fl["volume"], name=f"Volume ({unit})", marker_color="#F0A63C" if group == "OB" else "#6CB6FF",
+    fig.add_bar(x=labels, y=fl["volume"], name=f"Volume ({unit})", marker_color=T.ACCENT if group == "OB" else T.READY,
                 opacity=.55)
-    fig.add_scatter(x=labels, y=fl["per_hour"], name=f"Loader {unit}/h", yaxis="y2", line=dict(color="#30A46C", width=3))
-    fig.add_scatter(x=labels, y=fh["per_hour"], name=f"Hauler {unit}/h", yaxis="y2", line=dict(color="#E5484D", width=3))
+    fig.add_scatter(x=labels, y=fl["per_hour"], name=f"Loader {unit}/h", yaxis="y2", line=dict(color=T.TEXT, width=3))
+    fig.add_scatter(x=labels, y=fh["per_hour"], name=f"Hauler {unit}/h", yaxis="y2", line=dict(color=T.MISS, width=3))
     per = {"hourly": "hour", "daily": "day", "weekly": "week", "monthly": "month", "yearly": "year"}[period]
     fig.update_layout(title=f"{group} volume & productivity per {per}",
                       xaxis=dict(type="category"), yaxis=dict(title=unit),
@@ -84,8 +92,8 @@ with left:
     dash.plot(fig, 380)
 with right:
     fig = go.Figure()
-    fig.add_scatter(x=labels, y=fl["dist_h"], name="Horizontal (m)", line=dict(color="#7F95C4", width=3))
-    fig.add_scatter(x=labels, y=fl["dist_v"], name="Vertical (m)", yaxis="y2", line=dict(color="#F5B400", width=3))
+    fig.add_scatter(x=labels, y=fl["dist_h"], name="Horizontal (m)", line=dict(color=T.STANDBY, width=3))
+    fig.add_scatter(x=labels, y=fl["dist_v"], name="Vertical (m)", yaxis="y2", line=dict(color=T.ACCENT, width=3))
     fig.update_layout(title=f"{group} haul distance (trip-weighted)", xaxis=dict(type="category"),
                       yaxis=dict(title="horizontal (m)"), yaxis2=dict(overlaying="y", side="right", title="vertical (m)"))
     dash.plot(fig, 380)

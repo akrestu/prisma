@@ -3,12 +3,18 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core import dash, metrics
+from core import theme as T
 from core.ui import excel_download, fmt_num
 
 c = dash.context("time_distribution")
 st.title("Time distribution")
 
 b = metrics.time_buckets(c.ev).iloc[0]
+client_codes = dash.client_standby_codes()
+s_all = c.ev[c.ev["category"] == "S"]
+client_share = s_all.loc[s_all["reason_code"].isin(client_codes), "hours"].sum() / s_all["hours"].sum() if len(s_all) else 0
+dash.summary(f"Standby is {b['S'] / b['T']:.0%} of all hours and down is {b['D'] / b['T']:.0%}",
+             f"{client_share:.0%} of standby is caused by the client")
 r = st.columns(5)
 r[0].metric("Total hours", fmt_num(b["T"]))
 for i, cat in enumerate("RISD", start=1):
@@ -25,12 +31,12 @@ sb = c.ev[c.ev["category"] == "S"].assign(grp=lambda d: d["reason_code"].isin(cl
     {True: "Client", False: "Internal"}))
 a, bb, cc = st.columns([1.2, 1.2, 0.8])
 with a:
-    dash.pareto(c.ev[c.ev["category"] == "I"], "reason_text", "hours", "Idle hours Pareto", "#F5B400")
+    dash.pareto(c.ev[c.ev["category"] == "I"], "reason_text", "hours", "Idle hours Pareto", T.ACCENT)
 with bb:
-    dash.pareto(sb, "reason_text", "hours", "Standby hours Pareto", "#7F95C4")
+    dash.pareto(sb, "reason_text", "hours", "Standby hours Pareto", T.STANDBY)
 with cc:
     g = sb.groupby("grp")["hours"].sum()
-    fig = go.Figure(go.Pie(labels=g.index, values=g.values, hole=.55, marker_colors=["#7F95C4", "#3A4656"]))
+    fig = go.Figure(go.Pie(labels=g.index, values=g.values, hole=.55, marker_colors=[T.MUTED, T.STANDBY]))
     fig.update_layout(title="Standby: client vs internal")
     dash.plot(fig, 380)
     st.caption("Client reason codes are set by the Admin on the PM intervals & standby page.")

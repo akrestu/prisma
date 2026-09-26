@@ -18,6 +18,12 @@ gatherUsageStats = false
 
 [theme]
 base = "dark"
+# haul road tokens (core/theme.py)
+primaryColor = "#F2C230"
+backgroundColor = "#141517"
+secondaryBackgroundColor = "#1C1E21"
+textColor = "#EDEAE3"
+borderColor = "#2C2F33"
 font = "ibm-plex-sans"
 codeFont = "ibm-plex-sans"
 headingFont = "ibm-plex-sans"

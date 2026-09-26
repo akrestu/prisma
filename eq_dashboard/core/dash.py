@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from auth.access import scope_filter
 from core import metrics
+from core import theme as T
 from core.config import DEFAULT_CLIENT_STANDBY, UNMAPPED
 from core.targets import METRICS
 from core.ui import fmt_num, fmt_pct, require, sites_for
@@ -20,9 +21,10 @@ from db import models as m
 from db import repo
 from db.engine import session_scope
 
-# colours follow the reference report: Type red, Model green, Unit yellow
-COL_TYPE, COL_MODEL, COL_UNIT = "#E5484D", "#30A46C", "#F5B400"
-COL_CAT = {"R": "#30A46C", "I": "#F5B400", "S": "#7F95C4", "D": "#E5484D"}
+# category bars are neutral; orange/blue are reserved for status (see core/theme.py)
+COL_TYPE = COL_MODEL = COL_UNIT = T.NEUTRAL_BAR
+COL_CAT = T.CAT
+T.register_plotly()
 CAT_LABEL = {"R": "Ready", "I": "Idle", "S": "Standby", "D": "Down"}
 FONT = "IBM Plex Sans, sans-serif"
 TABLES = {
@@ -241,8 +243,7 @@ def kpi(col, label: str, value, target=None, kind: str = "pct", higher_better: b
 
 
 def plot(fig: go.Figure, height: int = 360) -> None:
-    fig.update_layout(height=height, margin=dict(l=10, r=10, t=40, b=10), legend_title_text="",
-                      font=dict(family=FONT), separators=".,")
+    fig.update_layout(template="haulroad", height=height, margin=dict(l=10, r=10, t=48, b=10), legend_title_text="")
     st.plotly_chart(fig, width="stretch", config={"displaylogo": False})
 
 
@@ -270,16 +271,38 @@ def stacked_dist(ev: pd.DataFrame, by: str, title: str, top: int = 20):
     plot(fig, max(280, 26 * len(b) + 90))
 
 
-def pareto(df: pd.DataFrame, cat: str, val: str, title: str, color: str = "#E5484D", top: int = 12):
+def pareto(df: pd.DataFrame, cat: str, val: str, title: str, color: str = T.DOWN, top: int = 12):
     d = df.groupby(cat, dropna=False)[val].sum().sort_values(ascending=False).head(top)
     cum = d.cumsum() / d.sum() if d.sum() else d
     fig = go.Figure()
     fig.add_bar(x=d.index.astype(str), y=d.values, marker_color=color, name=val)
     fig.add_scatter(x=d.index.astype(str), y=cum.values, yaxis="y2", mode="lines+markers", name="cumulative",
-                    line=dict(color="#93A0B2"))
+                    line=dict(color=T.MUTED))
     fig.update_layout(title=title, yaxis2=dict(overlaying="y", side="right", tickformat=".0%", range=[0, 1.05]),
                       xaxis=dict(type="category"), showlegend=False)
     plot(fig, 380)
+
+
+def summary(*parts: str) -> None:
+    """One plain sentence under the page title that says what matters most."""
+    text = ". ".join(p.rstrip(".") for p in parts if p)
+    if text:
+        st.markdown(f'<div style="border-left:3px solid {T.ACCENT};padding:2px 0 2px 12px;margin:-4px 0 14px;'
+                    f'font-size:1.02rem;color:{T.TEXT}">{text}.</div>', unsafe_allow_html=True)
+
+
+def gap_text(name: str, value, target, unit: str = "%", higher_better: bool = True) -> str:
+    """'UoA 47.3%, 12.7 pt below target' / '' when no target."""
+    if value is None or pd.isna(value):
+        return ""
+    val = f"{value * 100:.1f}%" if unit == "%" else f"{value:,.1f} {unit}"
+    if target is None:
+        return f"{name} {val} (no target set)"
+    diff = value - target
+    better = diff >= 0 if higher_better else diff <= 0
+    size = f"{abs(diff) * 100:.1f} pt" if unit == "%" else f"{abs(diff):,.1f} {unit}"
+    side = ("above" if diff >= 0 else "below")
+    return f"{name} {val}, {size} {side} target" + ("" if better else "")
 
 
 def weighted_target_hours(ev: pd.DataFrame) -> pd.Series:
