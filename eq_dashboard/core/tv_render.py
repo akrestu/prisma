@@ -1,6 +1,7 @@
 """Render layar TV sebagai HTML + SVG murni (tanpa JavaScript) untuk st.html."""
 from __future__ import annotations
 
+import base64
 import datetime as dt
 from html import escape
 
@@ -68,6 +69,13 @@ def _kpi_html(k: Kpi) -> str:
             f'<div class="last">{escape(k.last)}</div></div>')
 
 
+def _svg(w: int, h: int, body: str) -> str:
+    """SVG sebagai <img data:...>: lolos sanitizer st.html (DOMPurify membuang elemen <svg> inline)."""
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" preserveAspectRatio="xMidYMid meet" '
+           f'font-family="Consolas, Menlo, monospace">{body}</svg>')
+    return f'<img class="chart" alt="" src="data:image/svg+xml;base64,{base64.b64encode(svg.encode()).decode()}">'
+
+
 def _t(x, y, s, size=11, anchor="start", fill=None, weight=None) -> str:
     w = f' font-weight="{weight}"' if weight else ""
     return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" text-anchor="{anchor}" '
@@ -78,7 +86,7 @@ def _trend_svg(d: TvData) -> str:
     df = d.daily.sort_values("date")
     W, H, x0, x1, y0, y1 = 620, 210, 36, 608, 12, 182
     if df.empty:
-        return f'<svg viewBox="0 0 {W} {H}"></svg>'
+        return _svg(W, H, "")
     days = [x.day for x in df["date"]]
     lo, hi = min(days), max(max(days), min(days) + 1)
     X = lambda day: x0 + (day - lo) * (x1 - x0) / (hi - lo)  # noqa: E731
@@ -111,7 +119,7 @@ def _trend_svg(d: TvData) -> str:
     for day in days:
         if (day - lo) % step == 0 or day == days[-1]:
             out.append(_t(X(day), y1 + 16, day, 11, "middle"))
-    return f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet">{"".join(out)}</svg>'
+    return _svg(W, H, "".join(out))
 
 
 def _bars(out, vals, plans, x0, x1, ya, yb, color, label, fmt):
@@ -136,7 +144,7 @@ def _prod_svg(d: TvData) -> str:
     p = d.prod
     W, H = 500, 210
     if p.empty:
-        return f'<svg viewBox="0 0 {W} {H}">{_t(250, 105, "Belum ada data produksi", 13, "middle")}</svg>'
+        return _svg(W, H, _t(250, 105, "Belum ada data produksi", 13, "middle"))
     out = []
     k = lambda v: (_n(v / 1000, 0 if v >= 10000 else 1) + "rb") if v else "0"  # noqa: E731
     bw = _bars(out, p["ob"].tolist(), p["ob_plan"].tolist(), 46, 494, 18, 98, C["acc"], "OB (BCM)", k)
@@ -145,7 +153,7 @@ def _prod_svg(d: TvData) -> str:
     for i, day in enumerate(days):
         if i == 0 or i == len(days) - 1 or day % 5 == 0:
             out.append(_t(46 + (i + .5) * bw, 206, day, 10.5, "middle"))
-    return f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet">{"".join(out)}</svg>'
+    return _svg(W, H, "".join(out))
 
 
 SHORT_TYPE = {"Supporting Equipment": "Suppt. Equipment"}
@@ -170,7 +178,7 @@ def _type_svg(d: TvData, pa_target) -> str:
     if pa_target is not None:
         tx = lx + (x1 - lx) * pa_target
         out.append(f'<line x1="{tx:.1f}" x2="{tx:.1f}" y1="4" y2="{6 + len(bt) * rh}" stroke="{C["tx"]}" stroke-dasharray="3 3"/>')
-    return f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet">{"".join(out)}</svg>'
+    return _svg(W, H, "".join(out))
 
 
 def _dist_svg(d: TvData) -> str:
@@ -186,7 +194,7 @@ def _dist_svg(d: TvData) -> str:
             if j == 3 and w > 26:
                 out.append(_t(x + w - 4, y + 15, f"{round(v * 100)}%", 10.5, "end", C["bg"], 600))
             x += w
-    return f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet">{"".join(out)}</svg>'
+    return _svg(W, H, "".join(out))
 
 
 def _components_html(d: TvData) -> str:
@@ -222,7 +230,7 @@ CSS = """
  display:grid;grid-template-rows:auto auto minmax(0,1.15fr) minmax(0,1fr) auto;gap:.7cqw;padding:1cqw;overflow:hidden;
  box-sizing:border-box;border-radius:6px}
 .tv.preview{aspect-ratio:16/9;width:100%%}
-.tv.kiosk{width:100vw;height:100vh;border-radius:0}
+.tv.kiosk{width:min(100vw,177.78vh);height:min(100vh,56.25vw);margin:0 auto;border-radius:0}
 .tv *{min-width:0;box-sizing:border-box}
 .tv-h{display:flex;justify-content:space-between;align-items:flex-end;gap:1cqw;border-bottom:.1cqw solid %(ln)s;padding-bottom:.5cqw}
 .tv-h .site{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:700;font-size:2.6cqw;line-height:1}
@@ -242,7 +250,7 @@ CSS = """
 .tp{background:%(pn)s;border:.08cqw solid %(ln)s;border-radius:.4cqw;padding:.55cqw .7cqw;display:flex;flex-direction:column;gap:.3cqw;overflow:hidden}
 .tp h4{margin:0;font-family:Consolas,monospace;font-weight:500;font-size:.85cqw;letter-spacing:.06em;text-transform:uppercase;color:%(mt)s;display:flex;justify-content:space-between;gap:.5cqw;padding:0}
 .tp h4 span{text-transform:none;letter-spacing:0}
-.tp svg{width:100%%;flex:1;min-height:0;display:block;font-family:Consolas,monospace}
+.tp .chart{width:100%%;flex:1;min-height:0;display:block;object-fit:contain}
 .tlist{display:grid;gap:.35cqw;font-size:.9cqw}
 .tlist .r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.1cqw .5cqw;align-items:center}
 .tlist .n{font-family:Consolas,monospace}

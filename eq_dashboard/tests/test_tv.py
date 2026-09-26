@@ -54,7 +54,7 @@ def test_render_has_no_script_and_escapes(published):
     d = tv.build(published, "WBK-MAS")
     d.bad_units.loc[0, "unit"] = "<img src=x onerror=alert(1)>"
     html = render(d, kiosk=True)
-    assert "<script" not in html.lower() and "<img" not in html
+    assert "<script" not in html.lower() and "<img src=x" not in html
     assert "&lt;img" in html
     assert "stHeader" in html  # CSS kiosk menyembunyikan header Streamlit
     assert "stHeader" not in render(d, kiosk=False)
