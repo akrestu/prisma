@@ -46,8 +46,9 @@ ds = metrics.availability(metrics.time_buckets(c.ev, ["shift"]))
 fig = go.Figure()
 for cat in "RISD":
     fig.add_bar(x=ds.index, y=ds[cat] / ds["T"], name=dash.CAT_LABEL[cat], marker_color=dash.COL_CAT[cat])
-fig.update_layout(barmode="stack", yaxis=dict(tickformat=".0%"), title="Hour share by shift")
-dash.plot(fig, 320)
+fig.update_layout(barmode="stack", yaxis=dict(tickformat=".0%"), title="Hour share by shift",
+                  legend=dict(orientation="h", traceorder="normal", x=0, yref="container", y=0, yanchor="bottom"))
+dash.plot(fig, 360, bottom=56)
 
 st.subheader("Hours by reason code")
 tab = (c.ev.groupby(["category", "reason_code", "reason_text"], dropna=False)["hours"].sum().reset_index()

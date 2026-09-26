@@ -243,8 +243,8 @@ def kpi(col, label: str, value, target=None, kind: str = "pct", higher_better: b
     col.metric(label, fmt(value), dtxt, delta_color="orange" if miss else "gray", help=help)
 
 
-def plot(fig: go.Figure, height: int = 360) -> None:
-    fig.update_layout(template="haulroad", height=height, margin=dict(l=10, r=10, t=48, b=10), legend_title_text="")
+def plot(fig: go.Figure, height: int = 360, bottom: int = 10) -> None:
+    fig.update_layout(template="haulroad", height=height, margin=dict(l=10, r=10, t=48, b=bottom), legend_title_text="")
     st.plotly_chart(fig, width="stretch", config={"displaylogo": False})
 
 
@@ -270,8 +270,10 @@ def stacked_dist(ev: pd.DataFrame, by: str, title: str, top: int = 20):
                     marker_color=COL_CAT[c], text=(b[c] / b["T"]).map(lambda v: f"{v:.0%}" if v >= .06 else ""),
                     textposition="inside")
     fig.update_layout(barmode="stack", title=title, xaxis=dict(tickformat=".0%", range=[0, 1]),
-                      yaxis=dict(type="category", autorange="reversed"))
-    plot(fig, max(280, 26 * len(b) + 90))
+                      yaxis=dict(type="category", autorange="reversed"),
+                      legend=dict(orientation="h", traceorder="normal", x=0, xanchor="left",
+                                  yref="container", y=0, yanchor="bottom"))  # below the axis, clear of the title
+    plot(fig, max(300, 26 * len(b) + 130), bottom=56)
 
 
 def pareto(df: pd.DataFrame, cat: str, val: str, title: str, color: str = T.DOWN, top: int = 12):
