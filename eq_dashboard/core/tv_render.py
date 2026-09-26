@@ -212,15 +212,15 @@ def _units_html(d: TvData) -> str:
     if bu.empty:
         return '<table class="tunits"><tr><td class="m">Tidak ada unit down.</td></tr></table>'
     rows = []
-    for r in bu.head(4).itertuples():
+    for r in bu.head(3).itertuples():
         badge = ('<span class="badge">down sebulan</span>' if r.full_period else
                  ('<span class="badge">sedang down</span>' if r.down_now else ""))
         rows.append(f'<tr><td><span class="u">{escape(r.unit)}</span> <span class="m">{escape(str(r.model or ""))}</span><br>'
                     f'<span class="m">{escape(str(r.reason or "").title())}</span></td>'
                     f'<td class="n">{_n(r.hours)} j<br>{badge}</td></tr>')
-    rest = len(bu) - 4
+    rest = len(bu) - 3
     if rest > 0:
-        names = ", ".join(escape(u) for u in bu["unit"].iloc[4:])
+        names = ", ".join(escape(u) for u in bu["unit"].iloc[3:])
         rows.append(f'<tr><td colspan="2" class="m" style="border-bottom:0">+ {rest} unit lain ({names})</td></tr>')
     return f'<table class="tunits">{"".join(rows)}</table>'
 
