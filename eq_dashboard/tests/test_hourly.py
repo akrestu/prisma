@@ -143,3 +143,22 @@ def test_per_hauler_template_round_trip():
     assert H.nrp_of(r["hauler_nrp"]) == "22001" and H.nrp_of(r["loader_nrp"]) == "11001"
     again = H.resolve(hf.rows.assign(r1=4), LF, TG, UNITS, OPS)
     assert not again.problems and again.rows.loc[0, "hauler_operator"] == "Budi S."
+
+
+def test_template_column_order_and_auto_hauler_model():
+    import io as _io
+
+    from openpyxl import load_workbook
+    lines = H.resolve(hauler_rows({"hauler": "WHT026", "hauler_nrp": "22001"}), LF, TG, UNITS, OPS).rows
+    legacy = pd.DataFrame([{"loader": "WEX008", "operator": "Saprin", "material": "OB - FreeDig", "hauler": None,
+                            "hauler_model": "777E"}])
+    tpl = H.build_template("WBK-BAU", dt.date(2026, 9, 28), "NS", LF, TG, pd.concat([lines, legacy]), "", UNITS, OPS)
+    ws = load_workbook(_io.BytesIO(tpl))["Hourly"]
+    heads = [c.value for c in ws[H.HEADER_ROW]][:9]
+    assert heads == ["Loader", "Operator", "Material", "Hauler ID", "Hauler model", "Hauler operator", "PIT",
+                     "Disposal", "Distance (m)"]
+    assert str(ws["E8"].value).startswith("=IF(D8")              # model looked up from the hauler ID
+    assert ws["E9"].value == "777E" and ws["B9"].value == "Saprin"   # old line: model and name kept visible
+    hf = H.parse_template(tpl)
+    res = H.resolve(hf.rows.assign(r1=[3, 4]), LF, TG, UNITS, OPS)
+    assert not res.problems and list(res.rows["hauler_model"]) == ["777E", "777E"]

@@ -53,8 +53,9 @@ haulers = sorted(site_units.loc[is_type("Haul"), "unit_id"])
 op_label = {n: f"{n} - {nm}" for n, nm in zip(ops["nrp"], ops["name"], strict=True)}
 code_label = {k: f"{k} - {v}" for k, v in H.REMARKS.items()}
 slots = H.SLOTS[shift]
-GRID = ["loader", "loader_nrp", "hauler", "hauler_nrp", "material", "pit", "disposal", "distance_m", *H.R,
-        "remark_code", "remark"]
+GRID = ["loader", "loader_nrp", "material", "hauler", "hauler_model", "hauler_nrp", "pit", "disposal", "distance_m",
+        *H.R, "remark_code", "remark"]
+unit_model = dict(zip(site_units["unit_id"], site_units["model"], strict=True)) if len(site_units) else {}
 
 
 def to_grid(df: pd.DataFrame) -> pd.DataFrame:
@@ -62,6 +63,9 @@ def to_grid(df: pd.DataFrame) -> pd.DataFrame:
     g["remark_code"] = g["remark_code"].map(lambda x: code_label.get(str(x), x) if pd.notna(x) else None)
     for c in ("loader_nrp", "hauler_nrp"):
         g[c] = g[c].map(lambda x: op_label.get(str(x), x) if pd.notna(x) else None)
+    if "operator" in df:                                   # old lines carry a name instead of an NRP
+        g["loader_nrp"] = g["loader_nrp"].fillna(df["operator"])
+    g["hauler_model"] = g["hauler"].map(unit_model).fillna(g["hauler_model"])
     return g
 
 
@@ -78,6 +82,11 @@ with t_web:
     base = rows if sh is not None else (prev if prev is not None and len(prev) else pd.DataFrame(columns=GRID))
     if sh is None and prev is not None and len(prev):
         st.caption("New shift: lines copied from the previous shift (no trips). Change or delete what differs.")
+    legacy = base[base["hauler"].isna() & base["hauler_model"].notna()] if len(base) and "hauler" in base else []
+    if len(legacy):
+        st.warning(f"{len(legacy)} line(s) come from the old format: one line per hauler **model**, without a "
+                   "Hauler ID. Replace each with one line per truck (Hauler ID + its operator) so trips can be "
+                   "counted per operator.")
     elif sh is not None:
         st.caption(f"Last saved by {stamp}.")
     coord = st.text_input("Coordinator (PJA)", coord_now, key=f"hi_coord_{site}_{date}_{shift}")
@@ -86,14 +95,15 @@ with t_web:
         st.caption("⚠ No operators for this site yet: add them in **Admin → Operators** to pick them by NRP.")
     cfg = {
         "loader": st.column_config.SelectboxColumn("Excavator", options=loaders, required=True),
-        "loader_nrp": st.column_config.SelectboxColumn("Excavator operator", options=list(op_label.values()),
-                                                       width="medium"),
-        "hauler": st.column_config.SelectboxColumn("Hauler", options=haulers, required=True,
-                                                   help="Model and load come from the unit population"),
-        "hauler_nrp": st.column_config.SelectboxColumn("Hauler operator", options=list(op_label.values()),
+        "loader_nrp": st.column_config.SelectboxColumn("Operator", options=list(op_label.values()),
                                                        width="medium"),
         "material": st.column_config.SelectboxColumn("Material", options=sorted(lf["material"].unique()),
                                                      required=True),
+        "hauler": st.column_config.SelectboxColumn("Hauler ID", options=haulers, required=True),
+        "hauler_model": st.column_config.TextColumn("Hauler model", disabled=True,
+                                                    help="From the unit population after saving; not typed"),
+        "hauler_nrp": st.column_config.SelectboxColumn("Hauler operator", options=list(op_label.values()),
+                                                       width="medium"),
         "pit": st.column_config.TextColumn("PIT"),
         "disposal": st.column_config.TextColumn("Disposal"),
         "distance_m": st.column_config.NumberColumn("Distance (m)", min_value=0, step=50, format="%.0f"),
