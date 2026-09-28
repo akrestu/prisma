@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 
 from core import hourly as H
+from core import prod_target as PT
 from core.config import UNMAPPED, today_wib
 from core.ingest import audit
 from core.ui import require, sites_for
@@ -28,6 +29,7 @@ with session_scope() as s:
     lf = repo.load_factors(s, site)
     tg = repo.loader_targets(s, site)
     units = repo.population_for(s, today_wib())
+    mtg, hfac, basis = repo.model_targets(s), repo.hauler_factors(s), repo.site_basis(s, site)
 site_units = units[units["site"] == site] if units is not None else pd.DataFrame(columns=["unit_id", "type", "model"])
 hauler_units = site_units[H.is_hauler(site_units)] if len(site_units) else site_units
 pop_models = sorted(hauler_units["model"].dropna().unique()) if len(hauler_units) else []
@@ -51,15 +53,96 @@ def save_load(df: pd.DataFrame, action: str) -> None:
     st.rerun()
 
 
-t_lf, t_tg, t_imp = st.tabs([f"Load factors ({len(lf)})" + (f" · {len(missing)} truck models to fill" if missing
-                                                             else ""), f"Hourly targets ({len(tg)})",
-                             "Import from Mst Hourly"])
+loader_units = site_units[site_units["type"].fillna("").str.contains("Load", case=False)] if len(site_units) \
+    else site_units
+
+b1, b2 = st.columns([2, 3])
+new_basis = b1.segmented_control("Target used for achievement", list(PT.BASIS_LABEL), default=basis,
+                                 format_func=PT.BASIS_LABEL.get, key=f"hs_basis_{site}") or basis
+b2.caption("Colours and achievement on Hourly input, the TV and the dashboard use this target; the other one is "
+           "kept for comparison. Excavator targets come from Prod_Target per model unless a unit override exists.")
+if new_basis != basis:
+    with session_scope() as s:
+        s.get(m.Site, site).target_basis = new_basis
+        audit(s, user.username, "hourly_target_basis", site, f"{basis} -> {new_basis}")
+    st.cache_data.clear()
+    st.session_state["hs_msg"] = f"{site} now uses the {PT.BASIS_LABEL[new_basis].lower()}."
+    st.rerun()
+
+t_pt, t_lf, t_tg, t_imp = st.tabs(["Prod_Target", f"Load factors ({len(lf)})" + (
+    f" · {len(missing)} truck models to fill" if missing else ""), "Excavator targets", "Import from Mst Hourly"])
+
+with t_pt:
+    st.markdown("**Prod_Target** is the master for excavator productivity (per model, internal WBK and client BAU) "
+                "and truck factors (per model family). The **Mst Hourly** workbook is optional: its Link Muatan "
+                "fills truck models Prod_Target does not cover (e.g. 7555B, 775E).")
+    if len(mtg):
+        wide_t = mtg.pivot_table(index="model", columns="basis", values=["pdty_ob", "pdty_mud"], aggfunc="first")
+        wide_t.columns = [("OB" if a == "pdty_ob" else "Mud") + " · " + b for a, b in wide_t.columns]
+        c1, c2 = st.columns([1.1, 1])
+        c1.markdown("**Excavator productivity (BCM/h) in use**")
+        c1.dataframe(wide_t.reset_index(), hide_index=True, width="stretch")
+        c2.markdown("**Truck factors in use**")
+        c2.dataframe(hfac, hide_index=True, width="stretch")
+    else:
+        st.info("No Prod_Target imported yet.")
+    u1, u2 = st.columns(2)
+    fpt = u1.file_uploader("Prod_Target workbook (.xlsx)", type=["xlsx"], key="hs_pt_file", max_upload_size=10)
+    fms = u2.file_uploader("Mst Hourly workbook (optional, fills gaps)", type=["xlsx"], key="hs_pt_mst",
+                           max_upload_size=30)
+    if fpt is not None:
+        try:
+            ex, hl = PT.parse(fpt.getvalue())
+            mlf = H.parse_link_muatan(fms.getvalue())[0] if fms is not None else lf
+        except StructureError as e:
+            for p_ in e.problems:
+                st.error(p_)
+            st.stop()
+        mats = sorted(set(mlf["material"]) | set(lf["material"])) if len(mlf) or len(lf) else list(PT.DEFAULT_MATERIALS)
+        new_lf, rep = PT.load_factors(hl, pop_models, mats, mlf)
+        k = st.columns(4)
+        k[0].metric("Excavator models", ex["model"].nunique())
+        k[1].metric("Truck families", len(hl))
+        k[2].metric(f"Truck models of {site}", len(pop_models))
+        k[3].metric("Without a load", int((rep["source"] == "—").sum()))
+        st.markdown(f"**Truck models of {site} and where their load comes from**")
+        st.dataframe(rep, hide_index=True, width="stretch")
+        ex_view = pd.DataFrame({"Excavator model (population)": sorted(loader_units["model"].dropna().unique())})
+        ex_view["Prod_Target model"] = [PT.match(mo, ex["model"]) for mo in ex_view.iloc[:, 0]]
+        for b_ in ("internal", "client"):
+            ex_view["OB " + b_] = [PT.model_target(mo, "OB", ex, b_) for mo in ex_view.iloc[:, 0]]
+            ex_view["Mud " + b_] = [PT.model_target(mo, "OB - MUD", ex, b_) for mo in ex_view.iloc[:, 0]]
+        st.markdown(f"**Excavators of {site}**")
+        st.dataframe(ex_view, hide_index=True, width="stretch")
+        unit_model = loader_units.set_index("unit_id")["model"] if len(loader_units) else pd.Series(dtype=object)
+        redundant = [r.unit_id for r in tg[tg["material_group"] == "OB"].itertuples()
+                     if PT.model_target(r.model or unit_model.get(r.unit_id), "OB", ex, new_basis) == r.target_per_hour]
+        st.caption(f"Saving replaces the company-wide Prod_Target values and the load factors of {site} (truck "
+                   f"models not covered keep their current values). {len(redundant)} unit override(s) equal to the "
+                   "model target are removed, so the model value applies.")
+        if st.button(f"Save Prod_Target and load factors of {site}", type="primary", key="hs_pt_save"):
+            keep_old = lf[~lf["hauler_model"].isin(new_lf["hauler_model"])]
+            merged = pd.concat([new_lf, keep_old], ignore_index=True).drop_duplicates(["material", "hauler_model"])
+            with session_scope() as s:
+                repo.save_prod_target(s, ex, hl)
+                repo.replace_site_rows(s, m.LoadFactor, site, merged,
+                                       ["material", "material_group", "hauler_model", "muatan"])
+                repo.replace_site_rows(s, m.LoaderTarget, site, tg[~tg["unit_id"].isin(redundant)],
+                                       ["unit_id", "model", "material_group", "target_per_hour"])
+                audit(s, user.username, "hourly_prod_target", site,
+                      f"{len(ex)} excavator targets, {len(hl)} truck families, {len(merged)} load factors from "
+                      f"{fpt.name}" + (f" + {fms.name}" if fms is not None else ""))
+            st.cache_data.clear()
+            st.session_state["hs_msg"] = (f"Prod_Target saved: {ex['model'].nunique()} excavator models, {len(hl)} "
+                                          f"truck families; {len(merged)} load factors for {site}.")
+            st.rerun()
 
 with t_lf:
     st.caption("Load per trip for each material × truck model. The columns are the truck models of this site's "
                "unit population, so a truck's load is found from its model directly. Empty cell = that model does "
                "not carry that material.")
-    cols = pop_models + [mo for mo in sorted(lf["hauler_model"].unique()) if mo not in pop_models] if len(lf)         else pop_models
+    extra = [mo for mo in sorted(lf["hauler_model"].unique()) if mo not in pop_models] if len(lf) else []
+    cols = pop_models + extra
     wide = (lf.pivot_table(index="material", columns="hauler_model", values="muatan", aggfunc="first")
             .reindex(columns=cols) if len(lf) else pd.DataFrame(columns=cols, index=pd.Index([], name="material")))
     wide = wide.reset_index()
@@ -86,7 +169,17 @@ with t_lf:
         save_load(long, "hourly_load_factors")
 
 with t_tg:
-    st.caption("Target per excavator per hour: BCM/h for OB, t/h for coal (CG).")
+    if len(loader_units):
+        eff = loader_units[["unit_id", "model"]].sort_values("unit_id").copy()
+        ov = tg.set_index(["unit_id", "material_group"])["target_per_hour"]
+        eff["OB (model)"] = [PT.model_target(mo, "OB", mtg, basis) for mo in eff["model"]]
+        eff["Mud (model)"] = [PT.model_target(mo, "OB - MUD", mtg, basis) for mo in eff["model"]]
+        eff["OB override"] = [ov.get((u, "OB")) for u in eff["unit_id"]]
+        eff["Coal (per unit)"] = [ov.get((u, "CG")) for u in eff["unit_id"]]
+        st.markdown(f"**Hourly target per excavator** · {PT.BASIS_LABEL[basis].lower()}")
+        st.dataframe(eff, hide_index=True, width="stretch")
+    st.markdown("**Unit overrides** · only where one excavator differs from its model, and coal targets "
+                "(Prod_Target has none): BCM/h for OB, t/h for coal.")
     ed = st.data_editor(tg, num_rows="dynamic", hide_index=True, width="stretch", key=f"hs_tg_{site}",
                         column_config={
                             "unit_id": st.column_config.TextColumn("Excavator", required=True),

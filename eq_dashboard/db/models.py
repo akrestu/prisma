@@ -33,6 +33,7 @@ class Site(Base):
     name: Mapped[str] = mapped_column(String(120))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     auto_approve: Mapped[bool] = mapped_column(Boolean, default=False)
+    target_basis: Mapped[str] = mapped_column(String(10), default="internal", server_default="internal")  # | client
 
 
 class User(Base):
@@ -436,3 +437,28 @@ class HaulerModelMap(Base):
     site: Mapped[str] = mapped_column(String(40), index=True)
     unit_model: Mapped[str] = mapped_column(String(80))
     load_model: Mapped[str] = mapped_column(String(80))
+
+
+class LoaderModelTarget(Base):
+    """Excavator productivity per model (Prod_Target PDTY): internal (WBK) and client (BAU) targets, BCM/h."""
+    __tablename__ = "loader_model_target"
+    __table_args__ = (UniqueConstraint("model", "basis"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model: Mapped[str] = mapped_column(String(80))
+    basis: Mapped[str] = mapped_column(String(10))            # internal | client
+    pdty_ob: Mapped[float | None] = mapped_column(Float)
+    pdty_mud: Mapped[float | None] = mapped_column(Float)
+
+
+class HaulerFactor(Base):
+    """Truck factor and speeds per hauler model family (Prod_Target PDTY)."""
+    __tablename__ = "hauler_factor"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    family: Mapped[str] = mapped_column(String(80), unique=True)
+    tf_ob: Mapped[float | None] = mapped_column(Float)
+    tf_mudb: Mapped[float | None] = mapped_column(Float)
+    tf_mud: Mapped[float | None] = mapped_column(Float)
+    tf_coal: Mapped[float | None] = mapped_column(Float)
+    sp_empty: Mapped[float | None] = mapped_column(Float)
+    sp_loaded: Mapped[float | None] = mapped_column(Float)
+    sp_avg: Mapped[float | None] = mapped_column(Float)

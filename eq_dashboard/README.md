@@ -171,6 +171,12 @@ Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersi
 
 **Admin → Hourly setup**
 
+- **Prod_Target** (tab pertama) adalah acuan utama. Import file `Prod_Target.xlsx` (sheet PDTY), dan Mst Hourly boleh ikut diupload untuk mengisi yang tidak tercakup.
+  - **Produktivitas excavator per model** tersedia dua set: target **internal (WBK)** dan **client (BAU)**. Pilih yang dipakai untuk warna capaian di bagian atas halaman.
+  - Material Mud dan Mud Blending memakai *Pdty Mud*; material lain memakai *Pdty OB*.
+  - **Truck factor per keluarga model** (777E, 773E, A60H, CGE370, CWE370, CWE280) otomatis diterapkan ke model truk di populasi. Model yang tidak tercakup mengambil nilai dari Link Muatan Mst Hourly.
+- **Override per unit** hanya diisi untuk excavator yang berbeda dari modelnya, dan untuk **target coal** (Prod_Target tidak punya target coal).
+
 - **Load factors:** muatan per trip untuk setiap Material × model hauler, misalnya OB-FreeDig × 777E = 41 BCM, atau CG × CWE370Q = 22,5 t.
 - **Hourly targets:** target per jam setiap excavator, dalam BCM/jam untuk OB dan t/jam untuk coal.
 - Keduanya bisa diimport langsung dari sheet **Link Muatan** di workbook Mst Hourly, lalu dilengkapi di web. Target coal belum ada di Link Muatan, jadi perlu ditambahkan di tab *Hourly targets*.

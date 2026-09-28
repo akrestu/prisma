@@ -173,7 +173,8 @@ def expand_to_population(load: pd.DataFrame, pop_models) -> tuple[pd.DataFrame, 
 
 
 def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units: pd.DataFrame | None = None,
-            operators: pd.DataFrame | None = None, model_map: dict | None = None) -> Resolved:
+            operators: pd.DataFrame | None = None, model_map: dict | None = None,
+            model_targets: pd.DataFrame | None = None, basis: str = "internal") -> Resolved:
     """Fill hauler model, load, material group, loader model, hourly target and operator names; check every line.
 
     rows: loader, loader_nrp, hauler, hauler_nrp, material, pit, disposal, distance_m, r1..r12, remark_code, remark
@@ -250,6 +251,12 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
         unknown = sorted(set(out["loader"].dropna()) - set(models))
         if unknown:
             warnings.append(f"Loader not in the unit population: {', '.join(unknown)}.")
+    if model_targets is not None and len(model_targets):
+        # no unit override: the excavator model's target (Pdty Mud for mud, Pdty OB otherwise; coal per unit only)
+        from core.prod_target import model_target
+        dflt = [model_target(mdl, mat, model_targets, basis) if pd.isna(t) else t
+                for mdl, mat, t in zip(out["loader_model"], out["material"], out["target_per_hour"], strict=True)]
+        out["target_per_hour"] = pd.array(dflt, dtype="Float64").astype(float)
     no_target = sorted(set(out.loc[out["target_per_hour"].isna(), "loader"].dropna()))
     if no_target:
         warnings.append(f"No hourly target set for: {', '.join(no_target)} (Hourly setup).")

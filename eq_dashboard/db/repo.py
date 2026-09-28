@@ -275,3 +275,31 @@ def _units_from_data_prod(s: Session, last) -> pd.DataFrame | None:
 def hauler_model_map(s: Session, site: str) -> dict[str, str]:
     t = m.HaulerModelMap
     return dict(s.execute(select(t.unit_model, t.load_model).where(t.site == site)).all())
+
+
+# ---------------------------------------------------------------- Prod_Target
+def model_targets(s: Session) -> pd.DataFrame:
+    t = m.LoaderModelTarget
+    return frame(s, select(t.model, t.basis, t.pdty_ob, t.pdty_mud).order_by(t.basis, t.model))
+
+
+def hauler_factors(s: Session) -> pd.DataFrame:
+    t = m.HaulerFactor
+    return frame(s, select(t.family, t.tf_ob, t.tf_mudb, t.tf_mud, t.tf_coal, t.sp_empty, t.sp_loaded, t.sp_avg)
+                 .order_by(t.family))
+
+
+def site_basis(s: Session, site: str) -> str:
+    return s.scalar(select(m.Site.target_basis).where(m.Site.code == site)) or "internal"
+
+
+def save_prod_target(s: Session, ex: pd.DataFrame, hl: pd.DataFrame) -> None:
+    """Replace the excavator model targets and hauler factors (company-wide; they carry no site)."""
+    from sqlalchemy import delete, insert
+    s.execute(delete(m.LoaderModelTarget))
+    s.execute(delete(m.HaulerFactor))
+    clean = lambda df: df.astype(object).where(df.notna(), None).to_dict("records")  # noqa: E731
+    if len(ex):
+        s.execute(insert(m.LoaderModelTarget), clean(ex[["model", "basis", "pdty_ob", "pdty_mud"]]))
+    if len(hl):
+        s.execute(insert(m.HaulerFactor), clean(hl))

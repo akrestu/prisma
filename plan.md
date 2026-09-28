@@ -365,3 +365,11 @@ Referensi: `Mst Hourly.xlsx` (sheet DS/NS = input, Link Muatan = matriks muatan 
 - **Layar TV hourly baru**: hero OB & Coal (angka shift, % target sejauh ini, chart burn-up: batang per jam vs tick target, kumulatif vs target, proyeksi akhir shift, batang jam berjalan berdenyut), matriks KPI (Hour · Day+outlook · MTD · Month outlook × OB, Coal, SR, Distance), papan fleet (loader, model, operator, jumlah hauler, material, PIT → disposal, target, 12 jam heat cell, total, bar capaian, remark, Total, Running fleet).
 - **Dashboard → Hourly production** interaktif (Plotly): Pace, Fleets (heatmap + total vs target), Haulers & operators (rit per jam kerja per operator), Month, Lines.
 - Migrasi `a2b6c7d8e9f0`.
+
+## Revisi 16 — Prod_Target sebagai acuan target hourly (2026-09-28)
+- Import `Prod_Target.xlsx` (sheet PDTY) di Admin → Hourly setup → Prod_Target: produktivitas excavator per model (TargetBy WBK = internal, BAU = client; Pdty OB & Pdty Mud) dan truck factor per keluarga model hauler (TF OB, Mud Blending, Mud, Coal; kecepatan disimpan untuk nanti). Berlaku untuk semua site.
+- Pencocokan nama: awalan 'CAT' diabaikan, awalan terpanjang menang (390FL → CAT390FL, SK520XDLC-10 → SK520, 777E-KDP → CAT777E, CWE28064R → CWE280).
+- Prioritas: Prod_Target utama; Mst Hourly (Link Muatan) hanya mengisi model truk yang tidak ada (7555B) dan unit yang tidak ada di populasi. Target coal diisi manual per unit.
+- Target per jam = override unit bila ada, selain itu target model (Pdty Mud untuk Mud/Mud Blending, Pdty OB lainnya) sesuai basis site (`sites.target_basis`, default internal).
+- DB dev: Prod_Target + Mst Hourly diterapkan ke WBK-BAU (94 load factor) dan WBK-MAS (50); override Mst yang tercakup Prod_Target dihapus; shift 27 Sep DS/NS disimpan ulang dengan target baru. Truk tanpa muatan: 773D-NBJ, 775F-DLS, AXOR 2528, ELF-NLR 55B LX (BAU); 773D-NBJ, AXOR 2528, KINGKAN 380, KINGKAN 430 (MAS).
+- Migrasi `c4d8e9f0a1b2`.
