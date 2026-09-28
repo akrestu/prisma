@@ -61,7 +61,7 @@ def test_render_has_both_tables_and_current_hour(db_session):
     _seed(db_session)
     d = hourly_tv.build(db_session, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
     html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
-    assert "OVERBURDEN" in html and "COAL" in html and "Running fleet" in html and "11-12" in html
+    assert "Overburden" in html and "Coal" in html and "Running fleet" in html and "11-12" in html
     assert "class='now'" in html and "DANIEL PURBA" in html and "<script" not in html.lower()
 
 

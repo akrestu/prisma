@@ -156,21 +156,34 @@ def build(s: Session, site: str, now: dt.datetime, date: dt.date | None = None, 
 
 
 def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """One row per loader (fleet) with volume per hour, plus shift totals. `target_slots` is the hourly target of
+    the fleets that worked in each hour (the yardstick of the hourly bars and the burn-up line)."""
+    empty = {"slots": [0.0] * 12, "running": [0] * 12, "target_slots": [0.0] * 12, "total": 0.0, "haulers": 0,
+             "trips": 0.0}
     if rows.empty:
-        return pd.DataFrame(), {"slots": [0.0] * 12, "running": [0] * 12, "total": 0.0}
-    vol = long.pivot_table(index="loader", columns="slot", values="volume", aggfunc="sum", fill_value=0.0) \
-        .reindex(columns=range(1, 13), fill_value=0.0)
+        return pd.DataFrame(), empty
+    vol = long.pivot_table(index="loader", columns="slot", values="volume", aggfunc="sum", fill_value=0.0)         .reindex(columns=range(1, 13), fill_value=0.0)
     vol.columns = [f"s{k}" for k in range(1, 13)]          # string names: itertuples renames integer columns
+    rows = rows.assign(hauler_key=rows["hauler"].fillna(rows["hauler_model"]) if "hauler" in rows
+                       else rows["hauler_model"])
     first = rows.sort_values("line").groupby("loader", sort=False).agg(
         model=("loader_model", "first"), material=("material", lambda x: " / ".join(dict.fromkeys(x.dropna()))),
         pit=("pit", "first"), disposal=("disposal", "first"), target=("target_per_hour", "max"),
+        operator=("operator", lambda x: ", ".join(dict.fromkeys(x.dropna()))),
+        haulers=("hauler_key", "nunique"),
         code=("remark_code", "first"), remark=("remark", lambda x: "; ".join(dict.fromkeys(x.dropna()))),
         line=("line", "min"))
     out = first.join(vol).sort_values("line").reset_index()
-    out["total"] = out[[f"s{k}" for k in range(1, 13)]].sum(axis=1)
+    cols = [f"s{k}" for k in range(1, 13)]
+    out["total"] = out[cols].sum(axis=1)
     label = {k: f"{k} - {v}" for k, v in H.REMARKS.items()}
     out["remark"] = [" · ".join(x for x in (label.get(str(c), c if pd.notna(c) else None), r or None) if x)
                      for c, r in zip(out["code"], out["remark"], strict=True)]
-    slots = [float(out[f"s{k}"].sum()) for k in range(1, 13)]
-    running = [int((out[f"s{k}"] > 0).sum()) for k in range(1, 13)]
-    return out, {"slots": slots, "running": running, "total": float(out["total"].sum())}
+    tgt = out["target"].fillna(0)
+    totals = {"slots": [float(out[c].sum()) for c in cols],
+              "running": [int((out[c] > 0).sum()) for c in cols],
+              "target_slots": [float(tgt[out[c] > 0].sum()) for c in cols],
+              "total": float(out["total"].sum()),
+              "haulers": int(rows["hauler_key"].nunique()),
+              "trips": float(long["rit"].sum()) if len(long) else 0.0}
+    return out, totals

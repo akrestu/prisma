@@ -180,5 +180,5 @@ def test_kiosk_hourly_screen(published, monkeypatch):
     at = _kiosk(monkeypatch, token)
     assert not at.exception, [e.value for e in at.exception]
     html = " ".join(str(h.proto.body) for h in at.get("html"))
-    assert "Hourly production" in html and "WBK-BAU" in html and "OVERBURDEN" in html
+    assert "Hourly production" in html and "WBK-BAU" in html and "Overburden" in html
     assert "PA and hours by type" not in html          # not the equipment screen
