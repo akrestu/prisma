@@ -13,7 +13,7 @@ from db.engine import session_scope  # noqa: E402
 if "display" in st.query_params:
     # Kiosk TV mode: no login, token locked to one site, TV screen only.
     from auth.display import validate
-    from pages.tv.screen import show
+    from pages.tv.screen import show, show_hourly
 
     with session_scope() as s:
         dev = validate(s, st.query_params.get("display"))
@@ -22,16 +22,20 @@ if "display" in st.query_params:
         st.error("This TV link is invalid or has been revoked. Contact your Admin.")
         st.stop()
 
-    @st.fragment(run_every="5m")
+    @st.fragment(run_every="1m")
     def tv_screen():
-        # token and period are re-read on every refresh: revocation / period change apply within 5 minutes
+        # token, screen and period are re-read on every refresh: revocation or changes apply within a minute.
+        # The equipment screen is cached per published version, so refreshing it every minute costs nothing.
         with session_scope() as s:
             d = validate(s, st.query_params.get("display"))
-            period = d.period if d else None
+            period, screen = (d.period, d.screen) if d else (None, None)
         if period is None:
             st.error("This TV link has been revoked.")
             return
-        show(site, kiosk=True, period=period)
+        if screen == "hourly":
+            show_hourly(site, kiosk=True)
+        else:
+            show(site, kiosk=True, period=period)
 
     st.navigation([st.Page(tv_screen, title=f"TV {site}", url_path="tv")], position="hidden").run()
     st.stop()
@@ -50,6 +54,7 @@ def P(path, title, icon, **kw):
 
 DASH = {
     "overview": P("pages/dashboard/overview.py", "Overview", "dashboard", default=True),
+    "hourly": P("pages/dashboard/hourly.py", "Hourly production", "timer"),
     "pa_ua": P("pages/dashboard/pa_ua.py", "PA & UoA", "speed"),
     "time_distribution": P("pages/dashboard/time_distribution.py", "Time distribution", "donut_large"),
     "reliability": P("pages/dashboard/reliability.py", "Reliability", "build"),

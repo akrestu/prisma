@@ -5,7 +5,7 @@ import hashlib
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from core import tv
 from core.tv_render import render
@@ -43,3 +43,34 @@ def version_key(site: str) -> tuple:
 
 def show(site: str, kiosk: bool, period: str = "daily") -> None:
     st.html(render(_payload(site, period, version_key(site)), kiosk=kiosk))
+
+
+# ------------------------------------------------------------------ hourly production screen
+SCREENS = {"equipment": "Equipment & monthly", "hourly": "Hourly production"}
+
+
+@st.cache_data(ttl=60, max_entries=40, show_spinner=False)
+def _hourly_payload(site: str, date, shift: str | None, minute_key: str, stamp: str):
+    """Cached for at most a minute per site × shift; `stamp` changes on every save, so new input shows at once."""
+    from core import hourly_tv
+    from core.config import now_wib
+    with session_scope() as s:
+        return hourly_tv.build(s, site, now_wib(), date, shift)
+
+
+def _hourly_stamp(site: str) -> str:
+    with session_scope() as s:
+        h, t = m.HourlyShift, m.Target
+        last = s.scalar(select(func.max(h.updated_at)).where(h.site == site))
+        cfg = s.execute(select(func.count(), func.max(m.LoaderTarget.target_per_hour))
+                        .where(m.LoaderTarget.site == site)).first()
+        tg = s.execute(select(t.sr, t.distance).where(t.site == site)).all()
+    return f"{last}|{tuple(cfg)}|{hashlib.sha1(repr(tg).encode(), usedforsecurity=False).hexdigest()}"
+
+
+def show_hourly(site: str, kiosk: bool, date=None, shift: str | None = None) -> None:
+    from core.config import now_wib
+    from core.hourly_render import render as render_hourly
+    now = now_wib()
+    d = _hourly_payload(site, date, shift, now.strftime("%Y%m%d%H%M"), _hourly_stamp(site))
+    st.html(render_hourly(d, kiosk=kiosk, now=now))

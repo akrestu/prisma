@@ -1,10 +1,19 @@
 # PRISMA — Production & Reliability Information System for Mining Analytics
 
-Aplikasi web untuk kinerja alat dan produksi tambang per site. Sumber datanya workbook bulanan **Data_Prod** (.xlsb/.xlsx) ditambah target bulanan per site.
+Aplikasi web untuk kinerja alat dan produksi tambang per site. Ada tiga sumber data:
+
+| Sumber | Isi | Seberapa sering |
+|---|---|---|
+| **Unit_Population** (.xlsx) | daftar unit dan site pemiliknya | saat ada unit masuk, keluar, atau pindah site |
+| **Data_Prod** (.xlsb/.xlsx) | Eq.Event, ritasi, timbangan, fuel | bulanan (month to date), lewat approval |
+| **Hourly production** | ritase per excavator per jam | setiap jam, diinput di web atau lewat template Excel |
+
+Ditambah target bulanan dan plan produksi per site.
 
 Isinya:
 
 - Dashboard: PA, UoA, time distribution, reliability (MTBS, MTTR, PM accuracy), produksi OB dan coal, productivity loader dan hauler, fuel, data quality.
+- Produksi OB dan coal **per jam** (flash data) yang diinput operator, lengkap dengan layar TV-nya.
 - Alur import, approval, dan versi data.
 - Layar TV per site untuk control room.
 
@@ -92,6 +101,7 @@ Password minimal 10 karakter dan harus berisi campuran huruf dengan angka atau s
 ### Langkah 5 — Isi data awal (opsional, bisa juga lewat web)
 
 ```bash
+# Unit_Population diimport lewat web: Data → Unit population
 python cli.py import-target ..\Target.xlsx            # target bulanan (ke semua site)
 python cli.py ingest ..\Data_Prod_2026-09.xlsb        # import satu bulan
 python cli.py status                                  # lihat status per site
@@ -118,13 +128,24 @@ Dengan `--server.address 127.0.0.1`, aplikasi hanya bisa dibuka dari PC ini. Sup
 
 | Peran | Bisa apa |
 |---|---|
-| **Admin** | semua: user & role, site & mapping, target & plan, interval PM, TV devices, audit log, hapus data |
-| **Site Manager** | dashboard site-nya, approve/reject data site-nya, target & plan site-nya, preview TV, export Data_Prod |
-| **Data Officer** | import Data_Prod, dashboard, Data explorer, export |
+| **Admin** | semua: user & role, site & mapping, target & plan, hourly setup, unit population, interval PM, TV devices, audit log, hapus data |
+| **Site Manager** | dashboard site-nya, approve/reject data site-nya, target & plan site-nya, hourly setup dan hourly input site-nya, preview TV, export Data_Prod |
+| **Data Officer** | import Data_Prod dan Unit_Population, hourly input, dashboard, Data explorer, export |
 | **Viewer** | dashboard dan Data explorer untuk site yang diberikan (data PUBLISHED saja) |
 | **Display** | link TV bertoken rahasia, terkunci ke satu site, hanya membuka layar TV |
 
 Admin membuat user di **Admin → Users & roles**. Password sementara hanya ditampilkan sekali, dan user wajib menggantinya saat login pertama.
+
+### Populasi unit (Unit_Population)
+
+Daftar unit dan site pemiliknya tidak lagi ada di Data_Prod. Populasi dikelola sebagai file sendiri di **Data → Unit population**:
+
+1. Unduh template. Template sudah terisi daftar unit yang berlaku hari ini.
+2. Ubah di Excel: tambah unit baru, hapus unit yang keluar, atau ganti site unit yang pindah.
+3. Upload file itu, lalu pilih tanggal **Effective from**. Aplikasi menampilkan perubahannya (added, removed, moved site) sebelum disimpan.
+4. Klik **Save version**.
+
+Setiap import Data_Prod memakai versi populasi yang berlaku pada bulan data tersebut. Karena itu, meng-import ulang bulan lama tetap memakai populasi lama. File Data_Prod lama yang masih punya sheet *Populasi Unit* tetap diterima, dan sheet itu hanya dipakai kalau belum ada versi populasi untuk bulan tersebut.
 
 ### Update data bulanan
 
@@ -142,6 +163,25 @@ Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersi
 
 **Mengoreksi data:** buka **Data_Prod → Export**, pilih bulan dan site, perbaiki file di Excel, lalu import lagi.
 
+### Produksi per jam (flash data)
+
+**Persiapan per site (sekali, oleh Admin atau Site Manager): Admin → Hourly setup**
+
+- **Load factors:** muatan per trip untuk setiap Material × model hauler, misalnya OB-FreeDig × 777E = 41 BCM, atau CG × CWE370Q = 22,5 t.
+- **Hourly targets:** target per jam setiap excavator, dalam BCM/jam untuk OB dan t/jam untuk coal.
+- Keduanya bisa diimport langsung dari sheet **Link Muatan** di workbook Mst Hourly, lalu dilengkapi di web. Target coal belum ada di Link Muatan, jadi perlu ditambahkan di tab *Hourly targets*.
+- Target bulanan **SR** (stripping ratio) dan **Distance** diisi di **Admin → Targets & plan**.
+
+**Input setiap jam (Data Officer atau Site Manager): Data → Hourly input**
+
+- Pilih site, tanggal produksi, dan shift. Shift yang sedang berjalan terpilih otomatis. Hari produksi dimulai pukul 06:00, jadi shift malam setelah tengah malam tetap masuk tanggal sebelumnya.
+- **Web input:** grid seperti sheet DS/NS, satu baris per excavator × model hauler. Isi operator, material, hauler, PIT, disposal, jarak, rit per jam, dan keterangan (kode + teks). Muatan dan target terisi otomatis. Shift baru otomatis menyalin baris dari shift sebelumnya, jadi operator cukup mengisi rit. Klik **Save shift**.
+- **Excel template:** unduh template per site dan shift, isi di Excel, lalu upload. Cocok untuk input massal atau saat koneksi lemah. Upload akan **mengganti** isi shift itu.
+
+Data per jam langsung tampil tanpa approval. Angka resmi bulanan tetap berasal dari Data_Prod. Di layar TV, MTD dihitung dari data resmi Data_Prod ditambah data flash untuk hari-hari setelahnya.
+
+Riwayat per shift, grafik harian, dan unduhan tersedia di **Dashboard → Hourly production**.
+
 ### Filter dashboard
 
 - **Period:** Last complete day · Last 7 days · Month to date · Last month · Year to date · Custom range. Rentang boleh melewati batas bulan.
@@ -157,7 +197,9 @@ Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersi
 
 ## 3. Pasang layar TV
 
-1. Admin membuka **Admin → TV devices**, isi nama TV, site, dan periode (hourly/daily/weekly/monthly/yearly), lalu klik **Create TV link**.
+1. Admin membuka **Admin → TV devices**, isi nama TV, site, dan **jenis layar**, lalu klik **Create TV link**:
+   - **Equipment & monthly:** availability, reliability, produksi, dan fuel. Periode diatur per TV (hourly/daily/weekly/monthly/yearly).
+   - **Hourly production:** ringkasan jam berjalan, MTD, outlook, dan harian, plus tabel OB dan coal per fleet per jam dengan warna capaian target.
 2. Salin link yang muncul. Link hanya ditampilkan **sekali**.
 3. Di mini-PC atau TV, jalankan browser dalam mode kiosk:
 
@@ -168,7 +210,7 @@ Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersi
 
 4. Aktifkan auto-start saat PC menyala, lalu matikan *sleep* dan screensaver.
 
-Layar didesain untuk 1920×1080, satu layar tanpa scroll, dan refresh otomatis tiap 5 menit. Link bisa dicabut atau dibuat ulang kapan saja dari halaman yang sama. Status online setiap TV juga terlihat di **Data status → System health**.
+Layar didesain untuk 1920×1080, satu layar tanpa scroll, dan refresh otomatis setiap menit. Jenis layar bisa diganti kapan saja dari **TV devices**, dan perubahannya tampil di TV dalam satu menit. Link bisa dicabut atau dibuat ulang kapan saja dari halaman yang sama. Status online setiap TV juga terlihat di **Data status → System health**.
 
 ---
 
@@ -258,7 +300,7 @@ pytest                 # butuh TEST_DATABASE_URL; ±10 menit
 ruff check .           # linter (aturan di pyproject.toml)
 ```
 
-Sebagian test memakai file contoh `../Eq.Event.xlsb` dan `../Target.xlsx`. Test itu otomatis dilewati kalau filenya tidak ada. File data (.xlsb/.xlsx/.pdf) tidak di-commit.
+Sebagian test memakai file contoh `../Eq.Event.xlsb`, `../Target.xlsx`, dan `../Mst Hourly.xlsx`. Test itu otomatis dilewati kalau filenya tidak ada. File data (.xlsb/.xlsx/.pdf) tidak di-commit.
 
 ---
 
@@ -292,6 +334,9 @@ eq_dashboard/
     metrics.py, dq.py    PA/UoA/MTBS/MTTR…, pemeriksaan data quality
     ingest.py            simpan upload, versi, approve/reject/rollback
     dataprod.py          template & export Data_Prod
+    population.py        Unit_Population: template, import, versi, diff
+    hourly.py            produksi per jam: slot, Link Muatan, template, resolve
+    hourly_tv.py         data layar TV per jam; hourly_render.py = HTML-nya
     filters.py           preset periode, filter di URL
     tv.py, tv_render.py  data & tampilan layar TV
     dash.py, theme.py    filter sidebar, target, chart, design tokens

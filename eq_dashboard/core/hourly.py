@@ -262,3 +262,30 @@ def parse_template(data: bytes) -> HourlyFile:
     body["remark_code"] = text(body["remark_code"].astype("string")).str.extract(r"^(\d{3})", expand=False)
     return HourlyFile(site, date.date(), shift, str(head.get("Coordinator") or "").strip(),
                       body.reset_index(drop=True))
+
+
+# ------------------------------------------------------------------ legacy 'Mst Hourly' shift sheets
+def parse_mst_shift(sheet: pd.DataFrame) -> pd.DataFrame:
+    """Rows from a DS/NS sheet of the old Mst Hourly workbook (blocks 'Ritasi OB' and 'Ritasi CG').
+
+    Columns used: D excavator, F operator, G material, H hauler model, M..X trips per hour. Lines without a
+    material are template filler and are skipped."""
+    out = []
+    loader, operator = None, None
+    for i in range(len(sheet)):
+        r = sheet.iloc[i]
+        exca = r.iloc[3] if len(r) > 3 else None
+        mat = r.iloc[6] if len(r) > 6 else None
+        if isinstance(exca, str) and exca.strip() not in ("", "Exca", "0", loader):
+            loader, operator = exca.strip(), None
+        if isinstance(r.iloc[5], str) and r.iloc[5].strip() and r.iloc[5].strip() != "Operator":
+            operator = r.iloc[5].strip()
+        if not (isinstance(mat, str) and mat.strip()[:2].upper() in ("OB", "CG")) or loader is None:
+            continue
+        trips = [pd.to_numeric(v, errors="coerce") for v in r.iloc[12:24].tolist()]
+        out.append({"loader": loader, "operator": operator, "material": mat.strip(),
+                    "hauler_model": str(r.iloc[7]).strip() if pd.notna(r.iloc[7]) else None,
+                    "pit": None, "disposal": None, "distance_m": None,
+                    **{f"r{k}": trips[k - 1] for k in range(1, 13)}, "remark_code": None, "remark": None})
+    return pd.DataFrame(out, columns=["loader", "operator", "material", "hauler_model", "pit", "disposal",
+                                      "distance_m", *R, "remark_code", "remark"])

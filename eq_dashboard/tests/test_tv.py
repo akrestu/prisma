@@ -170,3 +170,15 @@ def test_tv_admin_pages_guard(page, role):
     at.session_state["user"] = CurrentUser(9, "x", "X", role, False, ("WBK-MAS",))
     at.run()
     assert any("do not have access" in e.value for e in at.error)
+
+
+def test_kiosk_hourly_screen(published, monkeypatch):
+    s = published
+    dev, token = display.create_device(s, "BAU hourly TV", "WBK-BAU", None)
+    dev.screen = "hourly"
+    s.commit()
+    at = _kiosk(monkeypatch, token)
+    assert not at.exception, [e.value for e in at.exception]
+    html = " ".join(str(h.proto.body) for h in at.get("html"))
+    assert "Hourly production" in html and "WBK-BAU" in html and "OVERBURDEN" in html
+    assert "PA and hours by type" not in html          # not the equipment screen

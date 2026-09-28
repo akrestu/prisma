@@ -12,7 +12,7 @@ from db import models as m
 
 from .conftest import APP_DIR, TARGET
 
-DASHBOARDS = ["overview", "pa_ua", "time_distribution", "reliability", "production_ob", "coal_getting",
+DASHBOARDS = ["overview", "hourly", "pa_ua", "time_distribution", "reliability", "production_ob", "coal_getting",
               "loader_fleet", "fuel", "data_quality"]
 ADMIN_PAGES = ["users_roles", "targets_plan", "pm_interval", "sites_mapping", "audit_log", "unit_population"]
 

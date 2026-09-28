@@ -350,3 +350,11 @@ Referensi: `Mst Hourly.xlsx` (sheet DS/NS = input, Link Muatan = matriks muatan 
 - **H3** Input per jam: form grid web + template Excel + import; validasi (unit ada di populasi, jam dalam shift, rit wajar).
 - **H4** Layar TV "Hourly production" + pilihan jenis layar per TV + halaman dashboard "Hourly production".
 - **H5** Uji end-to-end dengan data contoh Mst Hourly; update README.
+
+### Progres Revisi 14 (2026-09-28)
+- [x] **H1** Unit_Population: tabel `population_versions`/`population_units`, halaman Data → Unit population (template pre-filled, import, diff added/removed/moved, versi), Data_Prod memakai versi yang berlaku (sheet Populasi opsional; template & export Data_Prod tanpa populasi).
+- [x] **H2** Admin → Hourly setup: load factor (material × hauler) & target per jam per excavator (OB/CG), import dari sheet Link Muatan; target SR & Distance di Targets & plan.
+- [x] **H3** Data → Hourly input: grid web per site × tanggal × shift (salin baris shift sebelumnya, muatan & target otomatis, validasi) + template Excel per shift (download / upload mengganti shift). Pembaca sheet DS/NS Mst Hourly lama (`parse_mst_shift`).
+- [x] **H4** Layar TV "Hourly production" (jenis layar per TV, refresh 1 menit): Hour · MTD (resmi + flash) · Outlook · Daily (outlook) · Koordinator; tabel OB & Coal per fleet per jam (oranye < target, teal ≥ target, kuning = jam berjalan), Total, Running fleet, Remark; mode padat bila > 18 fleet. Halaman Dashboard → Hourly production (shift mana pun, grafik harian, unduhan). TV preview bisa kedua layar.
+- [x] **H5** Uji: angka layar = Dashboard DS Mst Hourly (jam 11-12 = 719 BCM, kumulatif 4.165 BCM); MTD = resmi + flash; 105 test lulus. Data master asli Link Muatan (BAU) + shift DS 26 Sep dimasukkan ke DB dev. README diperbarui.
+- Catatan: target coal per excavator belum ada di Link Muatan → isi di Hourly setup. Migrasi: d9e3f4a5b6c7, e0f4a5b6c7d8, f1a5b6c7d8e9.

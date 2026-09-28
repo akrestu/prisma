@@ -11,6 +11,7 @@ from core.periods import PERIOD_LABEL, PERIODS
 from core.ui import require, sites_for
 from db import models as m
 from db.engine import session_scope
+from pages.tv.screen import SCREENS
 
 user = require("display_devices")
 st.title("TV devices")
@@ -33,23 +34,27 @@ if new:
     st.caption(f'TV setup: start Chrome/Edge with `--kiosk "{new[1]}"`, enable auto-start, disable sleep & screensaver.')
 
 with st.form("new_device", clear_on_submit=True):
-    c1, c2, c3 = st.columns([2, 1, 1])
+    c1, c2, c3, c4 = st.columns([2, 1, 1.2, 1])
     name = c1.text_input("TV name", placeholder="MAS control room TV")
     site = c2.selectbox("Site", [x for x in sites_for(user) if x != UNMAPPED])
-    period = c3.selectbox("Period", PERIODS, index=1, format_func=PERIOD_LABEL.get)
+    screen = c3.selectbox("Screen", list(SCREENS), format_func=SCREENS.get,
+                          help="Equipment & monthly: availability, reliability, production. Hourly production: "
+                               "trips per fleet per hour (flash data), refreshed every minute.")
+    period = c4.selectbox("Period", PERIODS, index=1, format_func=PERIOD_LABEL.get,
+                          help="Used by the Equipment & monthly screen")
     if st.form_submit_button("Create TV link", type="primary"):
         if not name.strip():
             st.error("Enter a TV name.")
         else:
             with session_scope() as s:
                 dev, token = display.create_device(s, name.strip(), site, user.id)
-                dev.period = period
-                audit(s, user.username, "display_create", site, f"{name.strip()} ({period})")
+                dev.period, dev.screen = period, screen
+                audit(s, user.username, "display_create", site, f"{name.strip()} ({screen}, {period})")
             st.session_state["new_display_link"] = (name.strip(), link(token))
             st.rerun()
 
 with session_scope() as s:
-    rows = [(d.id, d.name, d.site_code, d.period, d.active, d.last_seen)
+    rows = [(d.id, d.name, d.site_code, d.period, d.active, d.last_seen, d.screen)
             for d in s.scalars(select(m.DisplayDevice).order_by(m.DisplayDevice.site_code, m.DisplayDevice.name))]
 if not rows:
     st.info("No TV devices yet.")
@@ -57,20 +62,28 @@ if not rows:
 
 now = dt.datetime.now(dt.UTC)
 st.subheader("TVs")
-for did, name, site, period, active, seen in rows:
+for did, name, site, period, active, seen, screen in rows:
     online = active and seen is not None and now - seen < dt.timedelta(minutes=10)
     state = ":yellow-badge[online]" if online else (":gray-badge[offline]" if active else ":orange-badge[revoked]")
     seen_txt = seen.astimezone(WIB).strftime("%d %b %H:%M") if seen else "never"
     with st.container(border=True):
-        a, p, b, c, d = st.columns([3.2, 1.6, 1.6, 1, 1])
+        a, q, p, b, c, d = st.columns([2.8, 1.6, 1.4, 1.5, 0.9, 0.9])
         a.markdown(f"**{name}** · {site} {state}  \nlast seen: {seen_txt} WIB")
+        new_screen = q.selectbox("Screen", list(SCREENS), index=list(SCREENS).index(screen) if screen in SCREENS
+                                 else 0, format_func=SCREENS.get, key=f"scr{did}", label_visibility="collapsed")
+        if new_screen != screen:
+            with session_scope() as s:
+                s.get(m.DisplayDevice, did).screen = new_screen
+                audit(s, user.username, "display_screen", site, f"{name}: {screen} → {new_screen}")
+            st.toast(f"{name}: {SCREENS[new_screen]} (applied on the TV within a minute)")
+            st.rerun()
         new_period = p.selectbox("Period", PERIODS, index=PERIODS.index(period) if period in PERIODS else 1,
                                  format_func=PERIOD_LABEL.get, key=f"per{did}", label_visibility="collapsed")
         if new_period != period:
             with session_scope() as s:
                 s.get(m.DisplayDevice, did).period = new_period
                 audit(s, user.username, "display_period", site, f"{name}: {period} → {new_period}")
-            st.toast(f"{name}: {PERIOD_LABEL[new_period]} (applied on the TV's next refresh, ≤ 5 min)")
+            st.toast(f"{name}: {PERIOD_LABEL[new_period]} (applied on the TV within a minute)")
             st.rerun()
         if b.button("Regenerate link", key=f"regen{did}"):
             with session_scope() as s:
