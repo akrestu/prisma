@@ -76,6 +76,7 @@ CSS = """
 .ft td.fu,.ft tr.rf td{color:%(DIM)s}.ft td.tot{font-weight:700}
 .ft td.ach{padding-right:.5cqw}.ft td.ach .bar{margin:0;height:.3cqw}
 .ft td.rm{text-align:left;color:%(MUTED)s}
+.ft td.hl{color:%(MUTED)s;font-size:.72cqw;white-space:normal;line-height:1.25;overflow:visible}.ft td.hl b{color:%(TEXT)s;font-weight:600}
 .kpi td.m span{color:%(DIM)s}
 .ft tr.tt td{font-weight:700;border-top:.1cqw solid %(MUTED)s;border-bottom:none}
 .ft tr.rf td{color:%(DIM)s;border-bottom:none}
@@ -219,11 +220,11 @@ def _board(g: str, d: HourlyTv) -> str:
     tot = d.totals.get(g, {})
     now = d.slot if d.live else None
     labels = SLOTS[d.shift]
-    cols = ('<col style="width:1.6%"><col style="width:5%"><col style="width:5.6%">'
-            '<col style="width:2.6%"><col style="width:8.2%"><col style="width:11.4%"><col style="width:3.2%">'
-            + '<col style="width:3.5%">' * 12 + '<col style="width:4%"><col style="width:3.4%"><col>')
+    cols = ('<col style="width:1.6%"><col style="width:4.6%"><col style="width:5%">'
+            '<col style="width:13%"><col style="width:7.5%"><col style="width:9.5%"><col style="width:3%">'
+            + '<col style="width:3.2%">' * 12 + '<col style="width:4%"><col style="width:3.4%"><col>')
     th = ("<tr><th class='l'>#</th><th class='l'>Loader</th><th class='l'>Model</th>"
-          "<th>Hlr</th><th class='l'>Material</th><th class='l'>PIT → disposal</th><th>Target</th>"
+          "<th class='l'>Haulers</th><th class='l'>Material</th><th class='l'>PIT → disposal</th><th>Target</th>"
           + "".join(f"<th class='{'now' if i == now else ''}'>{lab}</th>" for i, lab in enumerate(labels, 1))
           + "<th>Total</th><th>Ach</th><th class='l'>Remark</th></tr>")
     rows = ""
@@ -248,7 +249,8 @@ def _board(g: str, d: HourlyTv) -> str:
         route = " → ".join(x for x in (r.pit, r.disposal) if isinstance(x, str) and x)
         rows += (f"<tr><td class='l mu'>{i}</td><td class='l u'>{escape(str(r.loader))}</td>"
                  f"<td class='l mu'>{escape(str(r.model or ''))}</td>"
-                 f"<td class='mu'>{r.haulers}</td><td class='l mu'>{escape(str(r.material or ''))}</td>"
+                 f"<td class='l hl'><b>{r.haulers}</b> · {escape(r.hauler_ids or '')}</td>"
+                 f"<td class='l mu'>{escape(str(r.material or ''))}</td>"
                  f"<td class='l mu'>{escape(route)}</td><td class='tg'>{_n(r.target)}</td>{cells}"
                  f"<td class='tot'>{_n(r.total)}</td><td class='ach'>{_bar(ach)}</td>"
                  f"<td class='rm'>{escape(r.remark or '')}</td></tr>")

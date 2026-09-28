@@ -89,7 +89,9 @@ def build(s: Session, site: str, now: dt.datetime, date: dt.date | None = None, 
     long = H.to_long(flash) if len(flash) else H.to_long(pd.DataFrame())
     cur = flash[(flash["date"] == date) & (flash["shift"] == shift)] if len(flash) else flash
     if len(cur):
-        tv.coordinator, tv.updated_at, tv.updated_by = (cur["coordinator"].iloc[0], cur["updated_at"].max(),
+        boss = cur["coordinator"].iloc[0]
+        boss = "" if boss is None or str(boss).strip().lower() in ("", "nan", "none") else str(boss).strip()
+        tv.coordinator, tv.updated_at, tv.updated_by = (boss, cur["updated_at"].max(),
                                                           cur["updated_by"].iloc[0])
 
     tgt = s.execute(select(m.Target.sr, m.Target.distance).where(
@@ -171,6 +173,7 @@ def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame) -> tuple[pd.DataFrame, 
         pit=("pit", "first"), disposal=("disposal", "first"), target=("target_per_hour", "max"),
         operator=("operator", lambda x: ", ".join(dict.fromkeys(x.dropna()))),
         haulers=("hauler_key", "nunique"),
+        hauler_ids=("hauler_key", lambda x: " ".join(dict.fromkeys(str(v) for v in x.dropna()))),
         code=("remark_code", "first"), remark=("remark", lambda x: "; ".join(dict.fromkeys(x.dropna()))),
         line=("line", "min"))
     out = first.join(vol).sort_values("line").reset_index()

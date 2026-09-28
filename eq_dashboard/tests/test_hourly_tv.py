@@ -90,3 +90,18 @@ def test_tv_shows_shift_boss_but_no_operator_names(db_session):
     html = render(hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB)))
     assert "Shift boss <b>Andi Shiftboss</b>" in html
     assert "Budi Santoso" not in html and ">Operator<" not in html
+
+
+def test_tv_lists_hauler_ids_per_fleet_and_hides_nan_boss(db_session):
+    import pandas as pd
+    s = db_session
+    _seed(s)
+    rows = repo.hourly_shift(s, "WBK-BAU", dt.date(2026, 9, 26), "DS")[1]
+    rows.loc[rows["loader"] == "WEX019", "hauler"] = ["WHT018", "WHT019"][:int((rows["loader"] == "WEX019").sum())]
+    repo.save_hourly(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", "nan", rows, "op1")
+    s.commit()
+    d = hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
+    ob = d.fleets["OB"].set_index("loader")
+    assert ob.loc["WEX019", "hauler_ids"].startswith("WHT018") and d.coordinator == ""
+    html = render(d)
+    assert "WHT018" in html and "Shift boss <b>—</b>" in html and pd.notna(ob.loc["WEX019", "haulers"])

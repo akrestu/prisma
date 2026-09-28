@@ -418,7 +418,9 @@ def parse_template(data: bytes) -> HourlyFile:
     body = body.dropna(how="all")
     body["remark_code"] = text(body["remark_code"].astype("string")).str.extract(r"^(\d{3})", expand=False)
     boss = head.get("Shift boss", head.get("Coordinator"))    # older templates say 'Coordinator'
-    return HourlyFile(site, date.date(), shift, str(boss if pd.notna(boss) else "").strip(),
+    boss = "" if boss is None or (isinstance(boss, float) and pd.isna(boss)) or str(boss).strip().lower() == "nan" \
+        else str(boss).strip()
+    return HourlyFile(site, date.date(), shift, boss,
                       body.reset_index(drop=True))
 
 
