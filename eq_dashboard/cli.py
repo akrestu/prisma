@@ -116,7 +116,7 @@ def cmd_reset_password(a):
 
 
 def main():
-    p = argparse.ArgumentParser(description="WANPIS CLI")
+    p = argparse.ArgumentParser(description="PRISMA CLI")
     sub = p.add_subparsers(required=True)
     sub.add_parser("migrate").set_defaults(fn=cmd_migrate)
     x = sub.add_parser("ingest")

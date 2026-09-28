@@ -120,7 +120,7 @@ class StructureError(ValueError):
 
 
 def template_meta(raw: dict[str, pd.DataFrame]) -> dict[str, str]:
-    """Key/value pairs from the hidden _meta sheet of a WANPIS template or export ({} for other workbooks)."""
+    """Key/value pairs from the hidden _meta sheet of a PRISMA template or export ({} for other workbooks)."""
     m = raw.get(META_SHEET)
     if m is None or m.shape[1] < 2:
         return {}

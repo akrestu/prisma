@@ -17,7 +17,7 @@ from db import models as m
 from db.engine import session_scope
 
 COOKIE_NAME = "eqdash_auth"
-LOGIN_FIELDS = {"Form name": "Sign in to WANPIS", "Username": "Username", "Password": "Password", "Login": "Sign in"}
+LOGIN_FIELDS = {"Form name": "Sign in to PRISMA", "Username": "Username", "Password": "Password", "Login": "Sign in"}
 
 
 def _cookie_key() -> str:

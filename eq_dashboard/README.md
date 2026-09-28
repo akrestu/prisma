@@ -1,4 +1,4 @@
-# WANPIS — Wahana Production Analysis Information System
+# PRISMA — Production & Reliability Information System for Mining Analytics
 
 Aplikasi web untuk kinerja alat dan produksi tambang per site. Sumber datanya workbook bulanan **Data_Prod** (.xlsb/.xlsx) ditambah target bulanan per site.
 

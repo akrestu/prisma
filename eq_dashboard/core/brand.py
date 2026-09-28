@@ -1,7 +1,8 @@
-"""WANPIS branding: name, logo assets and the sign-in screen layout."""
+"""PRISMA branding: name, logo assets and the sign-in screen layout."""
 from __future__ import annotations
 
 import base64
+import html
 from functools import lru_cache
 from pathlib import Path
 
@@ -9,8 +10,8 @@ import streamlit as st
 
 from core import theme as T
 
-NAME = "WANPIS"
-FULL_NAME = "Wahana Production Analysis Information System"
+NAME = "PRISMA"
+FULL_NAME = "Production & Reliability Information System for Mining Analytics"
 COMPANY = "PT WBK"
 BRAND_DIR = Path(__file__).resolve().parent.parent / "static" / "brand"
 ICON = str(BRAND_DIR / "logo-128.png")
@@ -66,7 +67,7 @@ def brand_panel() -> None:
     st.html(f"""<div class="wp-brand"><div>
 <img src="{data_uri('logo-128.png')}" alt="WBK logo">
 <div class="wp-name">{NAME}</div>
-<div class="wp-full">{FULL_NAME}</div>
+<div class="wp-full">{html.escape(FULL_NAME)}</div>
 <div class="wp-what">Equipment availability, reliability, production and fuel for every site,
 from the monthly Data_Prod workbook to the control-room TV.</div>
 </div><div class="wp-co">{COMPANY}</div></div>""")

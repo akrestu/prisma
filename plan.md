@@ -311,3 +311,6 @@ Hasil design critique: tampilan lama generik (8 kartu setara, merah di mana-mana
 - **Nomor baris Excel** (`row_ref`) disimpan di event, ritase, coal, fuel, receipt; tampil sebagai kolom "Excel row" di Data explorer. Perbaikan: nomor baris sebelumnya bergeser setelah baris kosong di tengah sheet (juga di DQ findings). Bulan lama perlu diimport ulang untuk mengisi kolom ini.
 - **Monitoring**: backup.sh mencatat backup_ok/backup_failed ke audit log; panel **System health** (Admin, halaman Data status): backup terakhir (oranye bila gagal/> 36 jam), TV offline > 15 menit, akun terkunci, login gagal 24 jam. Rotasi log Docker (5 × 10 MB per container), log Streamlit bertimestamp, error import dicatat ke log.
 - Migrasi `c8d2e3f4a5b6`.
+
+## Revisi 13 — nama aplikasi PRISMA (2026-09-28)
+- Nama baru: **PRISMA — Production & Reliability Information System for Mining Analytics** (menggantikan WANPIS). Diterapkan di judul tab, wordmark sidebar, halaman login, header TV, template & export Data_Prod, CLI, README. Nama terpusat di `core/brand.py`.

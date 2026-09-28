@@ -22,7 +22,7 @@ from core.validate import DATASET, HOUR_SLOTS, META_SHEET, SHEETS, TEMPLATE_VERS
 
 NAME_RE = re.compile(r"data[_ -]?prod[_ -]?(\d{4})[-_]?(\d{2})", re.I)
 MAX_ROWS = 100_000          # validation / formatting range per sheet
-HEAD_FILL = PatternFill("solid", fgColor="F2C230")  # WANPIS hi-vis yellow
+HEAD_FILL = PatternFill("solid", fgColor="F2C230")  # PRISMA hi-vis yellow
 HEAD_FONT = Font(bold=True, color="141517")
 TITLE_FONT = Font(bold=True, size=13)
 FORMATS = {"date": "yyyy-mm-dd", "time": "hh:mm", "datetime": "yyyy-mm-dd hh:mm", "number": "#,##0.00",
@@ -67,7 +67,7 @@ def _sheet(wb: Workbook, sh: Sheet, rows: list[list] | None = None, lists: dict[
         cell.fill, cell.font = HEAD_FILL, HEAD_FONT
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         note = c.desc + (f"\nExample: {c.example}" if c.example is not None else "")
-        cell.comment = Comment(note, "WANPIS", width=260, height=90)
+        cell.comment = Comment(note, "PRISMA", width=260, height=90)
         letter = get_column_letter(j)
         width = 6 if c.name in HOUR_SLOTS else max(11, min(34, len(c.name) + 4))
         if c.kind in ("datetime",):
@@ -151,7 +151,7 @@ def _readme(wb: Workbook, title: str, lines: list[str]) -> None:
 def _meta(wb: Workbook, kind: str, extra: dict[str, str]) -> None:
     ws = wb.create_sheet(META_SHEET)
     rows = {"dataset": DATASET, "template_version": str(TEMPLATE_VERSION), "kind": kind,
-            "generated_at": now_wib().strftime("%Y-%m-%d %H:%M WIB"), "app": "WANPIS", **extra}
+            "generated_at": now_wib().strftime("%Y-%m-%d %H:%M WIB"), "app": "PRISMA", **extra}
     for k, v in rows.items():
         ws.append([k, v])
     ws.sheet_state = "hidden"
@@ -178,7 +178,7 @@ RULES = [
     "Extra columns are allowed and ignored. Empty rows are skipped.",
     "Dates must be real Excel dates, times real Excel times (hover a header to see its description and an example).",
     "Save as .xlsx or .xlsb and name it Data_Prod_YYYY-MM.xlsx, for example Data_Prod_2026-09.xlsx.",
-    "Upload it in WANPIS → Data → Data_Prod → Import. Structure and data quality are checked before anything is saved.",
+    "Upload it in PRISMA → Data → Data_Prod → Import. Structure and data quality are checked before anything is saved.",
 ]
 
 
@@ -186,8 +186,8 @@ RULES = [
 def build_template(sites: list[str], units: pd.DataFrame | None = None) -> bytes:
     """Blank Data_Prod workbook. `units` (unit_id, type, description, model, manufacturer, site) pre-fills Populasi."""
     wb = Workbook()
-    _readme(wb, "WANPIS · Data_Prod template", [
-        "Wahana Production Analysis Information System — monthly production data workbook.", "", *RULES])
+    _readme(wb, "PRISMA · Data_Prod template", [
+        "Production & Reliability Information System for Mining Analytics — monthly production data workbook.", "", *RULES])
     lists = _lists(wb, sites)
     for sh in SHEETS:
         rows = _unit_rows(units) if sh.name == "Populasi Unit" and units is not None and len(units) else None
@@ -230,8 +230,8 @@ def export_workbook(t: dict[str, pd.DataFrame], month: dt.date, sites: list[str]
     """`t` holds stored tables keyed like repo.EXPLORER_TABLES short names: units, events, ritase, coal, fuel,
     receipt. The result re-imports to the same numbers (round trip)."""
     wb = Workbook()
-    _readme(wb, f"WANPIS · Data_Prod export · {month:%B %Y} · {', '.join(sites)}", [
-        "Exported from WANPIS (PUBLISHED data). Edit in Excel and upload again to create a new version.",
+    _readme(wb, f"PRISMA · Data_Prod export · {month:%B %Y} · {', '.join(sites)}", [
+        "Exported from PRISMA (PUBLISHED data). Edit in Excel and upload again to create a new version.",
         "Stoppages, weeks and data quality are recalculated on upload, so they are not part of this file.", "",
         *RULES])
     lists = _lists(wb, sites)
