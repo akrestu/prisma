@@ -3,3 +3,9 @@
 .cache
 __pycache__
 tests
+.pytest_cache
+.ruff_cache
+*.xlsb
+*.xlsx
+*.pdf
+deploy/.env

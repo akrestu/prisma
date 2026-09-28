@@ -15,6 +15,7 @@ from sqlalchemy import select
 from auth.access import scope_filter
 from core import metrics
 from core import theme as T
+from core.clean import week_of
 from core.config import DEFAULT_CLIENT_STANDBY, UNMAPPED
 from core.targets import METRICS
 from core.ui import fmt_num, fmt_pct, require, sites_for
@@ -44,7 +45,8 @@ TABLES = {
 }
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+# bounded caches: without max_entries memory grows with every month × site × table ever opened
+@st.cache_data(ttl=3600, max_entries=240, show_spinner=False)
 def _table(name: str, upload_id: int, site: str) -> pd.DataFrame:
     """Cached per table × upload × site (never per user). Access is filtered afterwards."""
     model, cols = TABLES[name]
@@ -53,7 +55,7 @@ def _table(name: str, upload_id: int, site: str) -> pd.DataFrame:
                           .where(model.upload_id == upload_id, model.site == site))
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, max_entries=60, show_spinner=False)
 def _dq(upload_id: int, site: str) -> pd.DataFrame:
     with session_scope() as s:
         return repo.dq_findings(s, upload_id, site).assign(site=site)
@@ -139,14 +141,17 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
         e3 = e2[e2["model"].isin(models)] if models else e2
         units = sb.multiselect("Unit ID", sorted(e3["unit_id"].unique()), key="f_unit")
 
-    def by_date(df, col="date"):
+    def by_date(df, col="date", shift_col="shift"):
+        """Date range, week and shift filters for any table. Tables without a week column (ritase, coal, fuel,
+        receipts, stoppages) get the week from their date, so Week filters every figure on the page, not only PA."""
         if df.empty:
             return df
         out = df[(df[col] >= d0) & (df[col] <= d1)]
-        if weeks and "week" in out:
-            out = out[out["week"].isin(weeks)]
-        if "shift" in out and len(shift) < 2:
-            out = out[out["shift"].isin(shift)]
+        if weeks:
+            wk = out["week"] if "week" in out else week_of(pd.to_datetime(out[col]).dt.day).set_axis(out.index)
+            out = out[wk.isin(weeks)]
+        if shift_col in out and len(shift) < 2:
+            out = out[out[shift_col].isin(shift)]
         return out
 
     def by_unit(df, col="unit_id"):
@@ -161,13 +166,12 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
         return df
 
     ev_f = by_unit(by_date(ev))
-    stp = scope_filter(combine("stoppages", versions), allowed)
-    stp = by_unit(stp[(stp["start_date"] >= d0) & (stp["start_date"] <= d1)] if len(stp) else stp)
+    # a stoppage belongs to the day and shift it started in, so MTBS/MTTR follow the same filters as the hours
+    stp = by_unit(by_date(scope_filter(combine("stoppages", versions), allowed), "start_date", "start_shift"))
     rit = by_date(scope_filter(combine("ritase", versions), allowed))
     coal = by_date(scope_filter(combine("coal", versions), allowed))
     fuel = by_unit(by_date(scope_filter(combine("fuel", versions), allowed)))
-    rec = scope_filter(combine("receipt", versions), allowed)
-    rec = rec[(rec["date"] >= d0) & (rec["date"] <= d1)] if len(rec) else rec
+    rec = by_date(scope_filter(combine("receipt", versions), allowed), shift_col="-")  # deliveries: no shift split
     sb.caption(f"{', '.join(sel)} · {pd.Timestamp(month):%B %Y} · {d0:%d %b}–{d1:%d %b}")
     return Ctx(user, allowed, sel, month, pub, versions, ev_f, stp, rit, coal, fuel, rec, d0, d1)
 

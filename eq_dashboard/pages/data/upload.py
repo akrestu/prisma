@@ -140,7 +140,8 @@ with t_tpl:
     real_sites = [x for x in sites if x != "UNMAPPED"]
     with session_scope() as s:
         units = repo.latest_units(s, real_sites) if prefill else None
-    st.download_button("Download template (.xlsx)", dataprod.build_template(real_sites, units),
+    # deferred: every tab runs on every rerun, so build the workbook only when the button is clicked
+    st.download_button("Download template (.xlsx)", lambda: dataprod.build_template(real_sites, units),
                        file_name=f"{DATASET}_template_v{TEMPLATE_VERSION}.xlsx", type="primary",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", on_click="ignore")
     st.caption("Your existing .xlsb files keep working: the template only fixes names and formats, it does not "
@@ -160,18 +161,18 @@ with t_exp:
         month = c1.selectbox("Month", months, format_func=lambda d: pd.Timestamp(d).strftime("%B %Y"), key="exp_month")
         opts = sorted(pub[pub["month"] == month]["site"].unique())
         chosen = c2.multiselect("Site", opts, default=opts, key="exp_sites")
-        key = (str(month), tuple(chosen))
-        ready = st.session_state.get("export_file")
-        if chosen and st.button("Prepare export", key="exp_go"):
-            v = pub[(pub["month"] == month) & pub["site"].isin(chosen)]
-            with st.spinner("Building the workbook…"):
-                with session_scope() as s:
-                    tables = repo.export_tables(s, [(int(r.upload_id), r.site) for r in v.itertuples()])
-                data = dataprod.export_workbook(tables, pd.Timestamp(month).date(), chosen)
-            ready = {"key": key, "data": data,
-                     "name": dataprod.file_name(pd.Timestamp(month).date(), chosen[0] if len(chosen) == 1 else None)}
-            st.session_state["export_file"] = ready
-        if ready and ready["key"] == key:
-            st.download_button(f"Download {ready['name']} ({len(ready['data']) / 1e6:.1f} MB)", ready["data"],
-                               file_name=ready["name"], type="primary", on_click="ignore",
-                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        v = pub[(pub["month"] == month) & pub["site"].isin(chosen)]
+        mdate = pd.Timestamp(month).date()
+        name = dataprod.file_name(mdate, chosen[0] if len(chosen) == 1 else None)
+
+        def build_export() -> bytes:
+            """Runs only when the button is clicked (≈10 s for a full month); nothing is kept in session memory."""
+            with session_scope() as s:
+                tables = repo.export_tables(s, [(int(r.upload_id), r.site) for r in v.itertuples()])
+            return dataprod.export_workbook(tables, mdate, chosen)
+
+        if chosen:
+            st.download_button(f"Download {name}", build_export, file_name=name, type="primary", on_click="ignore",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               key="exp_dl")
+            st.caption("Building a full month takes about 10 seconds after you click.")

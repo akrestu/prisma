@@ -13,7 +13,7 @@ from db import models as m
 from db.engine import session_scope
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, max_entries=40, show_spinner=False)
 def _payload(site: str, period: str, version_key: tuple) -> tv.TvData:
     """Cached per site × period × published version (+ config). Never per user, so safe to share."""
     with session_scope() as s:

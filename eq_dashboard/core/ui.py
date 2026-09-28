@@ -42,9 +42,15 @@ def fmt_pct(v, d: int = 1) -> str:
     return "—" if v is None or pd.isna(v) else f"{v * 100:.{d}f}%"
 
 
-def excel_download(df: pd.DataFrame, filename: str, label: str = "Download Excel", key: str | None = None) -> None:
+def excel_bytes(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         df.to_excel(w, index=False)
-    st.download_button(label, buf.getvalue(), file_name=filename, key=key,
+    return buf.getvalue()
+
+
+def excel_download(df: pd.DataFrame, filename: str, label: str = "Download Excel", key: str | None = None) -> None:
+    """The workbook is built only when the button is clicked (deferred download), not on every rerun:
+    writing Excel is the slowest step on most pages (≈10 s for 60,000 rows)."""
+    st.download_button(label, lambda: excel_bytes(df), file_name=filename, key=key, on_click="ignore",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

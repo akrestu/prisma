@@ -10,6 +10,7 @@ from db import repo
 from db.engine import session_scope
 
 EXCEL_MAX = 100_000  # bigger results download as CSV only (Excel gets slow and heavy)
+PAGE_ROWS = 2_000    # rows sent to the browser per page
 
 user = require("data_explorer")
 sites = sites_for(user)
@@ -56,8 +57,16 @@ if not versions:
     st.info("Choose at least one site and month.")
     st.stop()
 
-with st.spinner(f"Loading {table.lower()}…"), session_scope() as s:
-    df = repo.explorer_rows(s, table, versions)
+@st.cache_data(ttl=600, max_entries=20, show_spinner=False)
+def _rows(table: str, versions: tuple[tuple[int, str], ...]) -> pd.DataFrame:
+    """Cached per table × versions (never per user: `versions` is already limited to what this user may see),
+    so typing in the search boxes does not query the database again."""
+    with session_scope() as s:
+        return repo.explorer_rows(s, table, list(versions))
+
+
+with st.spinner(f"Loading {table.lower()}…"):
+    df = _rows(table, tuple(sorted(versions)))
 
 date_col = repo.EXPLORER_TABLES[table][1]
 f1, f2, f3 = st.columns([1.3, 1, 1.7])
@@ -87,16 +96,23 @@ dash.summary(f"{fmt_num(len(df))} rows of {table.lower()}", label,
 if len(df) >= 200_000:
     st.warning("Showing the first 200,000 rows. Narrow the months or sites to see everything.")
 
-st.dataframe(df, hide_index=True, width="stretch", height=560)
+# only one page of rows goes to the browser; downloads always contain every filtered row
+pages = max(1, -(-len(df) // PAGE_ROWS))
+page = 1
+if pages > 1:
+    p1, p2 = st.columns([1, 5])
+    page = int(p1.number_input("Page", 1, pages, 1, key=f"dx_page_{table}_{label}"))
+    p2.caption(f"Rows {(page - 1) * PAGE_ROWS + 1:,}–{min(page * PAGE_ROWS, len(df)):,} of {len(df):,}")
+st.dataframe(df.iloc[(page - 1) * PAGE_ROWS: page * PAGE_ROWS], hide_index=True, width="stretch", height=560)
 
 fname = table.split(" (")[0].lower().replace(" ", "_")
 c1, c2, _ = st.columns([1, 1, 4])
-c1.download_button("Download CSV", df.to_csv(index=False).encode("utf-8-sig"), f"{fname}.csv", "text/csv",
-                   key="dx_csv")
+c1.download_button("Download CSV", lambda: df.to_csv(index=False).encode("utf-8-sig"), f"{fname}.csv", "text/csv",
+                   key="dx_csv", on_click="ignore")
 with c2:
     if len(df) <= EXCEL_MAX:
         excel_download(df, f"{fname}.xlsx", key="dx_xlsx")
     else:
         st.caption(f"Excel download up to {EXCEL_MAX:,} rows; use CSV.")
-st.caption("Read-only. To correct data, export it from Data_Prod, fix it in Excel and import it again; the old version stays in "
-           "Upload history.")
+st.caption("Read-only. To correct data, export it from Data_Prod, fix it in Excel and import it again; "
+           "the old version stays in Upload history.")

@@ -139,3 +139,21 @@ def test_tv_version_key_changes_when_a_target_value_is_edited(world):
     t.uoa = 0.61
     world.commit()
     assert version_key("WBK-MAS") != before
+
+
+def test_week_and_shift_filters_apply_to_production_fuel_and_stoppages(world):
+    from sqlalchemy import func, select
+    adm = load_user(world, "adm")
+    at = run("overview", adm)
+    full = {mt.label: mt.value for mt in at.metric}
+    at.sidebar.multiselect(key="f_week").select("Week 1").run()
+    w1 = {mt.label: mt.value for mt in at.metric}
+    assert not at.exception
+    r = m.FactRitase
+    ob_w1 = world.scalar(select(func.sum(r.volume)).where(r.material_group == "OB", func.extract("day", r.date) <= 7,
+                                                           r.site != "UNMAPPED"))
+    assert w1["OB (BCM)"] == f"{ob_w1:,.0f}" and w1["OB (BCM)"] != full["OB (BCM)"]
+    assert w1["Fuel (L)"] != full["Fuel (L)"]
+    assert w1["MTBS (hrs)"] != full["MTBS (hrs)"]
+    at.sidebar.segmented_control(key="f_shift").set_value(["DS"]).run()   # stoppages follow the shift too
+    assert {mt.label: mt.value for mt in at.metric}["MTTR (hrs)"] != w1["MTTR (hrs)"]

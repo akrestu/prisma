@@ -9,6 +9,20 @@ from db import models as m
 from db import repo
 from db.engine import session_scope
 
+
+@st.cache_data(ttl=900, max_entries=30, show_spinner=False)
+def _preview(upload_id: int, site: str):
+    """KPIs + findings of one pending version; cached so typing a comment does not reload ~60,000 events.
+    An upload's rows never change after import, so the cache cannot go stale."""
+    with session_scope() as s:
+        ev = repo.events(s, upload_id, site)
+        stp = repo.stoppages(s, upload_id, site)
+        findings = repo.dq_findings(s, upload_id, site)
+    if ev.empty:
+        return None, None, findings
+    return metrics.kpis(ev), metrics.reliability(ev, stp), findings
+
+
 user = require("approval")
 sites = sites_for(user)
 st.title("Data approval")
@@ -35,12 +49,7 @@ for _, row in queue.iterrows():
             f"by {row['uploader'] or '-'}")
     with st.container(border=True):
         st.markdown(head)
-        with session_scope() as s:
-            ev = repo.events(s, int(row["upload_id"]), row["site"])
-            st_ = repo.stoppages(s, int(row["upload_id"]), row["site"])
-            findings = repo.dq_findings(s, int(row["upload_id"]), row["site"])
-        k = metrics.kpis(ev) if len(ev) else None
-        r = metrics.reliability(ev, st_) if len(ev) else None
+        k, r, findings = _preview(int(row["upload_id"]), row["site"])
         c = st.columns(7)
         c[0].metric("Units", summ.get("units", 0))
         c[1].metric("PA", fmt_pct(k["PA"].iloc[0]) if k is not None else "—")
