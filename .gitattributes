@@ -1,5 +1,6 @@
-* text=auto
+# files that run on Linux (VPS / Docker) must keep LF line endings
 *.sh text eol=lf
 Dockerfile text eol=lf
 Caddyfile text eol=lf
 *.yml text eol=lf
+*.toml text eol=lf
