@@ -105,6 +105,33 @@ class UploadSite(Base):
     dq_summary: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+# ---------------------------------------------------------------- unit population (versioned master)
+class PopulationVersion(Base):
+    """One Unit_Population upload. It applies from `effective_from` until the next version's date."""
+    __tablename__ = "population_versions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    effective_from: Mapped[dt.date] = mapped_column(Date, index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    sha256: Mapped[str] = mapped_column(String(64))
+    units: Mapped[int] = mapped_column(Integer, default=0)
+    note: Mapped[str] = mapped_column(Text, default="")
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    uploaded_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PopulationUnit(Base):
+    __tablename__ = "population_units"
+    __table_args__ = (UniqueConstraint("version_id", "unit_id"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("population_versions.id", ondelete="CASCADE"), index=True)
+    unit_id: Mapped[str] = mapped_column(String(40))
+    type: Mapped[str | None] = mapped_column(String(60))
+    description: Mapped[str | None] = mapped_column(String(120))
+    model: Mapped[str | None] = mapped_column(String(80))
+    manufacturer: Mapped[str | None] = mapped_column(String(80))
+    site: Mapped[str] = mapped_column(String(40))
+
+
 # ---------------------------------------------------------------- data (semua punya upload_id, site, month)
 class _Fact:
     upload_id: Mapped[int] = mapped_column(ForeignKey("uploads.id", ondelete="CASCADE"), index=True)

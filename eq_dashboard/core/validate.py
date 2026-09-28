@@ -107,6 +107,11 @@ SHEETS: tuple[Sheet, ...] = (
     )),
 )
 SHEET_BY_NAME = {sh.name: sh for sh in SHEETS}
+POPULATION = SHEET_BY_NAME["Populasi Unit"]
+# Unit population now lives in its own workbook (Unit_Population, versioned with an effective date). The sheet is
+# still accepted in older Data_Prod files and used when no population version applies to the month.
+OPTIONAL = {"Populasi Unit"}
+DATA_SHEETS = tuple(sh for sh in SHEETS if sh.name not in OPTIONAL)
 # legacy view used by older code: sheet -> (header row, required columns)
 SPEC: dict[str, tuple[int, list[str]]] = {sh.name: (sh.header_row, [c.name for c in sh.cols]) for sh in SHEETS}
 
@@ -136,6 +141,8 @@ def validate(raw: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         problems.append(f"This file was made with template version {ver}; this app reads up to version "
                         f"{TEMPLATE_VERSION}. Update the app or download the current template.")
     for sh in SHEETS:
+        if sh.name not in raw and sh.name in OPTIONAL:
+            continue
         if sh.name not in raw:
             problems.append(f"Sheet '{sh.name}' was not found (sheet names must match the template exactly).")
             continue

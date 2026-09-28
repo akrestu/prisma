@@ -9,7 +9,7 @@ import pytest
 from core import dataprod, metrics
 from core.io import day_fraction, excel_date, read_workbook
 from core.parse import parse_data_prod
-from core.validate import SHEETS, TEMPLATE_VERSION, StructureError, template_meta, validate
+from core.validate import DATA_SHEETS, TEMPLATE_VERSION, StructureError, template_meta, validate
 
 
 def test_day_fraction_accepts_every_reader_format():
@@ -38,8 +38,9 @@ def test_file_name_convention():
 def test_template_has_every_sheet_and_column_and_meta():
     raw = read_workbook(dataprod.build_template(["WBK-BAU", "WBK-MAS"]))
     frames = validate(raw)                       # passes the same check as an upload
-    for sh in SHEETS:
+    for sh in DATA_SHEETS:
         assert [c.name for c in sh.cols] == list(frames[sh.name].columns)[:len(sh.cols)]
+    assert "Populasi Unit" not in raw                  # units live in the Unit_Population workbook now
     meta = template_meta(raw)
     assert meta["dataset"] == "Data_Prod" and meta["template_version"] == str(TEMPLATE_VERSION)
     with pytest.raises(StructureError, match="no data rows"):
@@ -57,7 +58,7 @@ def test_export_round_trip_gives_the_same_numbers(parsed):
     p = parsed
     t = {"units": p.units, "events": p.events, "ritase": p.ritase, "coal": p.coal[~p.coal["cancelled"]],
          "fuel": p.fuel, "receipt": p.receipt}
-    q = parse_data_prod(dataprod.export_workbook(t, p.month, p.sites))
+    q = parse_data_prod(dataprod.export_workbook(t, p.month, p.sites), population=p.units)
     assert q.month == p.month and q.sites == p.sites and len(q.units) == len(p.units)
     assert len(q.events) == len(p.events) and len(q.stoppages) == len(p.stoppages) == 1489
     assert q.ritase["rit"].sum() == p.ritase["rit"].sum() == 32893

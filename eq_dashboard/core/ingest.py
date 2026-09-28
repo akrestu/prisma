@@ -67,8 +67,9 @@ def ingest(s: Session, data: bytes, filename: str, user_id: int | None = None,
     if s.scalar(select(m.Upload.id).where(m.Upload.sha256 == digest)):
         raise DuplicateUpload("An identical file has already been uploaded.")
     if parsed is None:
+        from db.repo import population_for  # local import: db.repo imports this module
         alias, tanks = lookups(s)
-        parsed = parse_data_prod(data, alias, tanks)
+        parsed = parse_data_prod(data, alias, tanks, population=lambda mo: population_for(s, mo))
     p = parsed
     month = p.month
 

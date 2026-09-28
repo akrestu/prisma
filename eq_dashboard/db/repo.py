@@ -121,3 +121,47 @@ def latest_units(s: Session, sites: list[str]) -> pd.DataFrame:
         return pd.DataFrame()
     newest = pub.sort_values("month").groupby("site").tail(1)
     return explorer_rows(s, "Units (population)", [(int(r.upload_id), r.site) for r in newest.itertuples()])
+
+
+# ---------------------------------------------------------------- unit population
+def population_versions(s: Session) -> pd.DataFrame:
+    v = m.PopulationVersion
+    return frame(s, select(v.id, v.effective_from, v.filename, v.units, v.note, v.uploaded_at,
+                           m.User.full_name.label("uploader"))
+                 .outerjoin(m.User, m.User.id == v.uploaded_by).order_by(v.effective_from.desc(), v.id.desc()))
+
+
+def population_units(s: Session, version_id: int) -> pd.DataFrame:
+    u = m.PopulationUnit
+    return frame(s, select(u.unit_id, u.type, u.description, u.model, u.manufacturer, u.site)
+                 .where(u.version_id == version_id).order_by(u.site, u.type, u.unit_id))
+
+
+def population_for(s: Session, month) -> pd.DataFrame | None:
+    """Units of the newest version effective on or before the last day of `month` (None if there is none)."""
+    import calendar
+    import datetime as dt
+    last = dt.date(month.year, month.month, calendar.monthrange(month.year, month.month)[1])
+    v = s.scalars(select(m.PopulationVersion).where(m.PopulationVersion.effective_from <= last)
+                  .order_by(m.PopulationVersion.effective_from.desc(), m.PopulationVersion.id.desc())).first()
+    if v is None:
+        return None
+    units = population_units(s, v.id)
+    units.attrs["source"] = f"Unit_Population version #{v.id} (effective {v.effective_from:%d %b %Y})"
+    return units
+
+
+def save_population(s: Session, units: pd.DataFrame, effective_from, filename: str, digest: str,
+                    user_id: int | None, note: str = "") -> m.PopulationVersion:
+    from sqlalchemy import insert
+    v = m.PopulationVersion(effective_from=effective_from, filename=filename, sha256=digest, units=len(units),
+                            note=note, uploaded_by=user_id)
+    s.add(v)
+    s.flush()
+    recs = [{"version_id": v.id, **{k: (None if pd.isna(val) else val) for k, val in r.items()}}
+            for r in units[["unit_id", "type", "description", "model", "manufacturer", "site"]].to_dict("records")]
+    s.execute(insert(m.PopulationUnit), recs)
+    for code in sorted(set(units["site"]) - {"UNMAPPED"}):
+        if s.get(m.Site, code) is None:
+            s.add(m.Site(code=code, name=code))
+    return v

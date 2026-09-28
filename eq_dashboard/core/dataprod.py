@@ -18,7 +18,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from core.config import now_wib
-from core.validate import DATASET, HOUR_SLOTS, META_SHEET, SHEETS, TEMPLATE_VERSION, Sheet
+from core.validate import DATA_SHEETS, DATASET, HOUR_SLOTS, META_SHEET, TEMPLATE_VERSION, Sheet
 
 NAME_RE = re.compile(r"data[_ -]?prod[_ -]?(\d{4})[-_]?(\d{2})", re.I)
 MAX_ROWS = 100_000          # validation / formatting range per sheet
@@ -121,7 +121,7 @@ def _validation(c, sh: Sheet, lists: dict[str, str]) -> DataValidation | None:
     return dv
 
 
-def _readme(wb: Workbook, title: str, lines: list[str]) -> None:
+def _readme(wb: Workbook, title: str, lines: list[str], sheets: tuple[Sheet, ...] = DATA_SHEETS) -> None:
     ws = wb.active
     ws.title = "README"
     ws["A1"] = title
@@ -135,7 +135,7 @@ def _readme(wb: Workbook, title: str, lines: list[str]) -> None:
     for j, h in enumerate(heads, start=1):
         cell = ws.cell(r, j, h)
         cell.fill, cell.font = HEAD_FILL, HEAD_FONT
-    for sh in SHEETS:
+    for sh in sheets:
         for c in sh.cols:
             if c.name in HOUR_SLOTS[1:]:
                 continue
@@ -175,6 +175,7 @@ def _bytes(wb: Workbook) -> bytes:
 RULES = [
     "One file = one month (month to date is fine). Upload the same month again to replace it; old versions are kept.",
     "Do not rename sheets or column headers. Headers are in row 1, except 'Ritasi Unit' where they are in row 2.",
+    "Units and their sites come from the separate Unit_Population workbook (Data → Unit population).",
     "Extra columns are allowed and ignored. Empty rows are skipped.",
     "Dates must be real Excel dates, times real Excel times (hover a header to see its description and an example).",
     "Save as .xlsx or .xlsb and name it Data_Prod_YYYY-MM.xlsx, for example Data_Prod_2026-09.xlsx.",
@@ -183,15 +184,14 @@ RULES = [
 
 
 # ------------------------------------------------------------------ template
-def build_template(sites: list[str], units: pd.DataFrame | None = None) -> bytes:
-    """Blank Data_Prod workbook. `units` (unit_id, type, description, model, manufacturer, site) pre-fills Populasi."""
+def build_template(sites: list[str]) -> bytes:
+    """Blank Data_Prod workbook. Units and their sites come from the separate Unit_Population workbook."""
     wb = Workbook()
     _readme(wb, "PRISMA · Data_Prod template", [
         "Production & Reliability Information System for Mining Analytics — monthly production data workbook.", "", *RULES])
     lists = _lists(wb, sites)
-    for sh in SHEETS:
-        rows = _unit_rows(units) if sh.name == "Populasi Unit" and units is not None and len(units) else None
-        _sheet(wb, sh, rows, lists)
+    for sh in DATA_SHEETS:
+        _sheet(wb, sh, None, lists)
     wb.move_sheet("Lists", offset=len(wb.sheetnames))
     _meta(wb, "template", {"sites": ",".join(sites)})
     return _bytes(wb)
@@ -236,7 +236,6 @@ def export_workbook(t: dict[str, pd.DataFrame], month: dt.date, sites: list[str]
         *RULES])
     lists = _lists(wb, sites)
     rows = {
-        "Populasi Unit": _unit_rows(t["units"]) if len(t["units"]) else [],
         "Eq.Event": _event_rows(t["events"]),
         "Ritasi Unit": _ritase_rows(t["ritase"]),
         "Data Timbangan": [[_v(r.date), _v(r.ticket_id), _v(r.supplier), _v(r.product), _v(r.time_in),
@@ -247,7 +246,7 @@ def export_workbook(t: dict[str, pd.DataFrame], month: dt.date, sites: list[str]
         "Fuel Receipt": [[_v(r.date), SHIFT_FUEL.get(r.shift, _v(r.shift)), _v(r.vendor), _v(r.operator), _v(r.unit),
                           _v(r.dn_no), _v(r.liters)] for r in t["receipt"].sort_values("date").itertuples()],
     }
-    for sh in SHEETS:
+    for sh in DATA_SHEETS:
         _sheet(wb, sh, rows[sh.name], lists)
     wb.move_sheet("Lists", offset=len(wb.sheetnames))
     _meta(wb, "export", {"month": f"{month:%Y-%m}", "sites": ",".join(sites)})

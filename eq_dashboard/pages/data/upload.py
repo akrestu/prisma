@@ -54,7 +54,9 @@ with t_imp:
                 with st.status("Checking and reading the workbook…", expanded=True) as box:
                     try:
                         st.write("Checking sheets and columns")
-                        parsed = parse_data_prod(data, alias, tanks)
+                        with session_scope() as s:
+                            parsed = parse_data_prod(data, alias, tanks,
+                                                     population=lambda mo: repo.population_for(s, mo))
                     except StructureError as e:
                         box.update(label="File rejected: the structure does not match the template", state="error")
                         for p_ in e.problems:
@@ -78,6 +80,7 @@ with t_imp:
                 st.warning(warn)
 
             st.subheader(f"Check · {p.month:%B %Y}")
+            st.caption(f"Units and sites from {p.population_source}.")
 
             def span(df, col="date"):
                 if df is None or df.empty:
@@ -87,7 +90,7 @@ with t_imp:
 
             coal_ok = p.coal[~p.coal["cancelled"]]
             sheets = pd.DataFrame([
-                ("Populasi Unit", len(p.units), "—", f"{(p.units['site'] != 'UNMAPPED').sum():,} with a site"),
+                ("Units (population)", len(p.units), "—", f"{(p.units['site'] != 'UNMAPPED').sum():,} with a site"),
                 ("Eq.Event", len(p.events), span(p.events), f"{p.events['unit_id'].nunique():,} units"),
                 ("Ritasi Unit", int(p.ritase["rit"].sum()), span(p.ritase),
                  f"OB {fmt_num(p.ritase.loc[p.ritase.material_group == 'OB', 'volume'].sum())} BCM (trips)"),
@@ -140,14 +143,13 @@ with t_tpl:
         f"A blank **{DATASET}** workbook (template version {TEMPLATE_VERSION}) with the exact sheets and headers the "
         "app expects, a README with every column explained, drop-down lists for Shift, Status and Site, "
         "and input checks on dates, times and numbers. Hover a header in Excel to see its description.")
-    prefill = st.checkbox("Pre-fill 'Populasi Unit' with the latest unit list of my sites", value=True, key="tpl_units")
     real_sites = [x for x in sites if x != "UNMAPPED"]
-    with session_scope() as s:
-        units = repo.latest_units(s, real_sites) if prefill else None
     # deferred: every tab runs on every rerun, so build the workbook only when the button is clicked
-    st.download_button("Download template (.xlsx)", lambda: dataprod.build_template(real_sites, units),
+    st.download_button("Download template (.xlsx)", lambda: dataprod.build_template(real_sites),
                        file_name=f"{DATASET}_template_v{TEMPLATE_VERSION}.xlsx", type="primary",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", on_click="ignore")
+    st.caption("Units and their sites are no longer part of Data_Prod: keep them in the Unit_Population workbook "
+               "(Data → Unit population).")
     st.caption("Your existing .xlsb files keep working: the template only fixes names and formats, it does not "
                "change how data is calculated.")
 

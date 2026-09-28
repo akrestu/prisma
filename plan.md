@@ -314,3 +314,39 @@ Hasil design critique: tampilan lama generik (8 kartu setara, merah di mana-mana
 
 ## Revisi 13 — nama aplikasi PRISMA (2026-09-28)
 - Nama baru: **PRISMA — Production & Reliability Information System for Mining Analytics** (menggantikan WANPIS). Diterapkan di judul tab, wordmark sidebar, halaman login, header TV, template & export Data_Prod, CLI, README. Nama terpusat di `core/brand.py`.
+
+## Revisi 14 — tiga sumber data & produksi per jam (rencana, 2026-09-28)
+Referensi: `Mst Hourly.xlsx` (sheet DS/NS = input, Link Muatan = matriks muatan & target) dan foto layar "Resume 25 Sept 2026 | 17-18".
+
+### Keputusan
+| # | Topik | Keputusan |
+|---|---|---|
+| 1 | Sumber data | **3 file**: `Data_Prod` (bulanan: Eq.Event, Ritasi, Timbangan, Fuel) · `Unit_Population` (master unit) · **Hourly production** (per jam) |
+| 2 | Unit_Population | Master **dengan tanggal berlaku**: upload saat ada perubahan; setiap versi punya "berlaku mulai"; bulan lama tetap memakai populasi yang berlaku saat itu. Sheet Populasi Unit di Data_Prod tidak wajib lagi (masih diterima untuk file lama). |
+| 3 | Input per jam | **Keduanya**: form grid di web (utama) + template Excel mirip sheet DS/NS (input massal / cadangan saat koneksi putus) |
+| 4 | Status data per jam | **Flash / provisional**: tampil langsung tanpa approval untuk TV & monitoring. Angka resmi bulanan tetap dari Data_Prod yang di-approve. |
+| 5 | TV | **Jenis layar per TV** dipilih Admin: "Equipment & monthly" (layar sekarang) atau "Hourly production" (layar baru seperti foto) |
+
+### Default yang diambil (bisa diubah)
+- **Muatan** otomatis dari matriks *Material × model hauler* (seperti Link Muatan), dikelola Admin; operator hanya mengisi rit. Volume = rit × muatan (OB dalam BCM, coal dalam ton, estimasi sebelum timbangan).
+- **Target per jam per excavator** dikelola Admin (default per model, bisa override per unit). **Target harian & bulanan** OB/Coal memakai Targets & plan yang sudah ada; ditambah target **SR** (stripping ratio) dan **Distance**.
+- **Keterangan per fleet** per shift: kode alasan (daftar kode 1xx–5xx seperti Eq.Event, mis. "100 - Productivity Achieve", "502 - Digging method") + teks bebas.
+- **Koordinator (PJA)** per site per shift diisi di form.
+- Jam: DS 06-07 … 17-18, NS 18-19 … 05-06 (sama dengan Ritasi). Jam berjalan dihitung dari jam WIB.
+
+### Layar TV "Hourly production" (1920×1080, refresh 1 menit)
+- Header: site · tanggal produksi · shift · jam berjalan · waktu input terakhir.
+- Ringkasan: OB, Coal, SR, Distance × **jam berjalan** (Actual/Target/Ach) · **MTD** · **Outlook** akhir bulan · **Daily plan** (Actual/Outlook/Target/Ach) + Koordinator.
+- Tabel **Overburden** per fleet: Unit, Model, Material, PIT, Disposal, Target/jam, BCM per jam (merah < target, hijau ≥ target, biru = jam berjalan), Total, Keterangan; baris Total dan **Running fleet** per jam.
+- Tabel **Coal** dengan format sama (ton).
+- MTD/Outlook memakai data resmi Data_Prod bila ada, ditambah data flash untuk hari-hari setelahnya.
+
+### Model data baru (rencana)
+`unit_population` (versi + berlaku_mulai + baris unit) · `load_factor` (material × model hauler → muatan) · `loader_target` (unit/model → target per jam) · `hourly_fleet` (tanggal, shift, site, loader, operator, material, pit, disposal, jarak, keterangan) · `hourly_trip` (fleet, model hauler, jam, rit) · `shift_coordinator`.
+
+### Milestone
+- **H1** Unit_Population: template, import, versi berlaku, halaman Admin; Data_Prod memakai populasi berlaku (Populasi di Data_Prod opsional).
+- **H2** Master muatan & target per jam (import dari Link Muatan / edit di web).
+- **H3** Input per jam: form grid web + template Excel + import; validasi (unit ada di populasi, jam dalam shift, rit wajar).
+- **H4** Layar TV "Hourly production" + pilihan jenis layar per TV + halaman dashboard "Hourly production".
+- **H5** Uji end-to-end dengan data contoh Mst Hourly; update README.

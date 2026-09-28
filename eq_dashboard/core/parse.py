@@ -1,12 +1,14 @@
 """Single entry point: Data_Prod workbook bytes → all clean tables + data quality findings (no database)."""
 from __future__ import annotations
 
+import datetime as dt
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import pandas as pd
 
 from core import clean, dq
-from core.io import read_workbook
+from core.io import excel_date, read_workbook
 from core.validate import StructureError, validate
 
 
@@ -22,12 +24,26 @@ class Parsed:
     receipt: pd.DataFrame
     dq: pd.DataFrame
     sites: list[str] = field(default_factory=list)
+    population_source: str = ""
 
 
 def parse_data_prod(data: bytes, alias: dict[str, str] | None = None,
-                   tank_site: dict[str, str] | None = None) -> Parsed:
+                    tank_site: dict[str, str] | None = None,
+                    population: Callable[[dt.date], pd.DataFrame | None] | pd.DataFrame | None = None) -> Parsed:
+    """`population` gives the units (unit_id, type, description, model, manufacturer, site) valid for the file's
+    month: a DataFrame, or a function month → DataFrame (the Unit_Population version in force). Without one, the
+    old 'Populasi Unit' sheet of the workbook is used."""
     frames = validate(read_workbook(data))
-    units = clean.clean_units(frames["Populasi Unit"])
+    month = _file_month(frames["Eq.Event"])
+    units, source = None, ""
+    if population is not None:
+        units = population(month) if callable(population) else population
+        source = units.attrs.get("source", "Unit_Population") if units is not None else ""
+    if units is None or len(units) == 0:
+        if "Populasi Unit" not in frames:
+            raise StructureError([f"No unit population applies to {month:%B %Y}. Import a Unit_Population workbook "
+                                  "(Data → Unit population) with an effective date on or before this month."])
+        units, source = clean.clean_units(frames["Populasi Unit"]), "sheet 'Populasi Unit' in this file"
     events = clean.clean_events(frames["Eq.Event"], units)
     if events.empty:
         raise StructureError(["Sheet 'Eq.Event' has no data rows."])
@@ -44,7 +60,14 @@ def parse_data_prod(data: bytes, alias: dict[str, str] | None = None,
                           + dq.check_timbangan(coal) + dq.check_fuel(len(fuel_all) - len(fuel), fuel, receipt))
     sites = sorted(set(events["site"]) | set(ritase["site"]) | set(coal["site"]) | set(fuel["site"])
                    | set(receipt["site"]))
-    return Parsed(months[0], units, events, stoppages, ritase, coal, fuel, receipt, findings, sites)
+    return Parsed(months[0], units, events, stoppages, ritase, coal, fuel, receipt, findings, sites, source)
+
+
+def _file_month(ev_sheet: pd.DataFrame) -> dt.date:
+    d = excel_date(ev_sheet["Date"]).dropna()
+    if d.empty:
+        raise StructureError(["Sheet 'Eq.Event' has no data rows."])
+    return d.min().date().replace(day=1)
 
 
 parse_eq_event = parse_data_prod  # old name, kept for scripts and tests
