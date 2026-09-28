@@ -358,3 +358,10 @@ Referensi: `Mst Hourly.xlsx` (sheet DS/NS = input, Link Muatan = matriks muatan 
 - [x] **H4** Layar TV "Hourly production" (jenis layar per TV, refresh 1 menit): Hour · MTD (resmi + flash) · Outlook · Daily (outlook) · Koordinator; tabel OB & Coal per fleet per jam (oranye < target, teal ≥ target, kuning = jam berjalan), Total, Running fleet, Remark; mode padat bila > 18 fleet. Halaman Dashboard → Hourly production (shift mana pun, grafik harian, unduhan). TV preview bisa kedua layar.
 - [x] **H5** Uji: angka layar = Dashboard DS Mst Hourly (jam 11-12 = 719 BCM, kumulatif 4.165 BCM); MTD = resmi + flash; 105 test lulus. Data master asli Link Muatan (BAU) + shift DS 26 Sep dimasukkan ke DB dev. README diperbarui.
 - Catatan: target coal per excavator belum ada di Link Muatan → isi di Hourly setup. Migrasi: d9e3f4a5b6c7, e0f4a5b6c7d8, f1a5b6c7d8e9.
+
+## Revisi 15 — hauler & operator, redesign layar hourly (2026-09-28)
+- **1 baris input = 1 hauler**: Loader + operator (NRP), Hauler ID + operator (NRP), material, PIT, disposal, jarak, rit per jam, remark. Model hauler & muatan dari Unit_Population; hauler yang sama boleh 2 baris bila operator berganti di tengah shift. Validasi: hauler harus ada di populasi, rit 0–20 per hauler per jam, peringatan NRP tak dikenal / hauler tanpa operator / hauler dobel di jam yang sama.
+- **Master operator** (Admin → Operators): NRP, nama, jabatan, aktif; import Excel. Dasar KPI operator.
+- **Layar TV hourly baru**: hero OB & Coal (angka shift, % target sejauh ini, chart burn-up: batang per jam vs tick target, kumulatif vs target, proyeksi akhir shift, batang jam berjalan berdenyut), matriks KPI (Hour · Day+outlook · MTD · Month outlook × OB, Coal, SR, Distance), papan fleet (loader, model, operator, jumlah hauler, material, PIT → disposal, target, 12 jam heat cell, total, bar capaian, remark, Total, Running fleet).
+- **Dashboard → Hourly production** interaktif (Plotly): Pace, Fleets (heatmap + total vs target), Haulers & operators (rit per jam kerja per operator), Month, Lines.
+- Migrasi `a2b6c7d8e9f0`.

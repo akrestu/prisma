@@ -208,3 +208,29 @@ def test_hourly_pages_by_role(world):
     vw = load_user(world, "vw")
     for p in ("pages/data/hourly_input.py", "pages/admin/hourly_setup.py"):
         assert any("do not have access" in e.value for e in run_path(p, vw).error)
+
+
+def test_hourly_dashboard_interactive_tabs(world):
+    import datetime as dt
+
+    import pandas as pd
+
+    from core import hourly as H
+    from db import repo
+    lf = pd.DataFrame([("OB - FreeDig", "OB", "777E", 41.0)], columns=["material", "material_group", "hauler_model",
+                                                                         "muatan"])
+    tg = pd.DataFrame([("WEX019", "CAT6020", "OB", 800.0)], columns=["unit_id", "model", "material_group",
+                                                                      "target_per_hour"])
+    rows = pd.DataFrame([{"loader": "WEX019", "hauler_model": "777E", "hauler": None, "material": "OB - FreeDig",
+                          "hauler_operator": "Budi", "r1": 8, "r2": 14, "r3": 6}])
+    res = H.resolve(rows, lf, tg)
+    repo.save_hourly(world, "WBK-BAU", dt.date(2026, 9, 20), "DS", "PJA", res.rows, "t")
+    world.commit()
+    at = run_path("pages/dashboard/hourly.py", load_user(world, "adm"))
+    at.date_input(key="hp_date").set_value(dt.date(2026, 9, 20))
+    at.segmented_control(key="hp_shift").set_value("DS")
+    at.selectbox(key="hp_site").set_value("WBK-BAU")
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert [t.label for t in at.tabs] == ["TV screen", "Pace", "Fleets", "Haulers & operators", "Month", "Lines"]
+    assert len(at.get("plotly_chart")) >= 4                     # pace, heatmap, fleet totals, operators (+ month)

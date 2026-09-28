@@ -1,5 +1,6 @@
-"""Hourly production (flash data): the TV screen for any site and shift, a daily trend of the month and the raw lines."""
-
+"""Hourly production (flash data): the TV screen for any site and shift, plus interactive charts per hour, fleet,
+hauler and operator (the base of operator KPIs), the month trend and the raw lines."""
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -7,10 +8,13 @@ from core import dash
 from core import hourly as H
 from core import theme as T
 from core.config import UNMAPPED, now_wib
-from core.ui import excel_download, require, sites_for
+from core.ui import excel_download, fmt_num, require, sites_for
 from db import repo
 from db.engine import session_scope
 from pages.tv.screen import show_hourly
+
+UNIT = {"OB": "BCM", "CG": "t"}
+COLOR = {"OB": T.ACCENT, "CG": T.READY}
 
 user = require("hourly")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
@@ -19,48 +23,176 @@ if not sites:
     st.info("No site access.")
     st.stop()
 
-p_date, p_shift, _ = H.production_hour(now_wib())
-a, b, c = st.columns([1.3, 1, 1])
+p_date, p_shift, p_slot = H.production_hour(now_wib())
+a, b, c, d = st.columns([1.3, 1, 1, 1.2])
 site = a.selectbox("Site", sites, key="hp_site")
 date = b.date_input("Production date", p_date, key="hp_date", max_value=p_date)
 shift = c.segmented_control("Shift", list(H.SHIFTS), default=p_shift, key="hp_shift") or p_shift
+group = d.segmented_control("Material", ["OB", "CG"], default="OB", key="hp_group",
+                            format_func=lambda g: "Overburden" if g == "OB" else "Coal") or "OB"
 live = (date, shift) == (p_date, p_shift)
+now_slot = p_slot if live else 12
 st.caption(("Live: the shift running now. " if live else "")
            + "Flash data entered per hour, not approved; the official month figures come from Data_Prod.")
-
-show_hourly(site, kiosk=False, date=None if live else date, shift=None if live else shift)
 
 with session_scope() as s:
     month = date.replace(day=1)
     rows = repo.hourly_range(s, [site], month, date)
-if rows.empty:
-    st.info("No hourly input for this site this month yet.")
-    st.stop()
+cur = rows[(rows["date"] == date) & (rows["shift"] == shift)] if len(rows) else rows
+long = H.to_long(cur) if len(cur) else H.to_long(pd.DataFrame())
+lg = long[(long["material_group"] == group) & (long["slot"] <= now_slot)] if len(long) else long
+unit = UNIT[group]
 
-long = H.to_long(rows)
-daily = long.pivot_table(index="date", columns="material_group", values="volume", aggfunc="sum", fill_value=0)
-st.subheader(f"Flash production per day · {month:%B %Y}")
-fig = go.Figure()
-if "OB" in daily:
-    fig.add_bar(x=daily.index, y=daily["OB"], name="OB (BCM)", marker_color=T.ACCENT)
-if "CG" in daily:
-    fig.add_scatter(x=daily.index, y=daily["CG"], name="Coal (t)", yaxis="y2", line=dict(color=T.READY, width=3))
-plan = dash.plan_range([site], month, date)
-if plan["ob_plan"].notna().any():
-    fig.add_scatter(x=plan["date"], y=plan["ob_plan"], name="OB plan", line=dict(color=T.IDLE, dash="dash"))
-fig.update_layout(yaxis=dict(title="BCM", tickformat=","), yaxis2=dict(title="t", overlaying="y", side="right",
-                                                                           tickformat=",", showgrid=False))
-dash.plot(fig, 340)
+t_tv, t_pace, t_fleet, t_ops, t_month, t_lines = st.tabs(
+    ["TV screen", "Pace", "Fleets", "Haulers & operators", "Month", "Lines"])
 
-shift_rows = rows[(rows["date"] == date) & (rows["shift"] == shift)]
-st.subheader(f"Lines · {date:%d %b} {shift}")
-if shift_rows.empty:
-    st.caption("No input for this shift.")
-else:
-    show = shift_rows.rename(columns=dict(zip(H.R, H.SLOTS[shift], strict=True)))
-    cols = ["line", "loader", "loader_model", "operator", "material", "hauler_model", "muatan", "pit", "disposal",
-            "distance_m", "target_per_hour", *H.SLOTS[shift], "remark_code", "remark"]
-    st.dataframe(show[cols], hide_index=True, width="stretch")
-    excel_download(show[cols], f"hourly_{site}_{date:%Y-%m-%d}_{shift}.xlsx", key="hp_dl")
-excel_download(long.drop(columns=["updated_at"], errors="ignore"), f"hourly_{site}_{month:%Y-%m}.xlsx",
-               label="Download month (one row per line × hour)", key="hp_dl_m")
+with t_tv:
+    show_hourly(site, kiosk=False, date=None if live else date, shift=None if live else shift)
+
+
+def no_data():
+    st.info(f"No {'overburden' if group == 'OB' else 'coal'} input for {site} {date:%d %b} {shift}.")
+
+
+# ------------------------------------------------------------------ pace: hourly bars + cumulative lines
+with t_pace:
+    if lg.empty:
+        no_data()
+    else:
+        labels = H.SLOTS[shift][:now_slot]
+        vol = lg.groupby("slot")["volume"].sum().reindex(range(1, now_slot + 1), fill_value=0)
+        fleet_hour = lg[lg["rit"] > 0].drop_duplicates(["slot", "loader"])
+        tgt = fleet_hour.groupby("slot")["target_per_hour"].sum().reindex(vol.index, fill_value=0)
+        running = fleet_hour.groupby("slot")["loader"].nunique().reindex(vol.index, fill_value=0)
+        colors = [T.PA_COLOR if (t and v >= t) else (T.MISS if t else T.IDLE) for v, t in zip(vol, tgt, strict=True)]
+        fig = go.Figure()
+        fig.add_bar(x=labels, y=vol.values, name=f"Actual ({unit})", marker_color=colors,
+                    customdata=list(zip(tgt, running, strict=True)),
+                    hovertemplate="%{x}<br>actual %{y:,.0f}<br>target %{customdata[0]:,.0f}"
+                                  "<br>%{customdata[1]} fleets working<extra></extra>")
+        fig.add_scatter(x=labels, y=tgt.values, name="Hourly target", mode="markers",
+                        marker=dict(symbol="line-ew-open", size=26, line=dict(width=3, color=T.TEXT)),
+                        hovertemplate="target %{y:,.0f}<extra></extra>")
+        fig.add_scatter(x=labels, y=vol.cumsum().values, name="Cumulative actual", yaxis="y2",
+                        line=dict(color=COLOR[group], width=4), hovertemplate="cumulative %{y:,.0f}<extra></extra>")
+        fig.add_scatter(x=labels, y=tgt.cumsum().values, name="Cumulative target", yaxis="y2",
+                        line=dict(color=T.TEXT, width=2, dash="dash"),
+                        hovertemplate="cumulative target %{y:,.0f}<extra></extra>")
+        fig.update_layout(title=f"{'Overburden' if group == 'OB' else 'Coal'} per hour · {date:%d %b} {shift}",
+                          yaxis=dict(title=f"{unit} per hour", tickformat=","), bargap=.35,
+                          yaxis2=dict(title="cumulative", overlaying="y", side="right", tickformat=",",
+                                      showgrid=False), hovermode="x unified")
+        dash.plot(fig, 420)
+        k = st.columns(4)
+        k[0].metric(f"Shift so far ({unit})", fmt_num(vol.sum()))
+        k[1].metric("Target so far", fmt_num(tgt.sum()))
+        k[2].metric("Pace", f"{vol.sum() / tgt.sum():.0%}" if tgt.sum() else "—")
+        k[3].metric("Trips", fmt_num(lg["rit"].sum()))
+
+# ------------------------------------------------------------------ fleets: heatmap + totals vs target
+with t_fleet:
+    if lg.empty:
+        no_data()
+    else:
+        per = lg.pivot_table(index="loader", columns="slot", values="volume", aggfunc="sum", fill_value=0) \
+            .reindex(columns=range(1, now_slot + 1), fill_value=0)
+        info = lg.groupby("loader").agg(target=("target_per_hour", "max"), model=("loader_model", "first"),
+                                        operator=("operator", lambda x: ", ".join(dict.fromkeys(x.dropna()))),
+                                        haulers=("hauler", "nunique"), line=("line", "min")).sort_values("line")
+        per = per.reindex(info.index)
+        ratio = per.div(info["target"].replace(0, pd.NA), axis=0).astype(float).clip(upper=1.5)
+        hover = [[f"{ld} · {info.loc[ld, 'model'] or ''}<br>{info.loc[ld, 'operator'] or 'no operator'}"
+                  f"<br>{H.SLOTS[shift][k - 1]}: {per.loc[ld, k]:,.0f} {unit} of {info.loc[ld, 'target'] or 0:,.0f}"
+                  f"<br>{info.loc[ld, 'haulers']} haulers" for k in per.columns] for ld in per.index]
+        fig = go.Figure(go.Heatmap(
+            z=ratio.values, x=H.SLOTS[shift][:now_slot], y=list(per.index),
+            text=per.map(lambda v: f"{v:,.0f}").values, texttemplate="%{text}", hovertext=hover, hoverinfo="text",
+            zmin=0, zmax=1.5, xgap=2, ygap=2,
+            colorscale=[[0, T.MISS], [.6, "#8A5A34"], [.66, T.PA_COLOR], [1, "#2E8C76"]],
+            colorbar=dict(title="of target", tickvals=[0, .5, 1, 1.5], ticktext=["0%", "50%", "100%", "150%"])))
+        fig.update_layout(title="Volume per fleet per hour (colour = share of the fleet's hourly target)",
+                          yaxis=dict(autorange="reversed", type="category"), xaxis=dict(type="category"))
+        dash.plot(fig, max(320, 30 * len(per) + 120))
+        tot = per.sum(axis=1)
+        plan = info["target"].fillna(0) * per.columns.size
+        fig = go.Figure()
+        fig.add_bar(y=list(tot.index), x=tot.values, orientation="h", name="Actual",
+                    marker_color=[T.PA_COLOR if p and v >= p else T.MISS for v, p in zip(tot, plan, strict=True)],
+                    hovertemplate="%{y}: %{x:,.0f}<extra></extra>")
+        fig.add_scatter(y=list(tot.index), x=plan.values, mode="markers", name="Target for the hours shown",
+                        marker=dict(symbol="line-ns-open", size=22, line=dict(width=3, color=T.TEXT)),
+                        hovertemplate="target %{x:,.0f}<extra></extra>")
+        fig.update_layout(title=f"Shift total per fleet ({unit})",
+                          yaxis=dict(autorange="reversed", type="category"), xaxis=dict(tickformat=","))
+        dash.plot(fig, max(300, 26 * len(tot) + 110))
+
+# ------------------------------------------------------------------ haulers & operators (base of operator KPIs)
+with t_ops:
+    if lg.empty:
+        no_data()
+    else:
+        worked = lg[lg["rit"] > 0]
+        by = (worked.assign(hauler=worked["hauler"].fillna(worked["hauler_model"]))
+              .groupby(["hauler_nrp", "hauler_operator", "hauler", "hauler_model", "loader"], dropna=False)
+              .agg(trips=("rit", "sum"), volume=("volume", "sum"), hours=("slot", "nunique")).reset_index())
+        by["trips_per_hour"] = by["trips"] / by["hours"]
+        by["operator"] = by["hauler_operator"].fillna(by["hauler_nrp"]).fillna("— no operator")
+        ops = (by.groupby("operator").agg(trips=("trips", "sum"), volume=("volume", "sum"), hours=("hours", "sum"),
+                                         haulers=("hauler", lambda x: ", ".join(sorted(set(map(str, x))))))
+               .assign(tph=lambda x: x["trips"] / x["hours"]).sort_values("tph", ascending=False))
+        st.caption("Trips per working hour of each hauler operator this shift: the starting point for operator "
+                   "KPIs. Operators are identified by NRP from Admin → Operators.")
+        fig = go.Figure(go.Bar(
+            x=ops.index, y=ops["tph"], marker_color=COLOR[group],
+            customdata=ops[["trips", "volume", "hours", "haulers"]].values,
+            hovertemplate="%{x}<br>%{y:.1f} trips per hour<br>%{customdata[0]:.0f} trips · %{customdata[1]:,.0f} "
+                          + unit + "<br>%{customdata[2]} hours · %{customdata[3]}<extra></extra>"))
+        avg = ops["trips"].sum() / ops["hours"].sum() if ops["hours"].sum() else None
+        if avg:
+            fig.add_hline(y=avg, line_dash="dash", line_color=T.TEXT, annotation_text=f"average {avg:.1f}")
+        fig.update_layout(title="Trips per working hour by hauler operator", xaxis=dict(type="category"),
+                          yaxis=dict(title="trips / hour"))
+        dash.plot(fig, 380)
+        show = by.sort_values(["operator", "hauler"])[["operator", "hauler_nrp", "hauler", "hauler_model", "loader",
+                                                      "hours", "trips", "trips_per_hour", "volume"]]
+        show.columns = ["Operator", "NRP", "Hauler", "Model", "Loader", "Hours", "Trips", "Trips/hour", unit]
+        st.dataframe(show, hide_index=True, width="stretch",
+                     column_config={"Trips/hour": st.column_config.NumberColumn(format="%.1f"),
+                                    unit: st.column_config.NumberColumn(format="%,.0f")})
+        excel_download(show, f"hourly_operators_{site}_{date:%Y-%m-%d}_{shift}_{group}.xlsx", key="hp_ops")
+
+# ------------------------------------------------------------------ month
+with t_month:
+    if rows.empty:
+        st.info("No hourly input for this site this month yet.")
+    else:
+        mlong = H.to_long(rows)
+        daily = mlong.pivot_table(index="date", columns="material_group", values="volume", aggfunc="sum",
+                                  fill_value=0)
+        fig = go.Figure()
+        if "OB" in daily:
+            fig.add_bar(x=daily.index, y=daily["OB"], name="OB (BCM)", marker_color=T.ACCENT,
+                        hovertemplate="%{x|%d %b}: %{y:,.0f} BCM<extra></extra>")
+        if "CG" in daily:
+            fig.add_scatter(x=daily.index, y=daily["CG"], name="Coal (t)", yaxis="y2",
+                            line=dict(color=T.READY, width=3), hovertemplate="%{x|%d %b}: %{y:,.0f} t<extra></extra>")
+        plan = dash.plan_range([site], month, date)
+        if plan["ob_plan"].notna().any():
+            fig.add_scatter(x=plan["date"], y=plan["ob_plan"], name="OB plan", line=dict(color=T.IDLE, dash="dash"))
+        fig.update_layout(title=f"Flash production per day · {month:%B %Y}", yaxis=dict(title="BCM", tickformat=","),
+                          yaxis2=dict(title="t", overlaying="y", side="right", tickformat=",", showgrid=False),
+                          hovermode="x unified")
+        dash.plot(fig, 380)
+        excel_download(mlong.drop(columns=["updated_at"], errors="ignore"), f"hourly_{site}_{month:%Y-%m}.xlsx",
+                       label="Download month (one row per line × hour)", key="hp_dl_m")
+
+# ------------------------------------------------------------------ lines
+with t_lines:
+    if cur.empty:
+        st.caption("No input for this shift.")
+    else:
+        show = cur.rename(columns=dict(zip(H.R, H.SLOTS[shift], strict=True)))
+        cols = ["line", "loader", "loader_model", "operator", "hauler", "hauler_model", "hauler_operator", "material",
+                "muatan", "pit", "disposal", "distance_m", "target_per_hour", *H.SLOTS[shift], "remark_code", "remark"]
+        st.dataframe(show[cols], hide_index=True, width="stretch")
+        excel_download(show[cols], f"hourly_{site}_{date:%Y-%m-%d}_{shift}.xlsx", key="hp_dl")

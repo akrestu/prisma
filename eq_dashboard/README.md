@@ -128,8 +128,8 @@ Dengan `--server.address 127.0.0.1`, aplikasi hanya bisa dibuka dari PC ini. Sup
 
 | Peran | Bisa apa |
 |---|---|
-| **Admin** | semua: user & role, site & mapping, target & plan, hourly setup, unit population, interval PM, TV devices, audit log, hapus data |
-| **Site Manager** | dashboard site-nya, approve/reject data site-nya, target & plan site-nya, hourly setup dan hourly input site-nya, preview TV, export Data_Prod |
+| **Admin** | semua: user & role, site & mapping, target & plan, hourly setup, operators, unit population, interval PM, TV devices, audit log, hapus data |
+| **Site Manager** | dashboard site-nya, approve/reject data site-nya, target & plan site-nya, hourly setup, operators dan hourly input site-nya, preview TV, export Data_Prod |
 | **Data Officer** | import Data_Prod dan Unit_Population, hourly input, dashboard, Data explorer, export |
 | **Viewer** | dashboard dan Data explorer untuk site yang diberikan (data PUBLISHED saja) |
 | **Display** | link TV bertoken rahasia, terkunci ke satu site, hanya membuka layar TV |
@@ -165,7 +165,11 @@ Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersi
 
 ### Produksi per jam (flash data)
 
-**Persiapan per site (sekali, oleh Admin atau Site Manager): Admin → Hourly setup**
+**Persiapan per site (sekali, oleh Admin atau Site Manager)**
+
+- **Admin → Operators:** daftar operator per site (NRP, nama, jabatan), bisa diimport dari Excel. NRP menjadi kunci untuk KPI operator nanti.
+
+**Admin → Hourly setup**
 
 - **Load factors:** muatan per trip untuk setiap Material × model hauler, misalnya OB-FreeDig × 777E = 41 BCM, atau CG × CWE370Q = 22,5 t.
 - **Hourly targets:** target per jam setiap excavator, dalam BCM/jam untuk OB dan t/jam untuk coal.
@@ -175,12 +179,21 @@ Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersi
 **Input setiap jam (Data Officer atau Site Manager): Data → Hourly input**
 
 - Pilih site, tanggal produksi, dan shift. Shift yang sedang berjalan terpilih otomatis. Hari produksi dimulai pukul 06:00, jadi shift malam setelah tengah malam tetap masuk tanggal sebelumnya.
-- **Web input:** grid seperti sheet DS/NS, satu baris per excavator × model hauler. Isi operator, material, hauler, PIT, disposal, jarak, rit per jam, dan keterangan (kode + teks). Muatan dan target terisi otomatis. Shift baru otomatis menyalin baris dari shift sebelumnya, jadi operator cukup mengisi rit. Klik **Save shift**.
+- **Web input:** grid dengan **satu baris per hauler**. Isi excavator dan operatornya, **Hauler ID dan operatornya** (dipilih lewat NRP), material, PIT, disposal, jarak, rit per jam, dan keterangan (kode + teks).
+  - Model hauler dan muatan terisi otomatis dari Unit_Population. Target terisi dari Hourly setup.
+  - Kalau operator hauler berganti di tengah shift, tambahkan baris kedua untuk hauler yang sama dengan operator baru.
+  - Shift baru otomatis menyalin baris dari shift sebelumnya, jadi cukup mengisi rit. Klik **Save shift**.
 - **Excel template:** unduh template per site dan shift, isi di Excel, lalu upload. Cocok untuk input massal atau saat koneksi lemah. Upload akan **mengganti** isi shift itu.
 
 Data per jam langsung tampil tanpa approval. Angka resmi bulanan tetap berasal dari Data_Prod. Di layar TV, MTD dihitung dari data resmi Data_Prod ditambah data flash untuk hari-hari setelahnya.
 
-Riwayat per shift, grafik harian, dan unduhan tersedia di **Dashboard → Hourly production**.
+**Dashboard → Hourly production** menyediakan chart interaktif (hover, zoom, klik legenda):
+
+- **Pace:** batang per jam dibanding target, plus garis kumulatif vs target.
+- **Fleets:** heatmap fleet × jam dan total per fleet dibanding target.
+- **Haulers & operators:** rit per jam kerja setiap operator hauler. Ini dasar KPI operator.
+- **Month:** tren produksi harian bulan ini.
+- **Lines:** baris mentah input, bisa diunduh.
 
 ### Filter dashboard
 
