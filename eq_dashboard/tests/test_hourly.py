@@ -55,7 +55,7 @@ def test_resolve_fills_load_and_target_and_flags_problems():
     r = ok.rows.iloc[0]
     assert not ok.problems and r["muatan"] == 41 and r["target_per_hour"] == 800 and r["loader_model"] == "CAT6020"
     bad = H.resolve(pd.concat([rows(hauler_model="999X"), rows(r3=75)]), LF, TG)
-    assert any("no load factor" in p for p in bad.problems) and any("between 0 and 20" in p for p in bad.problems)
+    assert any("no load class" in p for p in bad.problems) and any("between 0 and 20" in p for p in bad.problems)
     empty = H.resolve(rows(loader=None, r1=None, r2=None), LF, TG)       # blank lines are dropped, not errors
     assert empty.rows.empty and not empty.problems
 
@@ -163,3 +163,44 @@ def test_template_only_asks_what_the_officer_knows():
     assert not res.problems and len(res.rows) == 1 and res.rows.loc[0, "hauler_model"] == "777E"
     bad = H.resolve(hf.rows.assign(r1=[3, 2]), LF, TG, UNITS, OPS)       # trips but no truck → must be fixed
     assert any("hauler is empty" in p for p in bad.problems)
+
+
+def test_hauler_model_to_load_class():
+    lfm = ["773E", "775E", "777E", "CGE37084R", "CWE370Q"]
+    assert H.load_model("777E-KDP", lfm) == "777E" and H.load_model("773E-PRB", lfm) == "773E"
+    assert H.load_model("CGE37084R", lfm) == "CGE37084R" and H.load_model("CWE37064R", lfm) is None
+    assert H.load_model("CWE37064R", lfm, {"CWE37064R": "CWE370Q"}) == "CWE370Q"
+    assert H.suggest_load_model("CWE37064R", lfm) == "CWE370Q" and H.suggest_load_model("775F-DLS", lfm) == "775E"
+    assert H.suggest_load_model("AXOR 2528", lfm) is None
+
+
+def test_dump_trucks_typed_supporting_equipment_count_as_haulers():
+    u = pd.DataFrame([("WDT001", "Supporting Equipment", "Hauling 23 Ton"), ("WHT026", "Hauling", "DT"),
+                      ("WEX019", "Loading", "EX"), ("WWT001", "Supporting Equipment", "Water Tank")],
+                     columns=["unit_id", "type", "description"])
+    assert list(u.loc[H.is_hauler(u), "unit_id"]) == ["WDT001", "WHT026"]
+
+
+def test_mapped_model_and_material_hint():
+    units = pd.concat([UNITS, pd.DataFrame([("WDT001", "Supporting Equipment", "Hauling 23 Ton", "CWE37064R", "UD",
+                                             "WBK-BAU")], columns=UNITS.columns)])
+    rows = hauler_rows({"hauler": "WDT001", "material": "CG - Coal Getting", "r1": 2})
+    assert any("has no load class" in p for p in H.resolve(rows, LF, TG, units, OPS).problems)
+    ok = H.resolve(rows, LF, TG, units, OPS, {"CWE37064R": "CWE370Q"})
+    assert not ok.problems and ok.rows.loc[0, "muatan"] == 22.5 and ok.rows.loc[0, "hauler_model"] == "CWE37064R"
+    typo = H.resolve(hauler_rows({"hauler": "WHT026", "material": "OB - FreeDigg", "r1": 1}), LF, TG, units, OPS)
+    assert any("Did you mean 'OB - FreeDig'" in p for p in typo.problems)
+
+
+def test_population_falls_back_to_published_data_prod(db_session, sample_bytes):
+    from core import ingest as ing
+    from db import models as m
+    s = db_session
+    assert repo.population_for(s, dt.date(2026, 9, 1)) is None
+    ing.ingest(s, sample_bytes, "Data_Prod_2026-09.xlsb", username="t")
+    for us in s.query(m.UploadSite).filter(m.UploadSite.site_code != "UNMAPPED"):
+        ing.publish(s, us, None, "t")
+    s.commit()
+    units = repo.population_for(s, dt.date(2026, 9, 27))
+    assert units is not None and "latest published Data_Prod" in units.attrs["source"]
+    assert units.set_index("unit_id").loc["WHT018", "model"] == "777E-KDP"

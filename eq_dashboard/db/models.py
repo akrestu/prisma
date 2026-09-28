@@ -425,3 +425,14 @@ class Operator(Base):
     name: Mapped[str] = mapped_column(String(120))
     position: Mapped[str | None] = mapped_column(String(60))   # e.g. Operator Excavator, Operator DT
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class HaulerModelMap(Base):
+    """Hauler model in the unit population (e.g. CWE37064R) → load-factor model (e.g. CWE370Q), per site.
+    Only needed when the names differ beyond a unit suffix: '777E-KDP' finds '777E' by itself."""
+    __tablename__ = "hauler_model_map"
+    __table_args__ = (UniqueConstraint("site", "unit_model"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site: Mapped[str] = mapped_column(String(40), index=True)
+    unit_model: Mapped[str] = mapped_column(String(80))
+    load_model: Mapped[str] = mapped_column(String(80))

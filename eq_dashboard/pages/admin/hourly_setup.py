@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 
 from core import hourly as H
-from core.config import UNMAPPED
+from core.config import UNMAPPED, today_wib
 from core.ingest import audit
 from core.ui import require, sites_for
 from core.validate import StructureError
@@ -27,8 +27,19 @@ site = st.selectbox("Site", sites, key="hs_site")
 with session_scope() as s:
     lf = repo.load_factors(s, site)
     tg = repo.loader_targets(s, site)
+    mmap = repo.hauler_model_map(s, site)
+    units = repo.population_for(s, today_wib())
+site_units = units[units["site"] == site] if units is not None else pd.DataFrame(columns=["unit_id", "type", "model"])
+hauler_units = site_units[H.is_hauler(site_units)] if len(site_units) else site_units
+lf_models = sorted(lf["hauler_model"].unique()) if len(lf) else []
+models = (hauler_units.groupby("model")["unit_id"].agg(["count", lambda x: ", ".join(sorted(x)[:6])])
+          .set_axis(["units", "examples"], axis=1).reset_index()) if len(hauler_units) else pd.DataFrame()
+unmatched = [mo for mo in (models["model"] if len(models) else []) if H.load_model(mo, lf_models, {
+    k.upper(): v for k, v in mmap.items()}) is None]
 
-t_lf, t_tg, t_imp = st.tabs([f"Load factors ({len(lf)})", f"Hourly targets ({len(tg)})", "Import from Mst Hourly"])
+t_lf, t_tg, t_map, t_imp = st.tabs([f"Load factors ({len(lf)})", f"Hourly targets ({len(tg)})",
+                                    "Hauler models" + (f" ({len(unmatched)} to map)" if unmatched else ""),
+                                    "Import from Mst Hourly"])
 
 with t_lf:
     st.caption("One row per material × hauler model. The material must start with OB or CG.")
@@ -82,6 +93,41 @@ with t_tg:
                 audit(s, user.username, "hourly_targets", site, f"{n} rows")
             st.cache_data.clear()
             st.session_state["hs_msg"] = f"{n} hourly targets saved for {site}."
+            st.rerun()
+
+with t_map:
+    st.caption("Each hauler model in the unit population needs a load class from the load factors. Names that "
+               "match exactly or after dropping the unit suffix ('777E-KDP' → '777E') are found automatically; "
+               "map the others here (e.g. CWE37064R → CWE370Q).")
+    if models.empty:
+        st.info("No hauling units in the unit population of this site.")
+    elif not lf_models:
+        st.info("Add load factors first.")
+    else:
+        up = {k.upper(): v for k, v in mmap.items()}
+        view = models.assign(
+            auto=[H.load_model(mo, lf_models) for mo in models["model"]],
+            load_model=[up.get(str(mo).upper()) or H.load_model(mo, lf_models) or H.suggest_load_model(mo, lf_models)
+                        for mo in models["model"]])
+        view["how"] = ["mapped" if str(mo).upper() in up else ("automatic" if a else "suggested — check")
+                       for mo, a in zip(view["model"], view["auto"], strict=True)]
+        ed = st.data_editor(view[["model", "units", "examples", "how", "load_model"]], hide_index=True,
+                            width="stretch", key=f"hs_map_{site}", disabled=["model", "units", "examples", "how"],
+                            column_config={
+                                "model": st.column_config.TextColumn("Hauler model (population)"),
+                                "units": st.column_config.NumberColumn("Units"),
+                                "examples": st.column_config.TextColumn("Units (first 6)"),
+                                "how": st.column_config.TextColumn("Match"),
+                                "load_model": st.column_config.SelectboxColumn("Load class", options=lf_models)})
+        if st.button("Save hauler models", type="primary", key="hs_map_save"):
+            keep = ed[ed["load_model"].notna()].merge(view[["model", "auto"]], on="model")
+            # store only what the automatic rule would not find by itself
+            keep = keep[keep["load_model"] != keep["auto"]].rename(columns={"model": "unit_model"})
+            with session_scope() as s:
+                n = repo.replace_site_rows(s, m.HaulerModelMap, site, keep, ["unit_model", "load_model"])
+                audit(s, user.username, "hourly_model_map", site, f"{n} mappings")
+            st.cache_data.clear()
+            st.session_state["hs_msg"] = f"Hauler models saved for {site} ({n} manual mappings)."
             st.rerun()
 
 with t_imp:

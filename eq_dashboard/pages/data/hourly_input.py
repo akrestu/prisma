@@ -40,6 +40,7 @@ with session_scope() as s:
     prev = repo.previous_lines(s, site, date, shift) if sh is None else None
     units = repo.population_for(s, date)
     ops = repo.operators(s, site)
+    mmap = repo.hauler_model_map(s, site)
     coord_now = sh.coordinator if sh else ""
     stamp = f"{sh.updated_by} · {sh.updated_at.astimezone(WIB):%d %b %H:%M} WIB" if sh else ""
 if lf.empty:
@@ -49,7 +50,7 @@ if lf.empty:
 site_units = units[units["site"] == site] if units is not None else pd.DataFrame(columns=["unit_id", "type"])
 is_type = lambda word: site_units["type"].fillna("").str.contains(word, case=False)  # noqa: E731
 loaders = sorted(set(tg["unit_id"]) | set(site_units.loc[is_type("Load"), "unit_id"]))
-haulers = sorted(site_units.loc[is_type("Haul"), "unit_id"])
+haulers = sorted(site_units.loc[H.is_hauler(site_units), "unit_id"]) if len(site_units) else []
 op_label = {n: f"{n} - {nm}" for n, nm in zip(ops["nrp"], ops["name"], strict=True)}
 code_label = {k: f"{k} - {v}" for k, v in H.REMARKS.items()}
 slots = H.SLOTS[shift]
@@ -114,7 +115,7 @@ with t_web:
     }
     grid = st.data_editor(to_grid(base), num_rows="dynamic", hide_index=True, width="stretch", column_config=cfg,
                           key=f"hi_grid_{site}_{date}_{shift}_{ver}", height=min(600, 38 * (len(base) + 3) + 40))
-    res = H.resolve(from_grid(grid), lf, tg, units, ops)
+    res = H.resolve(from_grid(grid), lf, tg, units, ops, mmap)
     st.caption("One row per hauler. When a hauler's operator changes during the shift, add a second row for the "
                "same hauler with the new operator.")
     for w in res.warnings:
@@ -166,7 +167,8 @@ with t_xls:
             exists, _ = repo.hourly_shift(s, hf.site, hf.date, hf.shift)
             units_f = repo.population_for(s, hf.date)
             ops_f = repo.operators(s, hf.site)
-        rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f)
+            map_f = repo.hauler_model_map(s, hf.site)
+        rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f, map_f)
         st.markdown(f"**{hf.site} · {hf.date:%d %b %Y} · {hf.shift}** · {len(rf.rows)} lines"
                     + (f" · coordinator {hf.coordinator}" if hf.coordinator else ""))
         for p in rf.problems:

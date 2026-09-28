@@ -145,7 +145,7 @@ def population_for(s: Session, month) -> pd.DataFrame | None:
     v = s.scalars(select(m.PopulationVersion).where(m.PopulationVersion.effective_from <= last)
                   .order_by(m.PopulationVersion.effective_from.desc(), m.PopulationVersion.id.desc())).first()
     if v is None:
-        return None
+        return _units_from_data_prod(s, last)
     units = population_units(s, v.id)
     units.attrs["source"] = f"Unit_Population version #{v.id} (effective {v.effective_from:%d %b %Y})"
     return units
@@ -253,3 +253,25 @@ def operators(s: Session, site: str, active_only: bool = True) -> pd.DataFrame:
     if active_only:
         q = q.where(o.active)
     return frame(s, q)
+
+
+def _units_from_data_prod(s: Session, last) -> pd.DataFrame | None:
+    """Fallback while no Unit_Population version exists: the units of the newest PUBLISHED Data_Prod per site."""
+    us, du = m.UploadSite, m.DimUnit
+    pub = frame(s, select(us.site_code.label("site"), us.upload_id, us.month)
+                .where(us.status == "PUBLISHED", us.month <= last).order_by(us.month.desc()))
+    if pub.empty:
+        return None
+    newest = pub.groupby("site").head(1)
+    parts = [frame(s, select(du.unit_id, du.type, du.description, du.model, du.manufacturer, du.site)
+                   .where(du.upload_id == int(r.upload_id), du.site == r.site)) for r in newest.itertuples()]
+    units = pd.concat(parts, ignore_index=True).drop_duplicates("unit_id") if parts else pd.DataFrame()
+    if units.empty:
+        return None
+    units.attrs["source"] = "units of the latest published Data_Prod (no Unit_Population version yet)"
+    return units
+
+
+def hauler_model_map(s: Session, site: str) -> dict[str, str]:
+    t = m.HaulerModelMap
+    return dict(s.execute(select(t.unit_model, t.load_model).where(t.site == site)).all())

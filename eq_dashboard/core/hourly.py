@@ -108,8 +108,49 @@ def nrp_of(v) -> str | None:
     return s[:-2] if s.endswith(".0") and s[:-2].isdigit() else s
 
 
+def is_hauler(units: pd.DataFrame) -> pd.Series:
+    """Hauling units: type or description mentions 'haul' (some dump trucks are typed 'Supporting Equipment'
+    with the description 'Hauling 23 Ton')."""
+    txt = units["type"].fillna("") + " " + (units["description"].fillna("") if "description" in units else "")
+    return txt.str.contains("haul", case=False)
+
+
+def load_model(unit_model, lf_models, mapping: dict | None = None) -> str | None:
+    """Load-factor model for a population model: the mapping first, then the same name, then the name without the
+    unit suffix ('777E-KDP' → '777E', '773E-PRB' → '773E')."""
+    if unit_model is None or (isinstance(unit_model, float) and pd.isna(unit_model)):
+        return None
+    um = str(unit_model).strip().upper()
+    known = {str(x).strip().upper(): x for x in lf_models}
+    if mapping and um in mapping:
+        return mapping[um]
+    if um in known:
+        return known[um]
+    base = um.split("-")[0].strip()
+    return known.get(base)
+
+
+def suggest_load_model(unit_model: str, lf_models) -> str | None:
+    """Best guess for the mapping page: the automatic match, else the load class sharing the longest leading part
+    of the name (CWE37064R → CWE370Q, 775F-DLS → 775E); at least three characters must match."""
+    hit = load_model(unit_model, lf_models)
+    if hit:
+        return hit
+    um = str(unit_model).upper()
+
+    def common(a: str, b: str) -> int:
+        n = 0
+        for x, y in zip(a, b, strict=False):
+            if x != y:
+                break
+            n += 1
+        return n
+    best = max(lf_models, key=lambda x: common(um, str(x).upper()), default=None)
+    return best if best is not None and common(um, str(best).upper()) >= 3 else None
+
+
 def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units: pd.DataFrame | None = None,
-            operators: pd.DataFrame | None = None) -> Resolved:
+            operators: pd.DataFrame | None = None, model_map: dict | None = None) -> Resolved:
     """Fill hauler model, load, material group, loader model, hourly target and operator names; check every line.
 
     rows: loader, loader_nrp, hauler, hauler_nrp, material, pit, disposal, distance_m, r1..r12, remark_code, remark
@@ -137,6 +178,8 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
     out["hauler_model"] = out["hauler"].map(models).fillna(out["hauler_model"]) if len(out) else out["hauler_model"]
     lf = {(str(a).upper(), str(b).upper()): (v, g) for a, b, v, g in
           load[["material", "hauler_model", "muatan", "material_group"]].itertuples(index=False)}
+    lf_models = sorted(set(load["hauler_model"])) if len(load) else []
+    mapping = {str(k).strip().upper(): v for k, v in (model_map or {}).items()}
     out["muatan"] = np.nan
     out["material_group"] = material_group(out["material"]).to_numpy()
     for i, r in out.iterrows():
@@ -154,10 +197,19 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
         if pd.isna(r["material"]):
             problems.append(f"{line}: material is empty.")
             continue
-        hit = lf.get((str(r["material"]).upper(), str(r["hauler_model"]).upper()))
+        lm = load_model(r["hauler_model"], lf_models, mapping)
+        if lm is None:
+            problems.append(f"{line}: hauler model {r['hauler_model']} has no load class; map it in "
+                            "Admin → Hourly setup → Hauler models.")
+            continue
+        hit = lf.get((str(r["material"]).upper(), str(lm).upper()))
         if hit is None:
-            problems.append(f"{line}: no load factor for {r['material']} × {r['hauler_model']} "
-                            "(add it in Hourly setup).")
+            import difflib
+            mats = sorted({a for a, b in lf if b == str(lm).upper()})
+            near = difflib.get_close_matches(str(r["material"]).upper(), mats, n=1, cutoff=0.75)
+            hint = (f" Did you mean '{next(x for x in load['material'] if str(x).upper() == near[0])}'? Pick the "
+                    "material from the drop-down, or rename it in Hourly setup → Load factors.") if near else                 " Add it in Hourly setup → Load factors."
+            problems.append(f"{line}: no load factor for {r['material']} × {lm}.{hint}")
             continue
         out.loc[i, ["muatan", "material_group"]] = list(hit)
         bad = out.loc[i, R][(out.loc[i, R] < 0) | (out.loc[i, R] > 20)].dropna()
@@ -256,7 +308,7 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
         else {}
     u = units if units is not None else pd.DataFrame(columns=["unit_id", "type", "site"])
     u = u[u["site"] == site] if len(u) else u
-    hu = u[u["type"].fillna("").str.contains("Haul", case=False)].sort_values("unit_id") if len(u) else u
+    hu = u[is_hauler(u)].sort_values("unit_id") if len(u) else u
     haulers = hu["unit_id"].tolist() if len(hu) else []
     loaders = sorted(set(targets["unit_id"]) if len(targets) else set())
     lists = wb.create_sheet("Lists")
