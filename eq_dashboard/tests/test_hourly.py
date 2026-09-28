@@ -204,3 +204,15 @@ def test_population_falls_back_to_published_data_prod(db_session, sample_bytes):
     units = repo.population_for(s, dt.date(2026, 9, 27))
     assert units is not None and "latest published Data_Prod" in units.attrs["source"]
     assert units.set_index("unit_id").loc["WHT018", "model"] == "777E-KDP"
+
+
+def test_load_factors_follow_the_population_models():
+    filled, rep = H.expand_to_population(LF, ["777E-KDP", "777E", "CWE37064R", "AXOR 2528"])
+    how = rep.set_index("model")["how"]
+    assert how["777E-KDP"] == "same model" and how["777E"] == "own values"
+    assert how["CWE37064R"].startswith("closest name") and how["AXOR 2528"].startswith("no match")
+    look = filled.set_index(["material", "hauler_model"])["muatan"]
+    assert look[("OB - FreeDig", "777E-KDP")] == 41 and look[("CG - Coal Getting", "CWE37064R")] == 22.5
+    units = pd.DataFrame([("WHT018", "Hauling", "DT", "777E-KDP", "CAT", "WBK-BAU")], columns=UNITS.columns)
+    res = H.resolve(hauler_rows({"hauler": "WHT018", "r1": 2}), filled, TG, units, OPS)
+    assert not res.problems and res.rows.loc[0, "muatan"] == 41          # found by its own model, no mapping

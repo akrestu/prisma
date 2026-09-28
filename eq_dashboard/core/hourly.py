@@ -149,6 +149,29 @@ def suggest_load_model(unit_model: str, lf_models) -> str | None:
     return best if best is not None and common(um, str(best).upper()) >= 3 else None
 
 
+def expand_to_population(load: pd.DataFrame, pop_models) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Load factors keyed by the models of the unit population. Each population model without its own values takes
+    them from the matching general model of Link Muatan ('777E-KDP' ← '777E'), or, failing that, from the closest
+    name (to be checked). Returns (load factors incl. the originals, report: model, from, how)."""
+    general = sorted(set(load["hauler_model"])) if len(load) else []
+    have = {str(x).upper() for x in general}
+    rows, report = [load], []
+    for pm in sorted({str(x) for x in pop_models if isinstance(x, str) and x.strip()}):
+        if pm.upper() in have:
+            report.append((pm, pm, "own values"))
+            continue
+        src, how = load_model(pm, general), "same model"
+        if src is None:
+            src, how = suggest_load_model(pm, general), "closest name — check"
+        if src is None:
+            report.append((pm, None, "no match — fill in"))
+            continue
+        rows.append(load[load["hauler_model"] == src].assign(hauler_model=pm))
+        report.append((pm, src, how))
+    out = pd.concat(rows, ignore_index=True).drop_duplicates(["material", "hauler_model"])
+    return out, pd.DataFrame(report, columns=["model", "values from", "how"])
+
+
 def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units: pd.DataFrame | None = None,
             operators: pd.DataFrame | None = None, model_map: dict | None = None) -> Resolved:
     """Fill hauler model, load, material group, loader model, hourly target and operator names; check every line.

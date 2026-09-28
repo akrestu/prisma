@@ -40,7 +40,6 @@ with session_scope() as s:
     prev = repo.previous_lines(s, site, date, shift) if sh is None else None
     units = repo.population_for(s, date)
     ops = repo.operators(s, site)
-    mmap = repo.hauler_model_map(s, site)
     coord_now = sh.coordinator if sh else ""
     stamp = f"{sh.updated_by} · {sh.updated_at.astimezone(WIB):%d %b %H:%M} WIB" if sh else ""
 if lf.empty:
@@ -115,7 +114,7 @@ with t_web:
     }
     grid = st.data_editor(to_grid(base), num_rows="dynamic", hide_index=True, width="stretch", column_config=cfg,
                           key=f"hi_grid_{site}_{date}_{shift}_{ver}", height=min(600, 38 * (len(base) + 3) + 40))
-    res = H.resolve(from_grid(grid), lf, tg, units, ops, mmap)
+    res = H.resolve(from_grid(grid), lf, tg, units, ops)
     st.caption("One row per hauler. When a hauler's operator changes during the shift, add a second row for the "
                "same hauler with the new operator.")
     for w in res.warnings:
@@ -167,8 +166,7 @@ with t_xls:
             exists, _ = repo.hourly_shift(s, hf.site, hf.date, hf.shift)
             units_f = repo.population_for(s, hf.date)
             ops_f = repo.operators(s, hf.site)
-            map_f = repo.hauler_model_map(s, hf.site)
-        rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f, map_f)
+        rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f)
         st.markdown(f"**{hf.site} · {hf.date:%d %b %Y} · {hf.shift}** · {len(rf.rows)} lines"
                     + (f" · coordinator {hf.coordinator}" if hf.coordinator else ""))
         for p in rf.problems:
