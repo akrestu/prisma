@@ -25,6 +25,9 @@ if msg:
     st.success(msg)
 
 p_date, p_shift, p_slot = H.production_hour(now_wib())
+goto = st.session_state.pop("hi_goto", None)   # after an upload: open the shift that was just saved
+if goto:
+    st.session_state["hi_site"], st.session_state["hi_date"], st.session_state["hi_shift"] = goto
 a, b, c = st.columns([1.2, 1, 1])
 site = a.selectbox("Site", sites, key="hi_site")
 date = b.date_input("Production date", p_date, key="hi_date",
@@ -150,7 +153,8 @@ with t_xls:
                        lambda: H.build_template(site, date, shift, lf, tg, lines, coord_now, units, ops),
                        file_name=f"Hourly_{site}_{date:%Y-%m-%d}_{shift}.xlsx", on_click="ignore",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    f = st.file_uploader("Filled template (.xlsx)", type=["xlsx"], key="hi_file", max_upload_size=10)
+    f = st.file_uploader("Filled template (.xlsx)", type=["xlsx"], key=f"hi_file_{st.session_state.get('hi_ver', 0)}",
+                         max_upload_size=10)
     if f is not None:
         try:
             hf = H.parse_template(f.getvalue())
@@ -181,5 +185,12 @@ with t_xls:
                 audit(s, user.username, "hourly_upload", hf.site,
                       f"{hf.date:%Y-%m-%d} {hf.shift}: {len(rf.rows)} lines from {f.name}")
             st.cache_data.clear()
-            st.session_state["hi_msg"] = f"{hf.site} {hf.date:%d %b} {hf.shift} saved from {f.name}."
+            lg = H.to_long(rf.rows.assign(site=hf.site, date=hf.date, shift=hf.shift))
+            vol = lg.groupby("material_group")["volume"].sum()
+            st.session_state["hi_goto"] = (hf.site, hf.date, hf.shift)
+            st.session_state["hi_ver"] = st.session_state.get("hi_ver", 0) + 1   # empty the uploader
+            st.session_state["hi_msg"] = (
+                f"{hf.site} {hf.date:%d %b %Y} {hf.shift} saved from {f.name}: {len(rf.rows)} lines, "
+                f"{lg['rit'].sum():,.0f} trips, OB {vol.get('OB', 0):,.0f} BCM, coal {vol.get('CG', 0):,.0f} t. "
+                "It is shown below; on the TV and in Dashboard → Hourly production pick this date and shift.")
             st.rerun()

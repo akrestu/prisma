@@ -234,3 +234,12 @@ def test_hourly_dashboard_interactive_tabs(world):
     assert not at.exception, [e.value for e in at.exception]
     assert [t.label for t in at.tabs] == ["TV screen", "Pace", "Fleets", "Haulers & operators", "Month", "Lines"]
     assert len(at.get("plotly_chart")) >= 4                     # pace, heatmap, fleet totals, operators (+ month)
+
+
+def test_tv_preview_hourly_past_shift(world):
+    import datetime as dt
+    at = run_path("pages/tv/preview.py", load_user(world, "adm"))
+    at.segmented_control(key="tv_screen").set_value("hourly").run()
+    assert not at.exception, [e.value for e in at.exception]
+    at.date_input(key="tv_h_date").set_value(dt.date(2026, 9, 20)).run()
+    assert not at.exception and any("a past shift" in c.value for c in at.caption)

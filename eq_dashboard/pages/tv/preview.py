@@ -19,8 +19,17 @@ with b:
     screen = st.segmented_control("Screen", list(SCREENS), default="equipment", format_func=SCREENS.get,
                                   key="tv_screen") or "equipment"
 if screen == "hourly":
-    st.caption("Hourly production as the TV shows it now (flash data, refreshed every minute on the TV).")
-    show_hourly(site, kiosk=False)
+    from core import hourly as H
+    from core.config import now_wib
+    p_date, p_shift, _ = H.production_hour(now_wib())
+    with c:
+        d1, d2 = st.columns(2)
+        day = d1.date_input("Date", p_date, max_value=p_date, key="tv_h_date")
+        sh = d2.segmented_control("Shift", list(H.SHIFTS), default=p_shift, key="tv_h_shift") or p_shift
+    live = (day, sh) == (p_date, p_shift)
+    st.caption("The shift running now, as the TV shows it (refreshed every minute on the TV)." if live else
+               f"{day:%d %b %Y} {sh}: a past shift. The TV itself always shows the shift running now.")
+    show_hourly(site, kiosk=False, date=None if live else day, shift=None if live else sh)
 else:
     with c:
         period = st.segmented_control("Period", PERIODS, default="daily", format_func=PERIOD_LABEL.get,
