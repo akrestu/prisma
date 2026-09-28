@@ -223,6 +223,7 @@ Data per jam langsung tampil tanpa approval. Angka resmi bulanan tetap berasal d
 1. Admin membuka **Admin → TV devices**, isi nama TV, site, dan **jenis layar**, lalu klik **Create TV link**:
    - **Equipment & monthly:** availability, reliability, produksi, dan fuel. Periode diatur per TV (hourly/daily/weekly/monthly/yearly).
    - **Hourly production:** ringkasan jam berjalan, MTD, outlook, dan harian, plus tabel OB dan coal per fleet per jam dengan warna capaian target.
+   - Untuk layar Hourly production, pilih **Report**: *Live* (mengikuti shift yang sedang berjalan) atau *Fixed date* (tanggal dan shift tertentu tetap tampil sampai diganti).
 2. Salin link yang muncul. Link hanya ditampilkan **sekali**.
 3. Di mini-PC atau TV, jalankan browser dalam mode kiosk:
 

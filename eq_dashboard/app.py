@@ -29,11 +29,12 @@ if "display" in st.query_params:
         with session_scope() as s:
             d = validate(s, st.query_params.get("display"))
             period, screen = (d.period, d.screen) if d else (None, None)
+            h_date, h_shift = (d.hourly_date, d.hourly_shift) if d else (None, None)
         if period is None:
             st.error("This TV link has been revoked.")
             return
         if screen == "hourly":
-            show_hourly(site, kiosk=True)
+            show_hourly(site, kiosk=True, date=h_date, shift=h_shift if h_date else None)
         else:
             show(site, kiosk=True, period=period)
 

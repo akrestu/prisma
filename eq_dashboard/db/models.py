@@ -68,6 +68,8 @@ class DisplayDevice(Base):
     token_hash: Mapped[str] = mapped_column(String(128), unique=True)
     period: Mapped[str] = mapped_column(String(10), default="daily", server_default="daily")  # hourly..yearly
     screen: Mapped[str] = mapped_column(String(12), default="equipment", server_default="equipment")  # | hourly
+    hourly_date: Mapped[dt.date | None] = mapped_column(Date)       # None = live (the shift running now)
+    hourly_shift: Mapped[str | None] = mapped_column(String(2))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

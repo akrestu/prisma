@@ -5,7 +5,7 @@ import streamlit as st
 from sqlalchemy import select
 
 from auth import display
-from core.config import UNMAPPED, WIB
+from core.config import UNMAPPED, WIB, today_wib
 from core.ingest import audit
 from core.periods import PERIOD_LABEL, PERIODS
 from core.ui import require, sites_for
@@ -54,7 +54,7 @@ with st.form("new_device", clear_on_submit=True):
             st.rerun()
 
 with session_scope() as s:
-    rows = [(d.id, d.name, d.site_code, d.period, d.active, d.last_seen, d.screen)
+    rows = [(d.id, d.name, d.site_code, d.period, d.active, d.last_seen, d.screen, d.hourly_date, d.hourly_shift)
             for d in s.scalars(select(m.DisplayDevice).order_by(m.DisplayDevice.site_code, m.DisplayDevice.name))]
 if not rows:
     st.info("No TV devices yet.")
@@ -62,7 +62,7 @@ if not rows:
 
 now = dt.datetime.now(dt.UTC)
 st.subheader("TVs")
-for did, name, site, period, active, seen, screen in rows:
+for did, name, site, period, active, seen, screen, h_date, h_shift in rows:
     online = active and seen is not None and now - seen < dt.timedelta(minutes=10)
     state = ":yellow-badge[online]" if online else (":gray-badge[offline]" if active else ":orange-badge[revoked]")
     seen_txt = seen.astimezone(WIB).strftime("%d %b %H:%M") if seen else "never"
@@ -77,8 +77,33 @@ for did, name, site, period, active, seen, screen in rows:
                 audit(s, user.username, "display_screen", site, f"{name}: {screen} → {new_screen}")
             st.toast(f"{name}: {SCREENS[new_screen]} (applied on the TV within a minute)")
             st.rerun()
-        new_period = p.selectbox("Period", PERIODS, index=PERIODS.index(period) if period in PERIODS else 1,
-                                 format_func=PERIOD_LABEL.get, key=f"per{did}", label_visibility="collapsed")
+        if screen == "hourly":
+            # which report the hourly screen shows: the shift running now, or a fixed date and shift
+            live_now = h_date is None
+            mode = p.selectbox("Report", ["Live", "Fixed date"], index=0 if live_now else 1, key=f"hmode{did}",
+                               label_visibility="collapsed",
+                               help="Live follows the shift running now; Fixed date keeps one report on screen")
+            if mode == "Fixed date":
+                dd, ss = st.columns([1, 1])
+                pick_d = dd.date_input("Report date", h_date or today_wib(), max_value=today_wib(),
+                                       key=f"hdate{did}")
+                pick_s = ss.segmented_control("Shift", ["DS", "NS"], default=h_shift or "DS", key=f"hshift{did}") \
+                    or "DS"
+            else:
+                pick_d, pick_s = None, None
+            if (pick_d, pick_s) != (h_date, h_shift):
+                with session_scope() as s:
+                    dev = s.get(m.DisplayDevice, did)
+                    dev.hourly_date, dev.hourly_shift = pick_d, pick_s
+                    audit(s, user.username, "display_hourly_report", site,
+                          f"{name}: {'live' if pick_d is None else f'{pick_d:%Y-%m-%d} {pick_s}'}")
+                st.toast(f"{name}: " + ("live shift" if pick_d is None else f"report {pick_d:%d %b %Y} {pick_s}")
+                         + " (applied on the TV within a minute)")
+                st.rerun()
+            new_period = period
+        else:
+            new_period = p.selectbox("Period", PERIODS, index=PERIODS.index(period) if period in PERIODS else 1,
+                                     format_func=PERIOD_LABEL.get, key=f"per{did}", label_visibility="collapsed")
         if new_period != period:
             with session_scope() as s:
                 s.get(m.DisplayDevice, did).period = new_period

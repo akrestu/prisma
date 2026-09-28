@@ -64,12 +64,27 @@ with t_pace:
         fleet_hour = lg[lg["rit"] > 0].drop_duplicates(["slot", "loader"])
         tgt = fleet_hour.groupby("slot")["target_per_hour"].sum().reindex(vol.index, fill_value=0)
         running = fleet_hour.groupby("slot")["loader"].nunique().reindex(vol.index, fill_value=0)
-        colors = [T.PA_COLOR if (t and v >= t) else (T.MISS if t else T.IDLE) for v, t in zip(vol, tgt, strict=True)]
+        # one stacked segment per loader (Eq ID), so every bar shows which excavators made the hour
+        by_loader = lg.pivot_table(index="loader", columns="slot", values="volume", aggfunc="sum", fill_value=0) \
+            .reindex(columns=vol.index, fill_value=0)
+        order = lg.groupby("loader")["line"].min().sort_values().index
+        palette = [T.ACCENT, T.READY, T.PA_COLOR, T.FUEL_COLOR, T.IDLE, T.STANDBY, "#A7D38B", "#E0A860", "#7FB3E0",
+                   "#D9A5E8", "#9FD6C8", "#E8C27A"]
+        tgt_by = lg.groupby("loader")["target_per_hour"].max()
         fig = go.Figure()
-        fig.add_bar(x=labels, y=vol.values, name=f"Actual ({unit})", marker_color=colors,
-                    customdata=list(zip(tgt, running, strict=True)),
-                    hovertemplate="%{x}<br>actual %{y:,.0f}<br>target %{customdata[0]:,.0f}"
-                                  "<br>%{customdata[1]} fleets working<extra></extra>")
+        for i, ld in enumerate(order):
+            y = by_loader.loc[ld].to_numpy()
+            fig.add_bar(x=labels, y=y, name=str(ld), marker_color=palette[i % len(palette)],
+                        customdata=[[tgt_by.get(ld) or 0]] * len(y),
+                        hovertemplate=f"<b>{ld}</b> · %{{x}}<br>%{{y:,.0f}} {unit} of %{{customdata[0]:,.0f}}"
+                                      "<extra></extra>")
+        met = [(v >= t) if t else None for v, t in zip(vol, tgt, strict=True)]
+        fig.add_scatter(x=labels, y=vol.values, mode="text", showlegend=False, textposition="top center",
+                        text=[f"{v:,.0f}" for v in vol.to_numpy()],
+                        textfont=dict(color=[T.PA_COLOR if x else (T.MISS if x is False else T.MUTED) for x in met]),
+                        customdata=list(zip(tgt, running, strict=True)),
+                        hovertemplate="%{x} total %{y:,.0f}<br>target %{customdata[0]:,.0f} · "
+                                      "%{customdata[1]} loaders working<extra></extra>")
         fig.add_scatter(x=labels, y=tgt.values, name="Hourly target", mode="markers",
                         marker=dict(symbol="line-ew-open", size=26, line=dict(width=3, color=T.TEXT)),
                         hovertemplate="target %{y:,.0f}<extra></extra>")
@@ -78,8 +93,9 @@ with t_pace:
         fig.add_scatter(x=labels, y=tgt.cumsum().values, name="Cumulative target", yaxis="y2",
                         line=dict(color=T.TEXT, width=2, dash="dash"),
                         hovertemplate="cumulative target %{y:,.0f}<extra></extra>")
-        fig.update_layout(title=f"{'Overburden' if group == 'OB' else 'Coal'} per hour · {date:%d %b} {shift}",
-                          yaxis=dict(title=f"{unit} per hour", tickformat=","), bargap=.35,
+        fig.update_layout(title=f"{'Overburden' if group == 'OB' else 'Coal'} per hour by loader · {date:%d %b} {shift}"
+                                "  ·  total: teal = target met, orange = below",
+                          yaxis=dict(title=f"{unit} per hour", tickformat=","), bargap=.35, barmode="stack",
                           yaxis2=dict(title="cumulative", overlaying="y", side="right", tickformat=",",
                                       showgrid=False), hovermode="x unified")
         dash.plot(fig, 420)
@@ -138,15 +154,17 @@ with t_ops:
         by["trips_per_hour"] = by["trips"] / by["hours"]
         by["operator"] = by["hauler_operator"].fillna(by["hauler_nrp"]).fillna("— no operator")
         ops = (by.groupby("operator").agg(trips=("trips", "sum"), volume=("volume", "sum"), hours=("hours", "sum"),
-                                         haulers=("hauler", lambda x: ", ".join(sorted(set(map(str, x))))))
+                                         haulers=("hauler", lambda x: ", ".join(sorted(set(map(str, x))))),
+                                         loaders=("loader", lambda x: ", ".join(sorted(set(map(str, x))))))
                .assign(tph=lambda x: x["trips"] / x["hours"]).sort_values("tph", ascending=False))
         st.caption("Trips per working hour of each hauler operator this shift: the starting point for operator "
                    "KPIs. Operators are identified by NRP from Admin → Operators.")
         fig = go.Figure(go.Bar(
             x=ops.index, y=ops["tph"], marker_color=COLOR[group],
-            customdata=ops[["trips", "volume", "hours", "haulers"]].values,
+            customdata=ops[["trips", "volume", "hours", "haulers", "loaders"]].values,
             hovertemplate="%{x}<br>%{y:.1f} trips per hour<br>%{customdata[0]:.0f} trips · %{customdata[1]:,.0f} "
-                          + unit + "<br>%{customdata[2]} hours · %{customdata[3]}<extra></extra>"))
+                          + unit + "<br>%{customdata[2]} hours · hauler %{customdata[3]}"
+                          "<br>loader %{customdata[4]}<extra></extra>"))
         avg = ops["trips"].sum() / ops["hours"].sum() if ops["hours"].sum() else None
         if avg:
             fig.add_hline(y=avg, line_dash="dash", line_color=T.TEXT, annotation_text=f"average {avg:.1f}")

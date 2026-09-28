@@ -243,3 +243,20 @@ def test_tv_preview_hourly_past_shift(world):
     assert not at.exception, [e.value for e in at.exception]
     at.date_input(key="tv_h_date").set_value(dt.date(2026, 9, 20)).run()
     assert not at.exception and any("a past shift" in c.value for c in at.caption)
+
+
+def test_tv_devices_hourly_report_controls(world):
+    import datetime as dt
+
+    from auth import display
+    dev, _ = display.create_device(world, "BAU hourly", "WBK-BAU", None)
+    dev.screen = "hourly"
+    world.commit()
+    at = run_path("pages/admin/display_devices.py", load_user(world, "adm"))
+    assert not at.exception, [e.value for e in at.exception]
+    at.selectbox(key=f"hmode{dev.id}").set_value("Fixed date").run()
+    assert not at.exception
+    at.date_input(key=f"hdate{dev.id}").set_value(dt.date(2026, 9, 20)).run()
+    world.expire_all()
+    got = world.get(m.DisplayDevice, dev.id)
+    assert got.hourly_date == dt.date(2026, 9, 20) and got.hourly_shift == "DS"

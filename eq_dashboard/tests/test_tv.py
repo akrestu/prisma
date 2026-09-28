@@ -182,3 +182,15 @@ def test_kiosk_hourly_screen(published, monkeypatch):
     html = " ".join(str(h.proto.body) for h in at.get("html"))
     assert "Hourly production" in html and "WBK-BAU" in html and "Overburden" in html
     assert "PA and hours by type" not in html          # not the equipment screen
+
+
+def test_kiosk_hourly_fixed_report_date(published, monkeypatch):
+    import datetime as dt
+    s = published
+    dev, token = display.create_device(s, "BAU report TV", "WBK-BAU", None)
+    dev.screen, dev.hourly_date, dev.hourly_shift = "hourly", dt.date(2026, 9, 20), "NS"
+    s.commit()
+    at = _kiosk(monkeypatch, token)
+    assert not at.exception, [e.value for e in at.exception]
+    html = " ".join(str(h.proto.body) for h in at.get("html"))
+    assert "20 Sep 2026" in html and "shift <b>NS</b>" in html and 'class="hr"' not in html   # no live hour badge
