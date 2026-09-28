@@ -254,7 +254,7 @@ def test_tv_devices_hourly_report_controls(world):
     world.commit()
     at = run_path("pages/admin/display_devices.py", load_user(world, "adm"))
     assert not at.exception, [e.value for e in at.exception]
-    at.selectbox(key=f"hmode{dev.id}").set_value("Fixed date").run()
+    at.segmented_control(key=f"hmode{dev.id}").set_value("Fixed date").run()
     assert not at.exception
     at.date_input(key=f"hdate{dev.id}").set_value(dt.date(2026, 9, 20)).run()
     world.expire_all()

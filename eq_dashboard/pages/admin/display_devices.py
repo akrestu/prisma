@@ -78,18 +78,21 @@ for did, name, site, period, active, seen, screen, h_date, h_shift in rows:
             st.toast(f"{name}: {SCREENS[new_screen]} (applied on the TV within a minute)")
             st.rerun()
         if screen == "hourly":
-            # which report the hourly screen shows: the shift running now, or a fixed date and shift
             live_now = h_date is None
-            mode = p.selectbox("Report", ["Live", "Fixed date"], index=0 if live_now else 1, key=f"hmode{did}",
-                               label_visibility="collapsed",
-                               help="Live follows the shift running now; Fixed date keeps one report on screen")
-            if mode == "Fixed date":
-                dd, ss = st.columns([1, 1])
-                pick_d = dd.date_input("Report date", h_date or today_wib(), max_value=today_wib(),
-                                       key=f"hdate{did}")
-                pick_s = ss.segmented_control("Shift", ["DS", "NS"], default=h_shift or "DS", key=f"hshift{did}") \
-                    or "DS"
-            else:
+            p.markdown("**Report**  \n" + ("Live · shift running now" if live_now
+                                             else f"Fixed · {h_date:%d %b %Y} {h_shift}"))
+            # which report the hourly screen shows: the shift running now, or a fixed date and shift
+            r1, r2, r3, _ = st.columns([1.6, 1.3, 1, 2.6])
+            mode = r1.segmented_control("Report on this TV", ["Live", "Fixed date"],
+                                        default="Live" if live_now else "Fixed date", key=f"hmode{did}",
+                                        help="Live follows the shift running now; Fixed date keeps one report on "
+                                             "screen until you change it") or "Live"
+            fixed = mode == "Fixed date"
+            pick_d = r2.date_input("Report date", h_date or today_wib(), max_value=today_wib(), key=f"hdate{did}",
+                                   disabled=not fixed)
+            pick_s = r3.segmented_control("Shift", ["DS", "NS"], default=h_shift or "DS", key=f"hshift{did}",
+                                          disabled=not fixed) or "DS"
+            if not fixed:
                 pick_d, pick_s = None, None
             if (pick_d, pick_s) != (h_date, h_shift):
                 with session_scope() as s:
