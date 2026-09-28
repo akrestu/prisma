@@ -19,23 +19,29 @@ if ob.empty:
     st.stop()
 
 daily = ob.groupby("date")["volume"].sum()
-plan = dash.plan_daily(tuple(c.sites), c.month).set_index("date")["ob_plan"]
+plan = dash.plan_range(c.sites, c.date_from, c.date_to).set_index("date")["ob_plan"]
 plan_mtd = plan.reindex(daily.index).sum(min_count=1)
+# a month-end projection only makes sense while looking at the current month to date
+projectable = c.preset == "mtd"
 days_in_month = calendar.monthrange(c.month.year, c.month.month)[1]
 proj = daily.mean() * days_in_month
 top_pit = ob.groupby("pit")["volume"].sum().sort_values(ascending=False)
 dash.summary(f"{fmt_num(daily.sum())} BCM over {len(daily)} days, {fmt_num(daily.mean())} BCM per day",
-             f"projected {fmt_num(proj)} BCM at month end" + (f" against a plan of {fmt_num(plan.sum())} BCM" if plan.notna().any() else ""),
+             (f"projected {fmt_num(proj)} BCM at month end" if projectable else "")
+             + (f" against a plan of {fmt_num(plan.sum())} BCM" if projectable and plan.notna().any() else ""),
              f"{top_pit.index[0]} delivers {top_pit.iloc[0] / top_pit.sum():.0%}" if len(top_pit) else "")
 r = st.columns(6)
-r[0].metric("OB month to date", f"{fmt_num(daily.sum())} BCM")
+r[0].metric("OB in period", f"{fmt_num(daily.sum())} BCM")
 r[1].metric("Average per day", f"{fmt_num(daily.mean())} BCM")
 r[2].metric("Trips", fmt_num(ob["rit"].sum()))
 if pd.notna(plan_mtd) and plan_mtd:
-    r[3].metric("Achievement MTD", f"{daily.sum() / plan_mtd:.1%}", f"plan {fmt_num(plan_mtd)} BCM", delta_color="off")
+    r[3].metric("Achievement", f"{daily.sum() / plan_mtd:.1%}", f"plan {fmt_num(plan_mtd)} BCM", delta_color="off")
 else:
-    r[3].metric("Achievement MTD", "—", "no plan set", delta_color="off")
-r[4].metric("Month-end projection", f"{fmt_num(proj)} BCM", "run rate × calendar days", delta_color="off")
+    r[3].metric("Achievement", "—", "no plan set", delta_color="off")
+if projectable:
+    r[4].metric("Month-end projection", f"{fmt_num(proj)} BCM", "run rate × calendar days", delta_color="off")
+else:
+    r[4].metric("Days with trips", fmt_num(len(daily)))
 r[5].metric("Haul distance", f"{fmt_num(weighted(ob, 'dist_h'))} m H", f"{fmt_num(weighted(ob, 'dist_v'))} m V",
             delta_color="off", help="Trip-weighted horizontal and vertical distance")
 

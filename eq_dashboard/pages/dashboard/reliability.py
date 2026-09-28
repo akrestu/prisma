@@ -12,7 +12,7 @@ st.title("Reliability")
 rel = metrics.reliability(c.ev, c.st).iloc[0]
 iv = dash.pm_intervals()
 pm = metrics.pm_accuracy(c.ev, iv)
-t = dash.targets(c.sites, c.month, dash.weighted_target_hours(c.ev))
+t = dash.targets_for(c)
 comp = c.ev[c.ev["category"] == "D"].groupby("reason_text")["hours"].sum().sort_values(ascending=False)
 dash.summary(dash.gap_text("MTBS", rel["MTBS"], t["mtbs"], "hrs"),
              dash.gap_text("MTTR", rel["MTTR"], t["mttr"], "hrs", higher_better=False),

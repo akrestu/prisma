@@ -70,7 +70,7 @@ def clean_events(df: pd.DataFrame, units: pd.DataFrame, week_fn=week_of) -> pd.D
     shift = _shift(df["Shift"])
     model_file = text(df["Model.1"]) if "Model.1" in df.columns else pd.Series(pd.NA, index=df.index)
     out = pd.DataFrame({
-        "row_ref": df.index + 2,  # nomor baris Excel
+        "row_ref": df["_row"],  # Excel row number (io.frame)
         "date": dt_.dt.date,
         "shift": shift,
         "week": week_fn(dt_.dt.day),
@@ -137,7 +137,7 @@ def material_group(material: pd.Series) -> pd.Series:
 def clean_ritasi(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str] | None = None) -> pd.DataFrame:
     dt_ = excel_date(df["Date"])
     base = pd.DataFrame({
-        "row_ref": df.index + 3,
+        "row_ref": df["_row"],
         "date": dt_.dt.date,
         "hauler": _ids(df["EqNumber"], alias),
         "hauler_model": text(df["EqModel"]),
@@ -172,7 +172,7 @@ def clean_timbangan(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str]
     dt_ = excel_date(df["Date"])
     product = text(df["Nama Product"])
     out = pd.DataFrame({
-        "row_ref": df.index + 2,
+        "row_ref": df["_row"],
         "date": dt_.dt.date,
         "shift": _shift(df["Shift"]),
         "ticket_id": text(df["No. ID."]),
@@ -199,7 +199,7 @@ def clean_fuel(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str] | No
     dt_ = excel_date(df["DATE"])
     unit = _ids(df["UNIT"], alias)
     out = pd.DataFrame({
-        "row_ref": df.index + 2,
+        "row_ref": df["_row"],
         "date": dt_.dt.date,
         "shift": _shift(df["SHIFT"]),
         "time": day_fraction(df["TIME"]),
@@ -222,7 +222,7 @@ def clean_receipt(df: pd.DataFrame, units: pd.DataFrame, tank_site: dict[str, st
     if tank_site:
         site = site.fillna(unit.map(tank_site))
     out = pd.DataFrame({
-        "row_ref": df.index + 2,
+        "row_ref": df["_row"],
         "date": dt_.dt.date,
         "shift": _shift(df["SHIFT"]),
         "vendor": text(df["LOCATION"]),

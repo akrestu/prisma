@@ -4,7 +4,7 @@ from __future__ import annotations
 import calendar
 import datetime as dt
 import html
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -13,10 +13,11 @@ import streamlit as st
 from sqlalchemy import select
 
 from auth.access import scope_filter
+from core import filters as F
 from core import metrics
 from core import theme as T
 from core.clean import week_of
-from core.config import DEFAULT_CLIENT_STANDBY, UNMAPPED
+from core.config import DEFAULT_CLIENT_STANDBY, UNMAPPED, WIB
 from core.targets import METRICS
 from core.ui import fmt_num, fmt_pct, require, sites_for
 from db import models as m
@@ -72,9 +73,9 @@ class Ctx:
     user: object
     allowed: list[str]
     sites: list[str]
-    month: dt.date
+    month: dt.date               # month of the end of the range (used for "this year" scopes)
     published: pd.DataFrame      # all PUBLISHED versions the user may see
-    versions: pd.DataFrame       # versions of the selected sites × month
+    versions: pd.DataFrame       # versions of the selected sites × months in the range
     ev: pd.DataFrame
     st: pd.DataFrame
     rit: pd.DataFrame
@@ -83,19 +84,56 @@ class Ctx:
     receipt: pd.DataFrame
     date_from: dt.date
     date_to: dt.date
+    months: list[dt.date] = field(default_factory=list)
+    anchor: dt.date | None = None          # last date with data
+    last_complete: dt.date | None = None
+    preset: str = F.DEFAULT_PRESET
+
+    @property
+    def single_month(self) -> bool:
+        return len(self.months) == 1
 
     def dq(self) -> pd.DataFrame:
         parts = [_dq(int(r.upload_id), r.site) for r in self.versions.itertuples()]
         return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
     def versions_for(self, scope: str) -> pd.DataFrame:
-        """Versions for wider ranges: 'month' (selected), 'year' (selected year) or 'all'."""
+        """Versions for wider ranges: 'month' (selected range), 'year' (year of the range end) or 'all'."""
         v = self.published[self.published["site"].isin(self.sites)]
         if scope == "month":
-            return v[v["month"] == self.month]
+            return v[v["month"].isin(self.months)]
         if scope == "year":
             return v[[mo.year == self.month.year for mo in v["month"]]]
         return v
+
+
+def _seed_filters(user) -> None:
+    """Once per session: restore filters from the URL, else the user's saved default. Afterwards a shadow copy
+    (`_flt`) re-seeds widgets that Streamlit dropped while the user was on a page without the sidebar filters."""
+    if "_flt" not in st.session_state:
+        state = F.from_query(dict(st.query_params))
+        if not state:
+            with session_scope() as s:
+                u = s.get(m.User, user.id)
+                state = F.from_saved(u.default_filters if u else None)
+        st.session_state["_flt"] = state
+    for k, v in st.session_state["_flt"].items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+
+def _valid(key: str, options) -> None:
+    """Drop stale values (from an old link or saved default) that are not options any more."""
+    if key in st.session_state and isinstance(st.session_state[key], (list, tuple)):
+        ok = set(options)
+        st.session_state[key] = [x for x in st.session_state[key] if x in ok]
+
+
+def _persist(state: dict) -> None:
+    st.session_state["_flt"] = state
+    q = F.to_query(state)
+    if dict(st.query_params) != q:
+        st.query_params.from_dict(q)
 
 
 def context(page: str, unit_filter: bool = True) -> Ctx:
@@ -112,33 +150,62 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
             msg += " Import a workbook in **Data → Data_Prod**, then wait for Site Manager approval."
         st.info(msg)
         st.stop()
+    _seed_filters(user)
     sb = st.sidebar
     sb.markdown("### Filters")
     avail = sorted(pub["site"].unique())
-    sel = sb.multiselect("Site", avail, default=[x for x in avail if x != UNMAPPED] or avail, key="f_site")
+    _valid("f_site", avail)
+    if not st.session_state.get("f_site"):
+        st.session_state["f_site"] = [x for x in avail if x != UNMAPPED] or avail
+    sel = sb.multiselect("Site", avail, key="f_site")
     if not sel:
         st.warning("Select at least one site.")
         st.stop()
-    months = sorted(pub[pub["site"].isin(sel)]["month"].unique(), reverse=True)
-    month = sb.selectbox("Month", months, format_func=lambda d: pd.Timestamp(d).strftime("%B %Y"), key="f_month")
-    versions = pub[(pub["site"].isin(sel)) & (pub["month"] == month)]
+
+    mine = pub[pub["site"].isin(sel)]
+    months_avail = sorted(mine["month"].unique())
+    latest = mine[mine["month"] == months_avail[-1]]
+    ev_latest = scope_filter(combine("events", latest), allowed)
+    anchor = ev_latest["date"].max() if len(ev_latest) else F.month_end(months_avail[-1])
+    comp = metrics.complete_days(ev_latest) if len(ev_latest) else pd.Series(dtype=bool)
+    last_complete = comp[comp].index.max() if comp.any() else None
+    first = months_avail[0]
+
+    if st.session_state.get("f_period") not in F.PRESETS:
+        st.session_state["f_period"] = F.DEFAULT_PRESET
+    preset = sb.selectbox("Period", list(F.PRESETS), format_func=F.PRESETS.get, key="f_period")
+    custom = None
+    if preset == "custom":
+        rng = st.session_state.get("f_range")
+        if not (isinstance(rng, (list, tuple)) and len(rng) == 2) or rng[0] < first or rng[1] > anchor:
+            st.session_state["f_range"] = F.preset_range("mtd", anchor, first)
+        picked = sb.date_input("From – to", min_value=first, max_value=anchor, key="f_range")
+        custom = tuple(picked) if isinstance(picked, (list, tuple)) and len(picked) == 2 else None
+    d0, d1 = F.preset_range(preset, anchor, first, last_complete, custom)
+    avail_set = set(months_avail)
+    months = [mo for mo in F.months_between(d0, d1) if mo in avail_set]
+    versions = mine[mine["month"].isin(months)]
 
     ev = scope_filter(combine("events", versions), allowed)
     if ev.empty:
         st.info("No event data for this selection.")
         st.stop()
-    dmin, dmax = ev["date"].min(), ev["date"].max()
-    rng = sb.date_input("Dates", (dmin, dmax), min_value=dmin, max_value=dmax, key=f"f_date_{month}")
-    d0, d1 = (rng if isinstance(rng, (tuple, list)) and len(rng) == 2 else (dmin, dmax))
-    weeks = sb.multiselect("Week", sorted(ev["week"].unique()), key="f_week")
+    week_opts = ["Week 1", "Week 2", "Week 3", "Week 4"]
+    _valid("f_week", week_opts)
+    weeks = sb.multiselect("Week of month", week_opts, key="f_week",
+                           help="1–7, 8–14, 15–21, 22–end of each month in the period")
+    _valid("f_shift", ["DS", "NS"])
     shift = sb.segmented_control("Shift", ["DS", "NS"], selection_mode="multi", key="f_shift") or ["DS", "NS"]
 
     types = models = units = []
     if unit_filter:
+        _valid("f_type", ev["type"].dropna().unique())
         types = sb.multiselect("Type", sorted(ev["type"].dropna().unique()), key="f_type")
         e2 = ev[ev["type"].isin(types)] if types else ev
+        _valid("f_model", e2["model"].dropna().unique())
         models = sb.multiselect("Model", sorted(e2["model"].dropna().unique()), key="f_model")
         e3 = e2[e2["model"].isin(models)] if models else e2
+        _valid("f_unit", e3["unit_id"].unique())
         units = sb.multiselect("Unit ID", sorted(e3["unit_id"].unique()), key="f_unit")
 
     def by_date(df, col="date", shift_col="shift"):
@@ -172,26 +239,74 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
     coal = by_date(scope_filter(combine("coal", versions), allowed))
     fuel = by_unit(by_date(scope_filter(combine("fuel", versions), allowed)))
     rec = by_date(scope_filter(combine("receipt", versions), allowed), shift_col="-")  # deliveries: no shift split
-    sb.caption(f"{', '.join(sel)} · {pd.Timestamp(month):%B %Y} · {d0:%d %b}–{d1:%d %b}")
-    return Ctx(user, allowed, sel, month, pub, versions, ev_f, stp, rit, coal, fuel, rec, d0, d1)
+
+    state = {k: st.session_state.get(k) for k in (*F.FIELDS, "f_range")}
+    _persist(state)
+    _filter_actions(user, state)
+    c = Ctx(user, allowed, sel, F.month_start(d1), pub, versions, ev_f, stp, rit, coal, fuel, rec, d0, d1,
+            months=months, anchor=anchor, last_complete=last_complete, preset=preset)
+    coverage(c)
+    return c
+
+
+def _filter_actions(user, state: dict) -> None:
+    a, b = st.sidebar.columns(2)
+    if a.button("Save as default", key="flt_save", help="Open the dashboard with these filters every time you sign in"):
+        with session_scope() as s:
+            s.get(m.User, user.id).default_filters = F.to_saved(state)
+        st.toast("Saved as your default filters")
+    if b.button("Reset", key="flt_reset", help="Back to all sites, month to date"):
+        for k in (*F.FIELDS, "f_range"):
+            st.session_state.pop(k, None)
+        st.session_state["_flt"] = {}
+        st.query_params.clear()
+        st.rerun()
+
+
+def coverage(c: Ctx) -> None:
+    """One muted line above the page title: which sites and dates, how fresh, when approved."""
+    approved = pd.to_datetime(c.versions["reviewed_at"]).max() if len(c.versions) else None
+    parts = [html.escape(", ".join(c.sites)), f"<b>{F.range_label(c.date_from, c.date_to)}</b>",
+             F.PRESETS[c.preset].lower()]
+    if c.anchor:
+        fresh = f"data up to {c.anchor.day} {c.anchor:%b}"
+        if c.last_complete and c.last_complete != c.anchor:
+            fresh += f" (last complete day {c.last_complete.day} {c.last_complete:%b})"
+        parts.append(fresh)
+    if approved is not None and pd.notna(approved):
+        parts.append(f"approved {approved.tz_convert(WIB):%d %b %H:%M}")
+    st.markdown(f'<div style="color:{T.MUTED};font-size:.85rem;margin:0 0 -.4rem">{" · ".join(parts)}</div>',
+                unsafe_allow_html=True)
 
 
 # ------------------------------------------------------------------ targets & configuration
-def targets(sites: list[str], month: dt.date, weights: pd.Series | None = None) -> dict[str, float | None]:
-    """Combined target: one site → that site's target; several sites → hour-weighted average.
-    If any site has no target the result is None (no target)."""
+def targets_for(c: Ctx) -> dict[str, float | None]:
+    """Target for the selected sites and period. Each site × month is weighted by its hours in the filtered data,
+    so a range across months or sites gets one fair target. If any site-month with hours has no target → None."""
+    if c.ev.empty:
+        return dict.fromkeys(METRICS)
+    w = (c.ev.assign(month=pd.to_datetime(c.ev["date"]).dt.to_period("M").dt.to_timestamp().dt.date)
+         .pipe(lambda e: metrics.time_buckets(e, ["site", "month"]))["T"])
+    w = w[w > 0]
     with session_scope() as s:
-        rows = repo.frame(s, select(m.Target.site, *[getattr(m.Target, c) for c in METRICS]).where(
-            m.Target.site.in_(sites), m.Target.year == month.year, m.Target.month == month.month))
+        rows = repo.frame(s, select(m.Target.site, m.Target.year, m.Target.month,
+                                    *[getattr(m.Target, x) for x in METRICS]).where(m.Target.site.in_(c.sites)))
+    if rows.empty:
+        return dict.fromkeys(METRICS)
+    rows["mo"] = [dt.date(int(y), int(mo), 1) for y, mo in zip(rows["year"], rows["month"], strict=True)]
+    tab = rows.set_index(["site", "mo"])
     out = {}
-    for c in METRICS:
-        vals = rows.set_index("site")[c].reindex(sites) if len(rows) else pd.Series(index=sites, dtype=float)
-        if vals.isna().any():
-            out[c] = None
-            continue
-        w = (weights.reindex(sites).fillna(0) if weights is not None else pd.Series(1.0, index=sites))
-        out[c] = float(np.average(vals, weights=w)) if w.sum() > 0 else float(vals.mean())
+    for x in METRICS:
+        vals = tab[x].reindex(w.index)
+        out[x] = None if vals.isna().any() or w.sum() == 0 else float(np.average(vals, weights=w))
     return out
+
+
+def plan_range(sites: list[str], d0: dt.date, d1: dt.date) -> pd.DataFrame:
+    """Daily OB / coal plan over any date range (months joined; a monthly plan is spread over its days)."""
+    parts = [plan_daily(tuple(sites), mo) for mo in F.months_between(d0, d1)]
+    out = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=["date", "ob_plan", "coal_plan"])
+    return out[(out["date"] >= d0) & (out["date"] <= d1)].reset_index(drop=True)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -320,6 +435,3 @@ def gap_text(name: str, value, target, unit: str = "%", higher_better: bool = Tr
     side = ("above" if diff >= 0 else "below")
     return f"{name} {val}, {size} {side} target"
 
-
-def weighted_target_hours(ev: pd.DataFrame) -> pd.Series:
-    return metrics.time_buckets(ev, ["site"])["T"] if len(ev) else pd.Series(dtype=float)

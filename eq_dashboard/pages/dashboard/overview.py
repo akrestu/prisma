@@ -12,7 +12,7 @@ st.title("Overview")
 
 k = metrics.kpis(c.ev).iloc[0]
 rel = metrics.reliability(c.ev, c.st).iloc[0]
-t = dash.targets(c.sites, c.month, dash.weighted_target_hours(c.ev))
+t = dash.targets_for(c)
 ob = c.rit.loc[c.rit["material_group"] == "OB", "volume"].sum() if len(c.rit) else 0
 coal = c.coal["ton"].sum() if len(c.coal) else 0
 fuel = c.fuel["liters"].sum() if len(c.fuel) else 0
@@ -29,8 +29,7 @@ dash.kpi(r1[1], "UoA (%)", k["UoA"], t["uoa"])
 dash.kpi(r1[2], "MTBS (hrs)", rel["MTBS"], t["mtbs"], "h")
 dash.kpi(r1[3], "MTTR (hrs)", rel["MTTR"], t["mttr"], "h", higher_better=False)
 r2 = st.columns(4)
-plan = dash.plan_daily(tuple(c.sites), c.month)
-plan = plan[(plan["date"] >= c.date_from) & (plan["date"] <= c.date_to)]
+plan = dash.plan_range(c.sites, c.date_from, c.date_to)
 dash.kpi(r2[0], "OB (BCM)", ob, plan["ob_plan"].sum(min_count=1), "n")
 dash.kpi(r2[1], "Coal (t)", coal, plan["coal_plan"].sum(min_count=1), "n1")
 dash.kpi(r2[2], "Fuel (L)", fuel, None, "n")

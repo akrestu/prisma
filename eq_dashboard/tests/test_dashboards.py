@@ -157,3 +157,34 @@ def test_week_and_shift_filters_apply_to_production_fuel_and_stoppages(world):
     assert w1["MTBS (hrs)"] != full["MTBS (hrs)"]
     at.sidebar.segmented_control(key="f_shift").set_value(["DS"]).run()   # stoppages follow the shift too
     assert {mt.label: mt.value for mt in at.metric}["MTTR (hrs)"] != w1["MTTR (hrs)"]
+
+
+def test_filters_restore_from_url_and_save_as_default(world):
+    at = AppTest.from_file(str(APP_DIR / "pages/dashboard/overview.py"), default_timeout=180)
+    at.session_state["user"] = load_user(world, "adm")
+    at.query_params["site"] = "WBK-BAU"
+    at.query_params["period"] = "last7"
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.sidebar.multiselect(key="f_site").value == ["WBK-BAU"]
+    assert at.sidebar.selectbox(key="f_period").value == "last7"
+    head = at.markdown[0].value
+    assert "WBK-BAU" in head and "– 23 Sep 2026" in head and "last 7 days" in head
+    at.sidebar.button(key="flt_save").click().run()
+    world.expire_all()
+    saved = world.query(m.User).filter(m.User.username == "adm").one().default_filters
+    assert saved["f_site"] == ["WBK-BAU"] and saved["f_period"] == "last7"
+    # a new session without URL parameters opens with the saved default
+    at2 = run("overview", load_user(world, "adm"))
+    assert at2.sidebar.multiselect(key="f_site").value == ["WBK-BAU"]
+
+
+def test_system_health_for_admin_only(world):
+    world.add(m.AuditLog(username="system", action="backup_ok", detail="eq_dashboard_2026-09-28.dump 12M"))
+    world.commit()
+    at = run_path("pages/home.py", load_user(world, "adm"))
+    assert not at.exception, [e.value for e in at.exception]
+    labels = {mt.label: mt for mt in at.metric}
+    assert "Last backup" in labels and "12M" in labels["Last backup"].delta
+    vw = run_path("pages/home.py", load_user(world, "vw"))
+    assert "Last backup" not in {mt.label for mt in vw.metric}

@@ -11,7 +11,7 @@ c = dash.context("pa_ua")
 st.title("PA & UoA")
 
 k = metrics.kpis(c.ev).iloc[0]
-t = dash.targets(c.sites, c.month, dash.weighted_target_hours(c.ev))
+t = dash.targets_for(c)
 worst_type = metrics.kpis(c.ev, ["type"])["PA"].sort_values()
 dash.summary(dash.gap_text("UoA", k["UoA"], t["uoa"]), dash.gap_text("PA", k["PA"], t["pa"]),
              f"Lowest PA by type: {worst_type.index[0]} at {worst_type.iloc[0]:.0%}" if len(worst_type) else "")

@@ -17,21 +17,21 @@ if t.empty:
 
 cg = c.rit[c.rit["material_group"] == "CG"] if len(c.rit) else c.rit
 daily = t.groupby("date")["ton"].sum()
-plan = dash.plan_daily(tuple(c.sites), c.month).set_index("date")["coal_plan"]
+plan = dash.plan_range(c.sites, c.date_from, c.date_to).set_index("date")["coal_plan"]
 plan_mtd = plan.reindex(daily.index).sum(min_count=1)
 dur = (pd.to_datetime(t["time_out"]) - pd.to_datetime(t["time_in"])).dt.total_seconds() / 60
 top_seam = t.groupby("seam")["ton"].sum().sort_values(ascending=False)
 dash.summary(f"{fmt_num(daily.sum(), 1)} t from {fmt_num(len(t))} weighbridge tickets, average payload {fmt_num(t['ton'].mean(), 1)} t",
              f"{top_seam.index[0]} gives {top_seam.iloc[0] / top_seam.sum():.0%} of coal" if len(top_seam) else "")
 r = st.columns(6)
-r[0].metric("Coal month to date", f"{fmt_num(daily.sum(), 1)} t")
+r[0].metric("Coal in period", f"{fmt_num(daily.sum(), 1)} t")
 r[1].metric("Tickets", fmt_num(len(t)))
 r[2].metric("Average DT payload", f"{fmt_num(t['ton'].mean(), 2)} t")
 r[3].metric("Median in–out time", f"{fmt_num(dur.median(), 1)} min")
 if pd.notna(plan_mtd) and plan_mtd:
-    r[4].metric("Achievement MTD", f"{daily.sum() / plan_mtd:.1%}", f"plan {fmt_num(plan_mtd)} t", delta_color="off")
+    r[4].metric("Achievement", f"{daily.sum() / plan_mtd:.1%}", f"plan {fmt_num(plan_mtd)} t", delta_color="off")
 else:
-    r[4].metric("Achievement MTD", "—", "no plan set", delta_color="off")
+    r[4].metric("Achievement", "—", "no plan set", delta_color="off")
 if len(cg):
     r[5].metric("CG haul distance", f"{fmt_num(weighted(cg, 'dist_h'))} m H", f"{fmt_num(weighted(cg, 'dist_v'))} m V",
                 delta_color="off", help="Trip-weighted, from CG ritase")

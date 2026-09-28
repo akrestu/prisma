@@ -43,7 +43,9 @@ def frame(raw: pd.DataFrame, header_row: int) -> pd.DataFrame:
         names.append(name)
     df = raw.iloc[header_row + 1:].copy()
     df.columns = names
-    return df.dropna(how="all").reset_index(drop=True)
+    df = df.dropna(how="all")
+    # the Excel row number, kept before empty rows are dropped (raw row 0 = Excel row 1)
+    return df.assign(_row=df.index + 1).reset_index(drop=True)
 
 
 def excel_date(s: pd.Series) -> pd.Series:

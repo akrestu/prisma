@@ -50,6 +50,7 @@ class User(Base):
     locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     last_seen: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    default_filters: Mapped[dict | None] = mapped_column(JSON)  # "Save as my default" in the sidebar
 
 
 class UserSite(Base):
@@ -124,6 +125,7 @@ class DimUnit(_Fact, Base):
 class FactEvent(_Fact, Base):
     __tablename__ = "fact_event"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    row_ref: Mapped[int | None] = mapped_column(Integer)  # row number in the source Excel sheet
     date: Mapped[dt.date] = mapped_column(Date, index=True)
     shift: Mapped[str] = mapped_column(String(2))
     week: Mapped[str] = mapped_column(String(8))
@@ -163,6 +165,7 @@ class FactStoppage(_Fact, Base):
 class FactRitase(_Fact, Base):
     __tablename__ = "fact_ritase_jam"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    row_ref: Mapped[int | None] = mapped_column(Integer)  # row number in the source Excel sheet
     site_hauler: Mapped[str] = mapped_column(String(40))
     date: Mapped[dt.date] = mapped_column(Date, index=True)
     hour_slot: Mapped[str] = mapped_column(String(5))
@@ -186,6 +189,7 @@ class FactRitase(_Fact, Base):
 class FactCoalTicket(_Fact, Base):
     __tablename__ = "fact_coal_tiket"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    row_ref: Mapped[int | None] = mapped_column(Integer)  # row number in the source Excel sheet
     site_dt: Mapped[str] = mapped_column(String(40))
     date: Mapped[dt.date] = mapped_column(Date, index=True)
     shift: Mapped[str] = mapped_column(String(2))
@@ -205,6 +209,7 @@ class FactCoalTicket(_Fact, Base):
 class FactFuel(_Fact, Base):
     __tablename__ = "fact_fuel"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    row_ref: Mapped[int | None] = mapped_column(Integer)  # row number in the source Excel sheet
     date: Mapped[dt.date] = mapped_column(Date, index=True)
     shift: Mapped[str] = mapped_column(String(2))
     time: Mapped[float | None] = mapped_column(Float)
@@ -218,6 +223,7 @@ class FactFuel(_Fact, Base):
 class FactFuelReceipt(_Fact, Base):
     __tablename__ = "fact_fuel_receipt"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    row_ref: Mapped[int | None] = mapped_column(Integer)  # row number in the source Excel sheet
     date: Mapped[dt.date] = mapped_column(Date, index=True)
     shift: Mapped[str | None] = mapped_column(String(2))
     vendor: Mapped[str | None] = mapped_column(String(120))

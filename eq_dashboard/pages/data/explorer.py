@@ -67,6 +67,11 @@ def _rows(table: str, versions: tuple[tuple[int, str], ...]) -> pd.DataFrame:
 
 with st.spinner(f"Loading {table.lower()}…"):
     df = _rows(table, tuple(sorted(versions)))
+if "row_ref" in df.columns:   # source row in the Excel sheet: find the original line quickly
+    df = df[["row_ref", *[c for c in df.columns if c != "row_ref"]]].rename(columns={"row_ref": "Excel row"})
+    if df["Excel row"].isna().all() and table != "Data quality findings":
+        st.caption("Excel row numbers are stored for files imported from 28 Sep 2026 on; import older months "
+                   "again to fill them in.")
 
 date_col = repo.EXPLORER_TABLES[table][1]
 f1, f2, f3 = st.columns([1.3, 1, 1.7])

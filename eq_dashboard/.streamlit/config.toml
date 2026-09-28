@@ -13,6 +13,10 @@ enableCORS = true
 showErrorDetails = false
 toolbarMode = "minimal"
 
+[logger]
+level = "info"
+messageFormat = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
 [browser]
 gatherUsageStats = false
 

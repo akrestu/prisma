@@ -1,4 +1,6 @@
 """Data_Prod: import a monthly workbook (.xlsb/.xlsx), download the template, export stored data for editing."""
+import logging
+
 import pandas as pd
 import streamlit as st
 from sqlalchemy import select
@@ -16,6 +18,7 @@ from db import repo
 from db.engine import session_scope
 
 MAX_MB = 50
+log = logging.getLogger("wanpis.import")
 
 user = require("upload")
 sites = sites_for(user)
@@ -59,6 +62,7 @@ with t_imp:
                         st.caption("Download the template from the Template tab to compare sheet and column names.")
                         st.stop()
                     except Exception as e:  # unreadable / corrupt file
+                        log.exception("import failed for %s (%s bytes) by %s", f.name, len(data), user.username)
                         box.update(label="File could not be read", state="error")
                         st.error(f"The workbook could not be opened ({type(e).__name__}). Save it again in Excel "
                                  "as .xlsx or .xlsb and retry.")

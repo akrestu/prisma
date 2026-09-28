@@ -33,9 +33,9 @@ scope = {"hourly": "month", "daily": "month", "weekly": "month", "monthly": "yea
 st.caption({
     "hourly": "Hourly profile over the selected dates (by production hour 06-07 … 05-06).",
     "daily": "Per day within the selected dates.",
-    "weekly": "Per week of the selected month (1–7, 8–14, 15–21, 22–end).",
-    "monthly": f"Per month of {c.month.year} (all published months, sidebar dates ignored).",
-    "yearly": "Per year across all published data (sidebar dates ignored).",
+    "weekly": "Per week of each month in the period (1–7, 8–14, 15–21, 22–end).",
+    "monthly": f"Per month of {c.month.year} (all published months, sidebar period ignored).",
+    "yearly": "Per year across all published data (sidebar period ignored).",
 }[period])
 
 with st.spinner(f"Calculating {group} productivity ({PERIOD_LABEL[period].lower()})…", show_time=True):
