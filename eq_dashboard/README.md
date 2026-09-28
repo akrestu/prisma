@@ -184,6 +184,9 @@ Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersi
   - Kalau operator hauler berganti di tengah shift, tambahkan baris kedua untuk hauler yang sama dengan operator baru.
   - Shift baru otomatis menyalin baris dari shift sebelumnya, jadi cukup mengisi rit. Klik **Save shift**.
 - **Excel template:** unduh template per site dan shift, isi di Excel, lalu upload. Cocok untuk input massal atau saat koneksi lemah. Upload akan **mengganti** isi shift itu.
+  - Kolomnya hanya yang diketahui operator data: Loader · Operator · Material · Hauler ID · Hauler operator · PIT · Disposal · Distance · rit per jam · Remark.
+  - Loader, operator, material, Hauler ID, dan remark dipilih dari drop-down. Model dan muatan truk ditambahkan otomatis saat upload.
+  - Baris dari shift sebelumnya sudah terisi, jadi cukup mengetik rit. Baris yang dibiarkan kosong (tanpa Hauler ID dan tanpa rit) diabaikan.
 
 Data per jam langsung tampil tanpa approval. Angka resmi bulanan tetap berasal dari Data_Prod. Di layar TV, MTD dihitung dari data resmi Data_Prod ditambah data flash untuk hari-hari setelahnya.
 

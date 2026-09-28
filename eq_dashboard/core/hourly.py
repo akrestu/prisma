@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Font
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from core.clean import _ids, material_group
@@ -27,13 +27,10 @@ R = [f"r{i}" for i in range(1, 13)]                          # storage columns f
 SHEET = "Hourly"
 HEADER_ROW = 7                                               # Excel row of the table header in the template
 # the order follows the work: excavator and its operator, material, then each truck it loads
-INPUT_COLS = ["Loader", "Operator", "Material", "Hauler ID", "Hauler model", "Hauler operator", "PIT", "Disposal",
-              "Distance (m)"]
-AUTO_COLS = {"Hauler model"}   # filled from the hauler ID (unit population), not typed
+# the order follows the work: excavator and its operator, material, then each truck it loads. Only what the data
+# officer knows goes in the file; the hauler model and load come from the unit population on upload.
+INPUT_COLS = ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "PIT", "Disposal", "Distance (m)"]
 TAIL_COLS = ["Remark code", "Remark"]
-AUTO_FILL = PatternFill("solid", fgColor="D9D6CF")   # grey header: computed column
-AUTO_CELL = PatternFill("solid", fgColor="F2F0EB")
-AUTO_FONT = Font(color="55595F", italic=True)
 REMARKS = {  # common reasons on the site boards; any 3-digit Eq.Event reason code is also accepted
     "100": "Productivity achieved", "101": "Change shift", "301": "Standby / waiting", "302": "Rain",
     "303": "Slippery road", "304": "Blasting", "305": "Waiting hauler", "401": "Breakdown loader",
@@ -129,7 +126,10 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
         out[c] = out[c].map(nrp_of) if c in out else None
     out["distance_m"] = num(out["distance_m"]) if "distance_m" in out else np.nan
     has_trips = out[R].fillna(0).sum(axis=1) > 0
-    out = out[out["loader"].notna() | out["hauler"].notna() | has_trips].reset_index(drop=True)
+    legacy = (out["hauler_model"].notna() & out["loader"].notna()) if "hauler_model" in out else False
+    truck = out["hauler"].notna() | legacy
+    # pre-filled lines left without a truck and without trips are unused, not mistakes
+    out = out[truck | has_trips].reset_index(drop=True)
     problems, warnings = [], []
 
     out["hauler_model"] = out["hauler_model"].mask(out["hauler_model"] == "?")   # Excel lookup found nothing
@@ -240,13 +240,17 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
         ws.cell(r, 1, k).font = Font(bold=True)
         ws.cell(r, 2, v)
     ws["B3"].number_format = "yyyy-mm-dd"
-    ws["D2"] = "Hauler model and load come from the unit population; operators are chosen by NRP."
+    for r, tip in enumerate(["How to fill: one row per truck. Pick Loader, Operator, Material and Hauler ID from the "
+                             "drop-downs, then type the trips per hour.",
+                             "Truck model and load are added automatically. Rows without a Hauler ID and without "
+                             "trips are ignored.",
+                             "Operator changed during the shift? Add a second row for the same truck."], start=2):
+        ws.cell(r, 4, tip).font = Font(italic=True, color="55595F")
     heads = INPUT_COLS + SLOTS[shift] + TAIL_COLS
-    widths = {"Loader": 11, "Hauler ID": 11, "Operator": 24, "Hauler operator": 24, "Material": 18,
-              "Hauler model": 13, "Remark": 28}
+    widths = {"Loader": 11, "Hauler ID": 11, "Operator": 24, "Hauler operator": 24, "Material": 18, "Remark": 28}
     for j, h in enumerate(heads, start=1):
         c = ws.cell(HEADER_ROW, j, h)
-        c.fill, c.font = (AUTO_FILL, AUTO_FONT) if h in AUTO_COLS else (dataprod.HEAD_FILL, dataprod.HEAD_FONT)
+        c.fill, c.font = dataprod.HEAD_FILL, dataprod.HEAD_FONT
         ws.column_dimensions[c.column_letter].width = 7 if h in SLOTS[shift] else widths.get(h, 14)
     names = dict(zip(operators["nrp"], operators["name"], strict=True)) if operators is not None and len(operators) \
         else {}
@@ -258,8 +262,7 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
     lists = wb.create_sheet("Lists")
     columns = {"A": sorted(load["material"].unique()) if len(load) else [],
                "B": [f"{k} - {v}" for k, v in REMARKS.items()], "C": loaders, "D": haulers,
-               "E": [f"{n} - {nm}" for n, nm in sorted(names.items(), key=lambda x: x[1])],
-               "G": hu["model"].tolist() if len(hu) else []}          # model of the hauler in column D
+               "E": [f"{n} - {nm}" for n, nm in sorted(names.items(), key=lambda x: x[1])]}
     for col, vals in columns.items():
         for i, v in enumerate(vals, start=1):
             lists[f"{col}{i}"] = v
@@ -280,24 +283,15 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
     dv.add(f"{first}{HEADER_ROW + 1}:{lastc}{last}")
     ws.add_data_validation(dv)
     recs = lines.to_dict("records") if lines is not None else []
-    hid, model = pos["Hauler ID"], pos["Hauler model"]
-    for i in range(HEADER_ROW + 1, last + 1):
-        r = recs[i - HEADER_ROW - 1] if i - HEADER_ROW - 1 < len(recs) else None
-        if r is not None:
-            name = r.get("operator") if isinstance(r.get("operator"), str) else None
-            vals = {"Loader": r.get("loader"), "Operator": _label(r.get("loader_nrp"), names) or name,
-                    "Material": r.get("material"), "Hauler ID": r.get("hauler"),
-                    "Hauler operator": _label(r.get("hauler_nrp"), names), "PIT": r.get("pit"),
-                    "Disposal": r.get("disposal"), "Distance (m)": r.get("distance_m")}
-            for h, v in vals.items():
-                ws[f"{pos[h]}{i}"] = None if v is None or (isinstance(v, float) and pd.isna(v)) else v
-        cell = ws[f"{model}{i}"]
-        legacy = r is not None and not r.get("hauler") and r.get("hauler_model")
-        # lines from old data have a model but no truck ID yet: show the model so the officer knows what to split
-        cell.value = r.get("hauler_model") if legacy else (
-            f'=IF({hid}{i}="","",IFERROR(VLOOKUP({hid}{i},Lists!$D$1:$G${max(len(haulers), 1)},4,FALSE),"?"))')
-        cell.fill, cell.font = AUTO_CELL, AUTO_FONT
-    ws.freeze_panes = ws.cell(HEADER_ROW + 1, 4)
+    for i, r in enumerate(recs, start=HEADER_ROW + 1):
+        name = r.get("operator") if isinstance(r.get("operator"), str) else None
+        vals = {"Loader": r.get("loader"), "Operator": _label(r.get("loader_nrp"), names) or name,
+                "Material": r.get("material"), "Hauler ID": r.get("hauler"),
+                "Hauler operator": _label(r.get("hauler_nrp"), names), "PIT": r.get("pit"),
+                "Disposal": r.get("disposal"), "Distance (m)": r.get("distance_m")}
+        for h, v in vals.items():
+            ws[f"{pos[h]}{i}"] = None if v is None or (isinstance(v, float) and pd.isna(v)) else v
+    ws.freeze_panes = ws.cell(HEADER_ROW + 1, 5)          # loader, operator, material and truck stay visible
     dataprod._meta(wb, "hourly", {"site": site, "date": date.isoformat(), "shift": shift, "layout": "per_hauler"})
     buf = io.BytesIO()
     wb.save(buf)
@@ -337,8 +331,7 @@ def parse_template(data: bytes) -> HourlyFile:
         raise StructureError([f"Row {HEADER_ROW} must hold the headers: {', '.join(expected)} "
                               f"(the hour columns follow the shift in B4). Download the current template."])
     body = x.iloc[HEADER_ROW:, :len(expected)].copy()
-    body.columns = ["loader", "loader_nrp", "material", "hauler", "hauler_model", "hauler_nrp", "pit", "disposal",
-                    "distance_m",
+    body.columns = ["loader", "loader_nrp", "material", "hauler", "hauler_nrp", "pit", "disposal", "distance_m",
                     *R, "remark_code", "remark"]
     body = body.dropna(how="all")
     body["remark_code"] = text(body["remark_code"].astype("string")).str.extract(r"^(\d{3})", expand=False)
