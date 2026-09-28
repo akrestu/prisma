@@ -386,7 +386,11 @@ class HourlyRow(Base):
     line: Mapped[int] = mapped_column(Integer)
     loader: Mapped[str] = mapped_column(String(40))
     loader_model: Mapped[str | None] = mapped_column(String(80))
-    operator: Mapped[str | None] = mapped_column(String(120))
+    operator: Mapped[str | None] = mapped_column(String(120))          # loader operator name (display)
+    loader_nrp: Mapped[str | None] = mapped_column(String(30))         # loader operator NRP (operator master)
+    hauler: Mapped[str | None] = mapped_column(String(40))             # hauler unit ID (None on legacy lines)
+    hauler_nrp: Mapped[str | None] = mapped_column(String(30))
+    hauler_operator: Mapped[str | None] = mapped_column(String(120))   # hauler operator name (display)
     material: Mapped[str] = mapped_column(String(80))
     material_group: Mapped[str] = mapped_column(String(5))
     pit: Mapped[str | None] = mapped_column(String(120))
@@ -409,3 +413,15 @@ class HourlyRow(Base):
     r10: Mapped[float | None] = mapped_column(Float)
     r11: Mapped[float | None] = mapped_column(Float)
     r12: Mapped[float | None] = mapped_column(Float)
+
+
+class Operator(Base):
+    """Operator master per site: the NRP identifies a person for operator KPIs, whatever spelling the name has."""
+    __tablename__ = "operators"
+    __table_args__ = (UniqueConstraint("site", "nrp"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site: Mapped[str] = mapped_column(String(40), index=True)
+    nrp: Mapped[str] = mapped_column(String(30))
+    name: Mapped[str] = mapped_column(String(120))
+    position: Mapped[str | None] = mapped_column(String(60))   # e.g. Operator Excavator, Operator DT
+    active: Mapped[bool] = mapped_column(Boolean, default=True)

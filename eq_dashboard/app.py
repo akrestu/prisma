@@ -72,6 +72,7 @@ OTHER = {
     "data_explorer": P("pages/data/explorer.py", "Data explorer", "table_view"),
     "hourly_input": P("pages/data/hourly_input.py", "Hourly input", "schedule_send"),
     "hourly_setup": P("pages/admin/hourly_setup.py", "Hourly setup", "tune"),
+    "operators": P("pages/admin/operators.py", "Operators", "badge"),
     "unit_population": P("pages/admin/unit_population.py", "Unit population", "precision_manufacturing"),
     "delete_data": P("pages/admin/delete_data.py", "Delete data", "delete_forever"),
     "users_roles": P("pages/admin/users_roles.py", "Users & roles", "group"),
@@ -104,7 +105,7 @@ else:
         "Dashboard": pick(DASH, DASH),
         "TV screen": pick(["preview_tv"]),
         "Data": pick(["hourly_input", "upload", "unit_population", "approval", "upload_history", "data_explorer"]),
-        "Admin": pick(["users_roles", "targets_plan", "hourly_setup", "pm_interval", "sites_mapping", "display_devices", "audit_log", "delete_data"]),
+        "Admin": pick(["users_roles", "targets_plan", "hourly_setup", "operators", "pm_interval", "sites_mapping", "display_devices", "audit_log", "delete_data"]),
         "Account": pick(["home", "account"]),
     }
     nav = st.navigation({k: v for k, v in sections.items() if v})

@@ -14,7 +14,7 @@ from .conftest import APP_DIR, TARGET
 
 DASHBOARDS = ["overview", "hourly", "pa_ua", "time_distribution", "reliability", "production_ob", "coal_getting",
               "loader_fleet", "fuel", "data_quality"]
-ADMIN_PAGES = ["users_roles", "targets_plan", "pm_interval", "sites_mapping", "audit_log", "unit_population"]
+ADMIN_PAGES = ["users_roles", "targets_plan", "pm_interval", "sites_mapping", "audit_log", "unit_population", "operators"]
 
 
 @pytest.fixture()

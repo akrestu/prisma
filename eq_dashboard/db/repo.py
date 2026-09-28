@@ -168,7 +168,8 @@ def save_population(s: Session, units: pd.DataFrame, effective_from, filename: s
 
 
 # ---------------------------------------------------------------- hourly production
-HOURLY_ROW_COLS = ["line", "loader", "loader_model", "operator", "material", "material_group", "pit", "disposal",
+HOURLY_ROW_COLS = ["line", "loader", "loader_model", "operator", "loader_nrp", "hauler", "hauler_nrp",
+                   "hauler_operator", "material", "material_group", "pit", "disposal",
                    "distance_m", "hauler_model", "muatan", "target_per_hour", "remark_code", "remark",
                    *[f"r{i}" for i in range(1, 13)]]
 
@@ -244,3 +245,11 @@ def hourly_range(s: Session, sites: list[str], d0, d1) -> pd.DataFrame:
                            *[getattr(r, c) for c in HOURLY_ROW_COLS])
                  .join(h, h.id == r.shift_id)
                  .where(h.site.in_(sites), h.date >= d0, h.date <= d1).order_by(h.date, h.shift, r.line))
+
+
+def operators(s: Session, site: str, active_only: bool = True) -> pd.DataFrame:
+    o = m.Operator
+    q = select(o.nrp, o.name, o.position, o.active).where(o.site == site).order_by(o.name)
+    if active_only:
+        q = q.where(o.active)
+    return frame(s, q)

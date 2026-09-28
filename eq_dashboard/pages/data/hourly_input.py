@@ -39,6 +39,7 @@ with session_scope() as s:
     sh, rows = repo.hourly_shift(s, site, date, shift)
     prev = repo.previous_lines(s, site, date, shift) if sh is None else None
     units = repo.population_for(s, date)
+    ops = repo.operators(s, site)
     coord_now = sh.coordinator if sh else ""
     stamp = f"{sh.updated_by} · {sh.updated_at.astimezone(WIB):%d %b %H:%M} WIB" if sh else ""
 if lf.empty:
@@ -46,17 +47,21 @@ if lf.empty:
     st.stop()
 
 site_units = units[units["site"] == site] if units is not None else pd.DataFrame(columns=["unit_id", "type"])
-loaders = sorted(set(tg["unit_id"]) | set(site_units.loc[site_units["type"].fillna("").str.contains(
-    "Load", case=False), "unit_id"]))
+is_type = lambda word: site_units["type"].fillna("").str.contains(word, case=False)  # noqa: E731
+loaders = sorted(set(tg["unit_id"]) | set(site_units.loc[is_type("Load"), "unit_id"]))
+haulers = sorted(site_units.loc[is_type("Haul"), "unit_id"])
+op_label = {n: f"{n} - {nm}" for n, nm in zip(ops["nrp"], ops["name"], strict=True)}
 code_label = {k: f"{k} - {v}" for k, v in H.REMARKS.items()}
 slots = H.SLOTS[shift]
-GRID = ["loader", "operator", "material", "hauler_model", "pit", "disposal", "distance_m", *H.R, "remark_code",
-        "remark"]
+GRID = ["loader", "loader_nrp", "hauler", "hauler_nrp", "material", "pit", "disposal", "distance_m", *H.R,
+        "remark_code", "remark"]
 
 
 def to_grid(df: pd.DataFrame) -> pd.DataFrame:
     g = df.reindex(columns=GRID).copy()
     g["remark_code"] = g["remark_code"].map(lambda x: code_label.get(str(x), x) if pd.notna(x) else None)
+    for c in ("loader_nrp", "hauler_nrp"):
+        g[c] = g[c].map(lambda x: op_label.get(str(x), x) if pd.notna(x) else None)
     return g
 
 
@@ -77,34 +82,42 @@ with t_web:
         st.caption(f"Last saved by {stamp}.")
     coord = st.text_input("Coordinator (PJA)", coord_now, key=f"hi_coord_{site}_{date}_{shift}")
     ver = st.session_state.get("hi_ver", 0)
+    if ops.empty:
+        st.caption("⚠ No operators for this site yet: add them in **Admin → Operators** to pick them by NRP.")
     cfg = {
         "loader": st.column_config.SelectboxColumn("Excavator", options=loaders, required=True),
-        "operator": st.column_config.TextColumn("Operator"),
+        "loader_nrp": st.column_config.SelectboxColumn("Excavator operator", options=list(op_label.values()),
+                                                       width="medium"),
+        "hauler": st.column_config.SelectboxColumn("Hauler", options=haulers, required=True,
+                                                   help="Model and load come from the unit population"),
+        "hauler_nrp": st.column_config.SelectboxColumn("Hauler operator", options=list(op_label.values()),
+                                                       width="medium"),
         "material": st.column_config.SelectboxColumn("Material", options=sorted(lf["material"].unique()),
                                                      required=True),
-        "hauler_model": st.column_config.SelectboxColumn("Hauler", options=sorted(lf["hauler_model"].unique()),
-                                                         required=True),
         "pit": st.column_config.TextColumn("PIT"),
         "disposal": st.column_config.TextColumn("Disposal"),
         "distance_m": st.column_config.NumberColumn("Distance (m)", min_value=0, step=50, format="%.0f"),
-        **{r: st.column_config.NumberColumn(lbl, min_value=0, max_value=60, step=1, format="%d", width="small")
+        **{r: st.column_config.NumberColumn(lbl, min_value=0, max_value=20, step=1, format="%d", width="small")
            for r, lbl in zip(H.R, slots, strict=True)},
         "remark_code": st.column_config.SelectboxColumn("Remark code", options=list(code_label.values())),
         "remark": st.column_config.TextColumn("Remark", width="large"),
     }
     grid = st.data_editor(to_grid(base), num_rows="dynamic", hide_index=True, width="stretch", column_config=cfg,
                           key=f"hi_grid_{site}_{date}_{shift}_{ver}", height=min(600, 38 * (len(base) + 3) + 40))
-    res = H.resolve(from_grid(grid), lf, tg, units)
+    res = H.resolve(from_grid(grid), lf, tg, units, ops)
+    st.caption("One row per hauler. When a hauler's operator changes during the shift, add a second row for the "
+               "same hauler with the new operator.")
     for w in res.warnings:
         st.caption(f"⚠ {w}")
     if len(res.rows) and not res.problems:
         long = H.to_long(res.rows.assign(site=site, date=date, shift=shift))
         tot = long.groupby("material_group")["volume"].sum()
-        k = st.columns(4)
+        k = st.columns(5)
         k[0].metric("OB (BCM)", fmt_num(tot.get("OB", 0)))
         k[1].metric("Coal (t)", fmt_num(tot.get("CG", 0), 1))
         k[2].metric("Trips", fmt_num(long["rit"].sum()))
         k[3].metric("Fleets", res.rows["loader"].nunique())
+        k[4].metric("Haulers", res.rows["hauler"].nunique())
     if st.button("Save shift", type="primary", key="hi_save"):
         if res.problems:
             for p in res.problems:
@@ -124,7 +137,7 @@ with t_xls:
                 "fill in the trips in Excel, then upload it here. Uploading **replaces** the shift.")
     lines = rows if sh is not None else (prev if prev is not None else None)
     st.download_button(f"Download template · {site} {date:%d %b} {shift}",
-                       lambda: H.build_template(site, date, shift, lf, tg, lines, coord_now),
+                       lambda: H.build_template(site, date, shift, lf, tg, lines, coord_now, units, ops),
                        file_name=f"Hourly_{site}_{date:%Y-%m-%d}_{shift}.xlsx", on_click="ignore",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     f = st.file_uploader("Filled template (.xlsx)", type=["xlsx"], key="hi_file", max_upload_size=10)
@@ -142,7 +155,8 @@ with t_xls:
             lf_f, tg_f = repo.load_factors(s, hf.site), repo.loader_targets(s, hf.site)
             exists, _ = repo.hourly_shift(s, hf.site, hf.date, hf.shift)
             units_f = repo.population_for(s, hf.date)
-        rf = H.resolve(hf.rows, lf_f, tg_f, units_f)
+            ops_f = repo.operators(s, hf.site)
+        rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f)
         st.markdown(f"**{hf.site} · {hf.date:%d %b %Y} · {hf.shift}** · {len(rf.rows)} lines"
                     + (f" · coordinator {hf.coordinator}" if hf.coordinator else ""))
         for p in rf.problems:

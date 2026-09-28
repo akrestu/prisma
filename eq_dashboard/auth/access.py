@@ -25,6 +25,7 @@ PAGE_ROLES: dict[str, set[str]] = {
     "unit_population": {ADMIN, DATA_OFFICER},
     "hourly_input": {ADMIN, SITE_MANAGER, DATA_OFFICER},
     "hourly_setup": {ADMIN, SITE_MANAGER},
+    "operators": {ADMIN, SITE_MANAGER},
     "delete_data": {ADMIN},
     "account": {ADMIN, SITE_MANAGER, DATA_OFFICER, VIEWER},
     "preview_tv": {ADMIN, SITE_MANAGER},
