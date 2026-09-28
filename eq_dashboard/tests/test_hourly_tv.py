@@ -79,3 +79,14 @@ def world_published(db_session, sample_bytes):
         ing.publish(s, us, None, "t")
     s.commit()
     return s
+
+
+def test_tv_shows_shift_boss_but_no_operator_names(db_session):
+    _seed(db_session)
+    s = db_session
+    rows = repo.hourly_shift(s, "WBK-BAU", dt.date(2026, 9, 26), "DS")[1].assign(operator="Budi Santoso")
+    repo.save_hourly(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", "Andi Shiftboss", rows, "op1")
+    s.commit()
+    html = render(hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB)))
+    assert "Shift boss <b>Andi Shiftboss</b>" in html
+    assert "Budi Santoso" not in html and ">Operator<" not in html

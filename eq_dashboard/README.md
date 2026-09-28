@@ -175,7 +175,8 @@ Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersi
   - **Produktivitas excavator per model** tersedia dua set: target **internal (WBK)** dan **client (BAU)**. Pilih yang dipakai untuk warna capaian di bagian atas halaman.
   - Material Mud dan Mud Blending memakai *Pdty Mud*; material lain memakai *Pdty OB*.
   - **Truck factor per keluarga model** (777E, 773E, A60H, CGE370, CWE370, CWE280) otomatis diterapkan ke model truk di populasi. Model yang tidak tercakup mengambil nilai dari Link Muatan Mst Hourly.
-- **Override per unit** hanya diisi untuk excavator yang berbeda dari modelnya, dan untuk **target coal** (Prod_Target tidak punya target coal).
+- **Target coal excavator** sama dengan Pdty OB modelnya (dalam t/jam). Muatan hauler mengikuti material yang dibawa (OB, Mud Blending, Mud, Coal).
+- **Override per unit** hanya diisi untuk excavator yang berbeda dari modelnya.
 
 - **Load factors:** muatan per trip untuk setiap Material × model hauler, misalnya OB-FreeDig × 777E = 41 BCM, atau CG × CWE370Q = 22,5 t.
 - **Hourly targets:** target per jam setiap excavator, dalam BCM/jam untuk OB dan t/jam untuk coal.
@@ -184,7 +185,7 @@ Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersi
 
 **Input setiap jam (Data Officer atau Site Manager): Data → Hourly input**
 
-- Pilih site, tanggal produksi, dan shift. Shift yang sedang berjalan terpilih otomatis. Hari produksi dimulai pukul 06:00, jadi shift malam setelah tengah malam tetap masuk tanggal sebelumnya.
+- Isi **Shift boss** (tampil di kepala layar TV), lalu pilih site, tanggal produksi, dan shift. Shift yang sedang berjalan terpilih otomatis. Hari produksi dimulai pukul 06:00, jadi shift malam setelah tengah malam tetap masuk tanggal sebelumnya.
 - **Web input:** grid dengan **satu baris per hauler**. Isi excavator dan operatornya, **Hauler ID dan operatornya** (dipilih lewat NRP), material, PIT, disposal, jarak, rit per jam, dan keterangan (kode + teks).
   - Model hauler dan muatan terisi otomatis dari Unit_Population. Target terisi dari Hourly setup.
   - Kalau operator hauler berganti di tengah shift, tambahkan baris kedua untuk hauler yang sama dengan operator baru.

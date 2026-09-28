@@ -41,7 +41,7 @@ def test_model_target_follows_material_and_basis(pdty):
     assert PT.model_target("6020B", "OB - FreeDig", ex, "client") == 625
     assert PT.model_target("EX1200-6", "OB - MUD", ex, "internal") == 200
     assert PT.model_target("SK330-10", "OB - Mud Blending", ex, "internal") == 100
-    assert PT.model_target("SK330-10", "CG - Coal Getting", ex, "internal") is None     # coal: per unit only
+    assert PT.model_target("SK330-10", "CG - Coal Getting", ex, "internal") == 175       # coal = OB productivity
 
 
 def test_truck_factors_per_population_model_with_mst_fallback(pdty):

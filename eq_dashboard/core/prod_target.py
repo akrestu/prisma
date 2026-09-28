@@ -121,10 +121,10 @@ def load_factors(hl: pd.DataFrame, pop_models, materials, fallback: pd.DataFrame
 
 
 def model_target(loader_model, material, targets: pd.DataFrame, basis: str) -> float | None:
-    """Default hourly target of an excavator from its model: Pdty Mud for mud materials, Pdty OB otherwise.
-    Coal has no model target (set per unit)."""
+    """Default hourly target of an excavator from its model: Pdty Mud for mud materials, Pdty OB for everything
+    else, coal included (coal getting is held to the excavator's OB productivity, in t/h)."""
     cls = material_class(material)
-    if cls == "CG" or targets is None or targets.empty:
+    if targets is None or targets.empty:
         return None
     t = targets[targets["basis"] == basis]
     key = match(loader_model, t["model"])

@@ -317,7 +317,7 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
     ws.title = SHEET
     ws["A1"] = f"PRISMA · Hourly production · {shift} · one row per hauler"
     ws["A1"].font = Font(bold=True, size=14)
-    for r, (k, v) in enumerate([("Site", site), ("Date", date), ("Shift", shift), ("Coordinator", coordinator)],
+    for r, (k, v) in enumerate([("Site", site), ("Date", date), ("Shift", shift), ("Shift boss", coordinator)],
                                start=2):
         ws.cell(r, 1, k).font = Font(bold=True)
         ws.cell(r, 2, v)
@@ -417,7 +417,8 @@ def parse_template(data: bytes) -> HourlyFile:
                     *R, "remark_code", "remark"]
     body = body.dropna(how="all")
     body["remark_code"] = text(body["remark_code"].astype("string")).str.extract(r"^(\d{3})", expand=False)
-    return HourlyFile(site, date.date(), shift, str(head.get("Coordinator") or "").strip(),
+    boss = head.get("Shift boss", head.get("Coordinator"))    # older templates say 'Coordinator'
+    return HourlyFile(site, date.date(), shift, str(boss if pd.notna(boss) else "").strip(),
                       body.reset_index(drop=True))
 
 

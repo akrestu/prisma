@@ -175,11 +175,12 @@ with t_tg:
         eff["OB (model)"] = [PT.model_target(mo, "OB", mtg, basis) for mo in eff["model"]]
         eff["Mud (model)"] = [PT.model_target(mo, "OB - MUD", mtg, basis) for mo in eff["model"]]
         eff["OB override"] = [ov.get((u, "OB")) for u in eff["unit_id"]]
-        eff["Coal (per unit)"] = [ov.get((u, "CG")) for u in eff["unit_id"]]
+        eff["Coal (model = OB)"] = [PT.model_target(mo, "CG - Coal Getting", mtg, basis) for mo in eff["model"]]
+        eff["Coal override"] = [ov.get((u, "CG")) for u in eff["unit_id"]]
         st.markdown(f"**Hourly target per excavator** · {PT.BASIS_LABEL[basis].lower()}")
         st.dataframe(eff, hide_index=True, width="stretch")
-    st.markdown("**Unit overrides** · only where one excavator differs from its model, and coal targets "
-                "(Prod_Target has none): BCM/h for OB, t/h for coal.")
+    st.markdown("**Unit overrides** · only where one excavator differs from its model. Coal targets follow the "
+                "excavator's OB productivity (in t/h) unless overridden here.")
     ed = st.data_editor(tg, num_rows="dynamic", hide_index=True, width="stretch", key=f"hs_tg_{site}",
                         column_config={
                             "unit_id": st.column_config.TextColumn("Excavator", required=True),

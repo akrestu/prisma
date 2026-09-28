@@ -93,7 +93,8 @@ with t_web:
                    "counted per operator.")
     elif sh is not None:
         st.caption(f"Last saved by {stamp}.")
-    coord = st.text_input("Coordinator (PJA)", coord_now, key=f"hi_coord_{site}_{date}_{shift}")
+    coord = st.text_input("Shift boss", coord_now, key=f"hi_coord_{site}_{date}_{shift}",
+                          help="Shown in the header of the hourly TV screen")
     ver = st.session_state.get("hi_ver", 0)
     if ops.empty:
         st.caption("⚠ No operators for this site yet: add them in **Admin → Operators** to pick them by NRP.")

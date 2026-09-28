@@ -219,10 +219,10 @@ def _board(g: str, d: HourlyTv) -> str:
     tot = d.totals.get(g, {})
     now = d.slot if d.live else None
     labels = SLOTS[d.shift]
-    cols = ('<col style="width:1.6%"><col style="width:4.6%"><col style="width:4.6%"><col style="width:7.4%">'
-            '<col style="width:2.6%"><col style="width:6.6%"><col style="width:9.6%"><col style="width:3.2%">'
+    cols = ('<col style="width:1.6%"><col style="width:5%"><col style="width:5.6%">'
+            '<col style="width:2.6%"><col style="width:8.2%"><col style="width:11.4%"><col style="width:3.2%">'
             + '<col style="width:3.5%">' * 12 + '<col style="width:4%"><col style="width:3.4%"><col>')
-    th = ("<tr><th class='l'>#</th><th class='l'>Loader</th><th class='l'>Model</th><th class='l'>Operator</th>"
+    th = ("<tr><th class='l'>#</th><th class='l'>Loader</th><th class='l'>Model</th>"
           "<th>Hlr</th><th class='l'>Material</th><th class='l'>PIT → disposal</th><th>Target</th>"
           + "".join(f"<th class='{'now' if i == now else ''}'>{lab}</th>" for i, lab in enumerate(labels, 1))
           + "<th>Total</th><th>Ach</th><th class='l'>Remark</th></tr>")
@@ -247,21 +247,21 @@ def _board(g: str, d: HourlyTv) -> str:
         ach = r.total / (r.target * hours) if pd.notna(r.target) and r.target and hours else None
         route = " → ".join(x for x in (r.pit, r.disposal) if isinstance(x, str) and x)
         rows += (f"<tr><td class='l mu'>{i}</td><td class='l u'>{escape(str(r.loader))}</td>"
-                 f"<td class='l mu'>{escape(str(r.model or ''))}</td><td class='l'>{escape(r.operator or '')}</td>"
+                 f"<td class='l mu'>{escape(str(r.model or ''))}</td>"
                  f"<td class='mu'>{r.haulers}</td><td class='l mu'>{escape(str(r.material or ''))}</td>"
                  f"<td class='l mu'>{escape(route)}</td><td class='tg'>{_n(r.target)}</td>{cells}"
                  f"<td class='tot'>{_n(r.total)}</td><td class='ach'>{_bar(ach)}</td>"
                  f"<td class='rm'>{escape(r.remark or '')}</td></tr>")
     if df.empty:
-        rows = (f"<tr><td class='l' colspan='23'><div class='none'>No {TITLE[g].lower()} input for this shift yet."
+        rows = (f"<tr><td class='l' colspan='22'><div class='none'>No {TITLE[g].lower()} input for this shift yet."
                 "</div></td></tr>")
     else:
         hide = lambda k: bool(now and k > now)  # noqa: E731
         s_cells = "".join("<td></td>" if hide(k) else f"<td>{_n(v)}</td>" for k, v in enumerate(tot["slots"], 1))
         r_cells = "".join("<td></td>" if hide(k) else f"<td>{v}</td>" for k, v in enumerate(tot["running"], 1))
-        rows += (f"<tr class='tt'><td class='l' colspan='8'>Total {UNIT[g]}</td>{s_cells}"
+        rows += (f"<tr class='tt'><td class='l' colspan='7'>Total {UNIT[g]}</td>{s_cells}"
                  f"<td class='tot'>{_n(tot['total'])}</td><td></td><td></td></tr>"
-                 f"<tr class='rf'><td class='l' colspan='8'>Running fleet</td>{r_cells}<td></td><td></td><td></td>"
+                 f"<tr class='rf'><td class='l' colspan='7'>Running fleet</td>{r_cells}<td></td><td></td><td></td>"
                  "</tr>")
     sub = (f"{UNIT[g]} per hour · {len(df)} fleets · {tot.get('haulers', 0)} haulers · "
            f"{_n(tot.get('trips'))} trips")
@@ -283,7 +283,7 @@ def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None) -> 
             f'<span class="site">{escape(d.site)}</span>'
             f'<span class="what">Hourly production · <b>{d.date.day} {d.date:%b %Y}</b> · shift <b>{d.shift}</b>'
             f'</span>' + (f'<span class="hr">{hour}</span>' if d.live else "")
-            + f'</div><div class="r"><span>Coordinator <b>{escape(d.coordinator or "—")}</b></span><span>{upd}</span>'
+            + f'</div><div class="r"><span>Shift boss <b>{escape(d.coordinator or "—")}</b></span><span>{upd}</span>'
               f'<span class="app">{brand.NAME}</span><span class="clk">{now:%H:%M}</span></div></div>')
     top = f'<div class="top">{_hero("OB", d)}{_hero("CG", d)}{_kpi(d)}</div>'
     boards = _board("OB", d) + _board("CG", d)
