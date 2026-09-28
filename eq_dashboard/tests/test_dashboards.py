@@ -188,3 +188,23 @@ def test_system_health_for_admin_only(world):
     assert "Last backup" in labels and "12M" in labels["Last backup"].delta
     vw = run_path("pages/home.py", load_user(world, "vw"))
     assert "Last backup" not in {mt.label for mt in vw.metric}
+
+
+def test_hourly_pages_by_role(world):
+    sm = load_user(world, "sm")                                    # Site Manager BAU
+    at = run_path("pages/admin/hourly_setup.py", sm)
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.selectbox(key="hs_site").options == ["WBK-BAU"]
+    at = run_path("pages/data/hourly_input.py", sm)
+    assert not at.exception
+    assert any("No load factors" in w.value for w in at.warning)    # setup comes first
+    world.add_all([m.LoadFactor(site="WBK-BAU", material="OB - FreeDig", material_group="OB", hauler_model="777E",
+                                muatan=41), m.LoaderTarget(site="WBK-BAU", unit_id="WEX019", model="CAT6020",
+                                                           material_group="OB", target_per_hour=800)])
+    world.commit()
+    at = run_path("pages/data/hourly_input.py", sm)
+    assert not at.exception, [e.value for e in at.exception]
+    assert [t.label for t in at.tabs] == ["Web input", "Excel template"]
+    vw = load_user(world, "vw")
+    for p in ("pages/data/hourly_input.py", "pages/admin/hourly_setup.py"):
+        assert any("do not have access" in e.value for e in run_path(p, vw).error)

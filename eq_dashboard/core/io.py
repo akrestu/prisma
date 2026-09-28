@@ -50,7 +50,10 @@ def frame(raw: pd.DataFrame, header_row: int) -> pd.DataFrame:
 
 def excel_date(s: pd.Series) -> pd.Series:
     """Dates/datetimes from any reader: real datetimes (calamine), Excel serial numbers (pyxlsb) or text."""
-    serial = pd.to_numeric(s, errors="coerce")
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return pd.to_datetime(s)          # already dates: to_numeric would turn them into nanoseconds
+    is_dt = s.map(lambda v: isinstance(v, (dt.datetime, dt.date, pd.Timestamp)))
+    serial = pd.to_numeric(s.where(~is_dt), errors="coerce")
     out = pd.to_datetime(serial, unit="D", origin=EXCEL_EPOCH)
     rest = serial.isna() & s.notna()
     if rest.any():

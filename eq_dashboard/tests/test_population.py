@@ -16,8 +16,6 @@ from core.validate import StructureError
 from db import repo
 
 
-
-
 def test_template_round_trip_and_diff(parsed):
     units = parsed.units
     tpl = pop.build_template(["WBK-BAU", "WBK-MAS"], units, dt.date(2026, 9, 1))
@@ -83,7 +81,7 @@ def test_ingest_uses_population_version(db_session, sample_bytes, parsed):
     moved.loc[moved["unit_id"] == "WEX019", "site"] = "WBK-BAU"
     repo.save_population(s, moved, dt.date(2026, 9, 1), "pop.xlsx", "c" * 64, None)
     s.commit()
-    _, sites = ing.ingest(s, sample_bytes, "Data_Prod_2026-09.xlsb", username="t")
+    ing.ingest(s, sample_bytes, "Data_Prod_2026-09.xlsb", username="t")
     s.commit()
     from db import models as m
     ev_site = s.query(m.FactEvent.site).filter(m.FactEvent.unit_id == "WEX019").distinct().all()

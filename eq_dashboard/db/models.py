@@ -288,6 +288,8 @@ class Target(Base):
     mttr: Mapped[float | None] = mapped_column(Float)
     sched_down: Mapped[float | None] = mapped_column(Float)
     pm_accuracy: Mapped[float | None] = mapped_column(Float)
+    sr: Mapped[float | None] = mapped_column(Float)          # stripping ratio target (BCM OB per t coal)
+    distance: Mapped[float | None] = mapped_column(Float)    # haul distance target (m)
 
 
 class PlanProduction(Base):
@@ -334,3 +336,75 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(40))
     site: Mapped[str | None] = mapped_column(String(40))
     detail: Mapped[str] = mapped_column(Text, default="")
+
+
+# ---------------------------------------------------------------- hourly production (flash, no approval)
+class LoadFactor(Base):
+    """Load per trip by material × hauler model (Link Muatan): BCM for OB, ton for coal."""
+    __tablename__ = "load_factor"
+    __table_args__ = (UniqueConstraint("site", "material", "hauler_model"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site: Mapped[str] = mapped_column(String(40), index=True)
+    material: Mapped[str] = mapped_column(String(80))
+    material_group: Mapped[str] = mapped_column(String(5))   # OB | CG
+    hauler_model: Mapped[str] = mapped_column(String(80))
+    muatan: Mapped[float] = mapped_column(Float)
+
+
+class LoaderTarget(Base):
+    """Hourly target of one excavator (BCM/h for OB, t/h for coal)."""
+    __tablename__ = "loader_target"
+    __table_args__ = (UniqueConstraint("site", "unit_id", "material_group"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site: Mapped[str] = mapped_column(String(40), index=True)
+    unit_id: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str | None] = mapped_column(String(80))
+    material_group: Mapped[str] = mapped_column(String(5))
+    target_per_hour: Mapped[float] = mapped_column(Float)
+
+
+class HourlyShift(Base):
+    __tablename__ = "hourly_shift"
+    __table_args__ = (UniqueConstraint("site", "date", "shift"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site: Mapped[str] = mapped_column(String(40), index=True)
+    date: Mapped[dt.date] = mapped_column(Date, index=True)   # production date (NS after midnight = previous day)
+    shift: Mapped[str] = mapped_column(String(2))             # DS | NS
+    coordinator: Mapped[str] = mapped_column(String(160), default="")
+    source: Mapped[str] = mapped_column(String(10), default="web")   # web | excel
+    updated_by: Mapped[str | None] = mapped_column(String(60))
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(),
+                                                    onupdate=func.now())
+
+
+class HourlyRow(Base):
+    """One line of the shift sheet: an excavator loading one hauler model, with trips per hour (12 slots)."""
+    __tablename__ = "hourly_row"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    shift_id: Mapped[int] = mapped_column(ForeignKey("hourly_shift.id", ondelete="CASCADE"), index=True)
+    line: Mapped[int] = mapped_column(Integer)
+    loader: Mapped[str] = mapped_column(String(40))
+    loader_model: Mapped[str | None] = mapped_column(String(80))
+    operator: Mapped[str | None] = mapped_column(String(120))
+    material: Mapped[str] = mapped_column(String(80))
+    material_group: Mapped[str] = mapped_column(String(5))
+    pit: Mapped[str | None] = mapped_column(String(120))
+    disposal: Mapped[str | None] = mapped_column(String(120))
+    distance_m: Mapped[float | None] = mapped_column(Float)
+    hauler_model: Mapped[str] = mapped_column(String(80))
+    muatan: Mapped[float] = mapped_column(Float)
+    target_per_hour: Mapped[float | None] = mapped_column(Float)
+    remark_code: Mapped[str | None] = mapped_column(String(10))
+    remark: Mapped[str | None] = mapped_column(Text)
+    r1: Mapped[float | None] = mapped_column(Float)
+    r2: Mapped[float | None] = mapped_column(Float)
+    r3: Mapped[float | None] = mapped_column(Float)
+    r4: Mapped[float | None] = mapped_column(Float)
+    r5: Mapped[float | None] = mapped_column(Float)
+    r6: Mapped[float | None] = mapped_column(Float)
+    r7: Mapped[float | None] = mapped_column(Float)
+    r8: Mapped[float | None] = mapped_column(Float)
+    r9: Mapped[float | None] = mapped_column(Float)
+    r10: Mapped[float | None] = mapped_column(Float)
+    r11: Mapped[float | None] = mapped_column(Float)
+    r12: Mapped[float | None] = mapped_column(Float)

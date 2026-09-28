@@ -14,6 +14,8 @@ from db import models as m
 from db import repo
 from db.engine import session_scope
 
+EXTRA = ("sr", "distance")  # production targets used by the hourly screen (not in Target.xlsx)
+
 user = require("targets_plan")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
 st.title("Targets & plan")
@@ -41,7 +43,7 @@ with tab_t:
     site = a.selectbox("Site", sites, key="tgt_site")
     year = b.number_input("Year", 2018, 2100, today_wib().year, key="tgt_year")
     with session_scope() as s:
-        cur = repo.frame(s, select(m.Target.month, *[getattr(m.Target, c) for c in METRICS])
+        cur = repo.frame(s, select(m.Target.month, *[getattr(m.Target, c) for c in (*METRICS, *EXTRA)])
                          .where(m.Target.site == site, m.Target.year == year))
     grid = pd.DataFrame({"month": range(1, 13)}).merge(cur, on="month", how="left")
     for c in ("pa", "uoa", "sched_down", "pm_accuracy"):
@@ -54,7 +56,13 @@ with tab_t:
                                            "pa": pct("PA %"), "uoa": pct("UoA %"),
                                            "mtbs": st.column_config.NumberColumn("MTBS (hrs)", min_value=0),
                                            "mttr": st.column_config.NumberColumn("MTTR (hrs)", min_value=0),
-                                           "sched_down": pct("Sched. down (%)"), "pm_accuracy": pct("PM accuracy (%)")})
+                                           "sched_down": pct("Sched. down (%)"), "pm_accuracy": pct("PM accuracy (%)"),
+                                           "sr": st.column_config.NumberColumn(
+                                               "SR (BCM/t)", min_value=0, format="%.1f",
+                                               help="Stripping ratio target for the hourly production screen"),
+                                           "distance": st.column_config.NumberColumn(
+                                               "Distance (m)", min_value=0, format="%.0f",
+                                               help="Haul distance target for the hourly production screen")})
     if st.button("Save targets", type="primary"):
         e = edited.copy()
         for c in ("pa", "uoa", "sched_down", "pm_accuracy"):
@@ -63,7 +71,7 @@ with tab_t:
         with session_scope() as s:
             stmt = pg_insert(m.Target).values(recs)
             s.execute(stmt.on_conflict_do_update(index_elements=["site", "year", "month"],
-                                                 set_={c: stmt.excluded[c] for c in METRICS}))
+                                                 set_={c: stmt.excluded[c] for c in (*METRICS, *EXTRA)}))
             audit(s, user.username, "edit_target", site, str(year))
         st.cache_data.clear()
         st.success("Targets saved.")

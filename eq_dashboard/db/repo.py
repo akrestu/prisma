@@ -165,3 +165,82 @@ def save_population(s: Session, units: pd.DataFrame, effective_from, filename: s
         if s.get(m.Site, code) is None:
             s.add(m.Site(code=code, name=code))
     return v
+
+
+# ---------------------------------------------------------------- hourly production
+HOURLY_ROW_COLS = ["line", "loader", "loader_model", "operator", "material", "material_group", "pit", "disposal",
+                   "distance_m", "hauler_model", "muatan", "target_per_hour", "remark_code", "remark",
+                   *[f"r{i}" for i in range(1, 13)]]
+
+
+def load_factors(s: Session, site: str) -> pd.DataFrame:
+    t = m.LoadFactor
+    return frame(s, select(t.material, t.material_group, t.hauler_model, t.muatan).where(t.site == site)
+                 .order_by(t.material_group.desc(), t.material, t.hauler_model))
+
+
+def loader_targets(s: Session, site: str) -> pd.DataFrame:
+    t = m.LoaderTarget
+    return frame(s, select(t.unit_id, t.model, t.material_group, t.target_per_hour).where(t.site == site)
+                 .order_by(t.material_group.desc(), t.unit_id))
+
+
+def replace_site_rows(s: Session, model, site: str, df: pd.DataFrame, cols: list[str]) -> int:
+    """Replace every row of `model` for one site (small master tables edited as a whole)."""
+    from sqlalchemy import delete, insert
+    s.execute(delete(model).where(model.site == site))
+    recs = [{"site": site, **{c: (None if pd.isna(r[c]) else r[c]) for c in cols}} for r in df.to_dict("records")]
+    if recs:
+        s.execute(insert(model), recs)
+    return len(recs)
+
+
+def hourly_shift(s: Session, site: str, date, shift: str) -> tuple[m.HourlyShift | None, pd.DataFrame]:
+    sh = s.scalar(select(m.HourlyShift).where(m.HourlyShift.site == site, m.HourlyShift.date == date,
+                                              m.HourlyShift.shift == shift))
+    if sh is None:
+        return None, pd.DataFrame(columns=HOURLY_ROW_COLS)
+    r = m.HourlyRow
+    rows = frame(s, select(*[getattr(r, c) for c in HOURLY_ROW_COLS]).where(r.shift_id == sh.id).order_by(r.line))
+    return sh, rows
+
+
+def previous_lines(s: Session, site: str, date, shift: str) -> pd.DataFrame:
+    """Lines (without trips) of the latest earlier shift of the site: a starting point for the next shift."""
+    order = (m.HourlyShift.date.desc(), m.HourlyShift.shift.desc())
+    earlier = [sh for sh in s.scalars(select(m.HourlyShift).where(m.HourlyShift.site == site,
+                                                                   m.HourlyShift.date <= date).order_by(*order))
+               if (sh.date, sh.shift) < (date, shift)]
+    if not earlier:
+        return pd.DataFrame(columns=HOURLY_ROW_COLS)
+    _, rows = hourly_shift(s, site, earlier[0].date, earlier[0].shift)
+    return rows.assign(**{f"r{i}": None for i in range(1, 13)}, remark_code=None, remark=None)
+
+
+def save_hourly(s: Session, site: str, date, shift: str, coordinator: str, rows: pd.DataFrame, username: str,
+                source: str = "web") -> m.HourlyShift:
+    """Replace the whole shift sheet in one transaction (the grid is always saved as a whole)."""
+    from sqlalchemy import delete, insert
+    sh = s.scalar(select(m.HourlyShift).where(m.HourlyShift.site == site, m.HourlyShift.date == date,
+                                              m.HourlyShift.shift == shift).with_for_update())
+    if sh is None:
+        sh = m.HourlyShift(site=site, date=date, shift=shift)
+        s.add(sh)
+    sh.coordinator, sh.source, sh.updated_by = coordinator or "", source, username
+    sh.updated_at = func.now()
+    s.flush()
+    s.execute(delete(m.HourlyRow).where(m.HourlyRow.shift_id == sh.id))
+    recs = [{"shift_id": sh.id, **{c: (None if pd.isna(r.get(c)) else r.get(c)) for c in HOURLY_ROW_COLS}}
+            for r in rows.to_dict("records")]
+    if recs:
+        s.execute(insert(m.HourlyRow), recs)
+    return sh
+
+
+def hourly_range(s: Session, sites: list[str], d0, d1) -> pd.DataFrame:
+    """All hourly rows of the sites between two production dates, with their shift header."""
+    r, h = m.HourlyRow, m.HourlyShift
+    return frame(s, select(h.site, h.date, h.shift, h.coordinator, h.updated_at, h.updated_by,
+                           *[getattr(r, c) for c in HOURLY_ROW_COLS])
+                 .join(h, h.id == r.shift_id)
+                 .where(h.site.in_(sites), h.date >= d0, h.date <= d1).order_by(h.date, h.shift, r.line))
