@@ -30,13 +30,14 @@ if "display" in st.query_params:
             d = validate(s, st.query_params.get("display"))
             period, screen = (d.period, d.screen) if d else (None, None)
             h_date, h_shift = (d.hourly_date, d.hourly_shift) if d else (None, None)
+            review = (d.review_from, d.review_to) if d else None
         if period is None:
             st.error("This TV link has been revoked.")
             return
         if screen == "hourly":
             show_hourly(site, kiosk=True, date=h_date, shift=h_shift if h_date else None)
         else:
-            show(site, kiosk=True, period=period)
+            show(site, kiosk=True, period=period, review=review)
 
     st.navigation([st.Page(tv_screen, title=f"TV {site}", url_path="tv")], position="hidden").run()
     st.stop()
@@ -67,7 +68,7 @@ DASH = {
 }
 OTHER = {
     "preview_tv": P("pages/tv/preview.py", "TV preview", "tv"),
-    "upload": P("pages/data/upload.py", "Data_Prod", "upload_file"),
+    "upload": P("pages/data/upload.py", "Monthly import (Data_Prod)", "upload_file"),
     "approval": P("pages/data/approval.py", "Approval", "fact_check"),
     "upload_history": P("pages/data/upload_history.py", "Upload history", "history"),
     "data_explorer": P("pages/data/explorer.py", "Data explorer", "table_view"),
@@ -100,15 +101,23 @@ else:
         with session_scope() as s:
             n = repo.pending_count(s, sites_for(user))
         if n:
-            OTHER["approval"] = P("pages/data/approval.py", f"Approval ({n})", "fact_check")
+            OTHER["approval"] = P("pages/data/approval.py", f"Approval ({n} waiting)", "fact_check")
+    else:
+        n = 0
     pick = lambda keys, src=OTHER: [src[k] for k in keys if allowed(k)]  # noqa: E731
+    # grouped by task: look at results, dig deeper, bring data in, approve, run the TVs, configure
     sections = {
-        "Dashboard": pick(DASH, DASH),
-        "TV screen": pick(["preview_tv"]),
-        "Data": pick(["hourly_input", "upload", "unit_population", "approval", "upload_history", "data_explorer"]),
-        "Admin": pick(["users_roles", "targets_plan", "hourly_setup", "operators", "pm_interval", "sites_mapping", "display_devices", "audit_log", "delete_data"]),
-        "Account": pick(["home", "account"]),
+        "Dashboard": pick(["overview", "hourly", "pa_ua", "reliability", "production_ob", "coal_getting", "fuel"], DASH),
+        "Analysis": pick(["loader_fleet", "time_distribution", "data_quality"], DASH) + pick(["data_explorer"]),
+        "Input & upload": pick(["home", "hourly_input", "upload", "unit_population", "upload_history"]),
+        "Approval": pick(["approval"]),
+        "TV": pick(["preview_tv", "display_devices"]),
+        "Settings": pick(["targets_plan", "hourly_setup", "operators", "pm_interval", "sites_mapping", "users_roles",
+                          "audit_log", "delete_data"]),
+        "Account": pick(["account"]),
     }
+    if n:  # something waits for this approver: put it first
+        sections = {"Approval": sections.pop("Approval"), **sections}
     nav = st.navigation({k: v for k, v in sections.items() if v})
 
 brand.sidebar_logo()
