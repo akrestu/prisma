@@ -23,6 +23,35 @@ def _preview(upload_id: int, site: str):
     return metrics.kpis(ev), metrics.reliability(ev, stp), findings
 
 
+@st.dialog("Confirm")
+def _confirm(action: str, row, comment: str) -> None:
+    """Publishing reaches every Viewer and TV at once, so both decisions are confirmed."""
+    what = f"**{row['site']} · {row['month']:%B %Y}** (upload #{row['upload_id']})"
+    if action == "approve":
+        st.markdown(f"Publish {what}? Viewers and TVs will show it right away; the previous version for this "
+                    "site & month becomes SUPERSEDED.")
+    else:
+        st.markdown(f"Reject {what}?  \nReason: {comment}")
+    a, b = st.columns(2)
+    if a.button("Approve and publish" if action == "approve" else "Reject upload", type="primary", width="stretch"):
+        try:
+            with session_scope() as s:
+                us = s.get(m.UploadSite, int(row["id"]))
+                if action == "approve":
+                    ing.publish(s, us, user.id, user.username, comment=comment)
+                else:
+                    ing.reject(s, us, user.id, user.username, comment)
+        except ValueError as e:
+            st.error(str(e))
+            return
+        if action == "approve":
+            st.cache_data.clear()
+        st.toast(f"{row['site']} {row['month']:%Y-%m} " + ("PUBLISHED" if action == "approve" else "rejected"))
+        st.rerun()
+    if b.button("Cancel", width="stretch"):
+        st.rerun()
+
+
 user = require("approval")
 sites = sites_for(user)
 st.title("Data approval")
@@ -50,14 +79,15 @@ for _, row in queue.iterrows():
     with st.container(border=True):
         st.markdown(head)
         k, r, findings = _preview(int(row["upload_id"]), row["site"])
-        c = st.columns(7)
+        c = st.columns(4)
         c[0].metric("Units", summ.get("units", 0))
         c[1].metric("PA", fmt_pct(k["PA"].iloc[0]) if k is not None else "—")
         c[2].metric("UoA", fmt_pct(k["UoA"].iloc[0]) if k is not None else "—")
         c[3].metric("MTBS (hrs)", fmt_num(r["MTBS"].iloc[0], 1) if r is not None else "—")
-        c[4].metric("OB (BCM)", fmt_num(summ.get("ob_bcm")))
-        c[5].metric("Coal (t)", fmt_num(summ.get("coal_ton"), 1))
-        c[6].metric("Fuel (L)", fmt_num(summ.get("fuel_liters")))
+        c = st.columns(4)
+        c[0].metric("OB (BCM)", fmt_num(summ.get("ob_bcm")))
+        c[1].metric("Coal (t)", fmt_num(summ.get("coal_ton"), 1))
+        c[2].metric("Fuel (L)", fmt_num(summ.get("fuel_liters")))
         crit = int(dq.get("critical", 0))
         label = f"Data quality: {crit} critical · {int(dq.get('warn', 0))} to check · {int(dq.get('info', 0))} info"
         with st.expander(label, expanded=crit > 0):
@@ -65,26 +95,11 @@ for _, row in queue.iterrows():
 
         key = f"us{row['id']}"
         comment = st.text_input("Comment (required when rejecting)", key=f"c_{key}")
-        a, b, _ = st.columns([1, 1, 4])
+        a, _, b = st.columns([1, 4, 1])
         if a.button("Approve", key=f"a_{key}", type="primary"):
-            try:
-                with session_scope() as s:
-                    ing.publish(s, s.get(m.UploadSite, int(row["id"])), user.id, user.username, comment=comment)
-            except ValueError as e:
-                st.error(str(e))
-                st.stop()
-            st.cache_data.clear()
-            st.toast(f"{row['site']} {row['month']:%Y-%m} PUBLISHED")
-            st.rerun()
+            _confirm("approve", row, comment)
         if b.button("Reject", key=f"r_{key}"):
             if not comment.strip():
                 st.error("Enter a reason for rejecting.")
             else:
-                try:
-                    with session_scope() as s:
-                        ing.reject(s, s.get(m.UploadSite, int(row["id"])), user.id, user.username, comment)
-                except ValueError as e:
-                    st.error(str(e))
-                    st.stop()
-                st.toast(f"{row['site']} rejected")
-                st.rerun()
+                _confirm("reject", row, comment)

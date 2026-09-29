@@ -1,6 +1,6 @@
 """'Haul road' design tokens shared by the TV screen and the dashboard (Plotly template).
 
-Asphalt and dust greys, chalk text, hi-vis yellow as the only accent. Orange means "missed target" and nothing else.
+Asphalt and dust greys, chalk text, hi-vis yellow as the only accent. Orange means "bad": a missed target or Down time.
 Ready/Down use blue/orange (safe for red-green colour blindness).
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ SURFACE = "#1C1E21"   # road base
 LINE = "#2C2F33"
 TEXT = "#EDEAE3"      # chalk
 MUTED = "#9C9A93"
-DIM = "#6E6C66"
+DIM = "#8A8880"       # ≥4.5:1 on BG (WCAG AA for small text)
 ACCENT = "#F2C230"    # hi-vis
 MISS = "#F08A3C"      # off target
 READY, IDLE, STANDBY, DOWN = "#4E9BD8", "#9CC7EA", "#C98DA8", "#F08A3C"  # standby = dusty rose

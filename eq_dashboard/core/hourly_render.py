@@ -43,6 +43,7 @@ CSS = """
 .hh .hr{font-size:1.1cqw;font-weight:700;color:%(BG)s;background:%(NOW)s;padding:.05cqw .55cqw;border-radius:.2cqw}
 .hh .r{display:flex;align-items:baseline;gap:1.2cqw;font-size:.95cqw;color:%(MUTED)s}
 .hh .r b{color:%(TEXT)s;font-weight:600}.hh .app{font-weight:700;letter-spacing:.08em}
+.hh .app{display:inline-flex;flex-direction:column;align-items:flex-end;line-height:1.1;vertical-align:middle}.hh .app small{font-size:.62em;font-weight:500;letter-spacing:.02em;opacity:.75}
 .hh .clk{font-size:1.8cqw;font-weight:600;color:%(TEXT)s}
 .top{display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:1.1cqw;height:17.5cqw}
 .hero{display:grid;grid-template-rows:auto minmax(0,1fr);gap:.2cqw;border-top:.2cqw solid var(--c);padding-top:.35cqw}
@@ -286,7 +287,7 @@ def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None) -> 
             f'<span class="what">Hourly production · <b>{d.date.day} {d.date:%b %Y}</b> · shift <b>{d.shift}</b>'
             f'</span>' + (f'<span class="hr">{hour}</span>' if d.live else "")
             + f'</div><div class="r"><span>Shift boss <b>{escape(d.coordinator or "—")}</b></span><span>{upd}</span>'
-              f'<span class="app">{brand.NAME}</span><span class="clk">{now:%H:%M}</span></div></div>')
+              f'<span class="app">{brand.NAME}<small>{escape(brand.FULL_NAME)}</small></span><span class="clk">{now:%H:%M}</span></div></div>')
     top = f'<div class="top">{_hero("OB", d)}{_hero("CG", d)}{_kpi(d)}</div>'
     boards = _board("OB", d) + _board("CG", d)
     foot = (f'<div class="fo"><span><i style="background:rgba(79,193,166,.6)"></i>target met</span>'

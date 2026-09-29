@@ -117,13 +117,21 @@ with t_web:
         "remark_code": st.column_config.SelectboxColumn("Remark code", options=list(code_label.values())),
         "remark": st.column_config.TextColumn("Remark", width="large"),
     }
+    gkey = f"hi_grid_{site}_{date}_{shift}_{ver}"
     grid = st.data_editor(to_grid(base), num_rows="dynamic", hide_index=True, width="stretch", column_config=cfg,
-                          key=f"hi_grid_{site}_{date}_{shift}_{ver}", height=min(600, 38 * (len(base) + 3) + 40))
+                          key=gkey, height=min(600, 38 * (len(base) + 3) + 40))
     res = H.resolve(from_grid(grid), lf, tg, units, ops, model_targets=mtg, basis=basis)
     st.caption("One row per hauler. When a hauler's operator changes during the shift, add a second row for the "
                "same hauler with the new operator.")
+    edits = st.session_state.get(gkey) or {}
+    dirty = any(edits.get(k) for k in ("edited_rows", "added_rows", "deleted_rows")) or coord != coord_now         or (sh is None and len(base) > 0)   # lines copied from the previous shift are not saved yet
+    if dirty:
+        st.warning("Unsaved changes. Changing the site, date or shift discards them: press **Save shift** first.")
+    if res.problems:
+        st.error(f"{len(res.problems)} problem(s) to fix before saving:\n\n"
+                 + "\n".join(f"- {p}" for p in res.problems))
     for w in res.warnings:
-        st.caption(f"⚠ {w}")
+        st.warning(w)
     if len(res.rows) and not res.problems:
         long = H.to_long(res.rows.assign(site=site, date=date, shift=shift))
         tot = long.groupby("material_group")["volume"].sum()
@@ -133,18 +141,14 @@ with t_web:
         k[2].metric("Trips", fmt_num(long["rit"].sum()))
         k[3].metric("Fleets", res.rows["loader"].nunique())
         k[4].metric("Haulers", res.rows["hauler"].nunique())
-    if st.button("Save shift", type="primary", key="hi_save"):
-        if res.problems:
-            for p in res.problems:
-                st.error(p)
-        else:
-            with session_scope() as s:
-                repo.save_hourly(s, site, date, shift, coord, res.rows, user.username, "web")
-                audit(s, user.username, "hourly_save", site, f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines")
-            st.cache_data.clear()
-            st.session_state["hi_ver"] = ver + 1
-            st.session_state["hi_msg"] = f"{site} {date:%d %b} {shift} saved ({len(res.rows)} lines)."
-            st.rerun()
+    if st.button("Save shift", type="primary", key="hi_save", disabled=bool(res.problems)) and not res.problems:
+        with session_scope() as s:
+            repo.save_hourly(s, site, date, shift, coord, res.rows, user.username, "web")
+            audit(s, user.username, "hourly_save", site, f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines")
+        st.cache_data.clear()
+        st.session_state["hi_ver"] = ver + 1
+        st.session_state["hi_msg"] = f"{site} {date:%d %b} {shift} saved ({len(res.rows)} lines)."
+        st.rerun()
 
 # ------------------------------------------------------------------ Excel template
 with t_xls:
@@ -179,10 +183,12 @@ with t_xls:
         for p in rf.problems:
             st.error(p)
         for w in rf.warnings:
-            st.caption(f"⚠ {w}")
+            st.warning(w)
+        ok = True
         if exists is not None:
             st.warning("This shift already has data; saving replaces it.")
-        if not rf.problems and st.button("Save uploaded shift", type="primary", key="hi_xsave"):
+            ok = st.checkbox("Replace the existing lines of this shift", key=f"hi_xrep_{st.session_state.get('hi_ver', 0)}")
+        if not rf.problems and st.button("Save uploaded shift", type="primary", key="hi_xsave", disabled=not ok):
             with session_scope() as s:
                 repo.save_hourly(s, hf.site, hf.date, hf.shift, hf.coordinator, rf.rows, user.username, "excel")
                 audit(s, user.username, "hourly_upload", hf.site,

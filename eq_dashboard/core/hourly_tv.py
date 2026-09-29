@@ -173,7 +173,7 @@ def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame) -> tuple[pd.DataFrame, 
         pit=("pit", "first"), disposal=("disposal", "first"), target=("target_per_hour", "max"),
         operator=("operator", lambda x: ", ".join(dict.fromkeys(x.dropna()))),
         haulers=("hauler_key", "nunique"),
-        hauler_ids=("hauler_key", lambda x: " ".join(dict.fromkeys(str(v) for v in x.dropna()))),
+        hauler_ids=("hauler_key", lambda x: ", ".join(dict.fromkeys(str(v) for v in x.dropna()))),
         code=("remark_code", "first"), remark=("remark", lambda x: "; ".join(dict.fromkeys(x.dropna()))),
         line=("line", "min"))
     out = first.join(vol).sort_values("line").reset_index()

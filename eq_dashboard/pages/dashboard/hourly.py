@@ -68,8 +68,9 @@ with t_pace:
         by_loader = lg.pivot_table(index="loader", columns="slot", values="volume", aggfunc="sum", fill_value=0) \
             .reindex(columns=vol.index, fill_value=0)
         order = lg.groupby("loader")["line"].min().sort_values().index
-        palette = [T.ACCENT, T.READY, T.PA_COLOR, T.FUEL_COLOR, T.IDLE, T.STANDBY, "#A7D38B", "#E0A860", "#7FB3E0",
-                   "#D9A5E8", "#9FD6C8", "#E8C27A"]
+        # loader colours avoid the semantic ones used in this chart: teal = met, orange = below, yellow = accent
+        palette = [T.READY, T.FUEL_COLOR, T.IDLE, T.STANDBY, "#A7D38B", "#7FB3E0", "#D9A5E8", "#8C8FD6", "#B5A48C",
+                   "#6FA3A8", "#C9B8E8", "#92B87A"]
         tgt_by = lg.groupby("loader")["target_per_hour"].max()
         fig = go.Figure()
         for i, ld in enumerate(order):
@@ -147,8 +148,43 @@ with t_ops:
     if lg.empty:
         no_data()
     else:
+        # trips per hauler (Eq ID) per hour, grouped by the loader it worked with
+        hl = lg.assign(hauler=lg["hauler"].fillna(lg["hauler_model"]).astype(str),
+                       loader=lg["loader"].astype(str))
+        trips = hl.pivot_table(index=["loader", "hauler"], columns="slot", values="rit", aggfunc="sum",
+                               fill_value=0).reindex(columns=range(1, now_slot + 1), fill_value=0)
+        first = hl.groupby(["loader", "hauler"]).agg(line=("line", "min"), model=("hauler_model", "first"),
+                                                    op=("hauler_operator", "first")).sort_values("line")
+        trips = trips.reindex(first.index)
+        # colour: trips vs the hauler's own best hour this shift, so a slow or stopped hour stands out
+        best = trips.max(axis=1).replace(0, pd.NA)
+        ratio = trips.div(best, axis=0).astype(float)
+        ylab = [f"{ld} · {hv}" for ld, hv in trips.index]
+        hover = [[f"<b>{hv}</b> {first.loc[(ld, hv), 'model'] or ''} → {ld}<br>{first.loc[(ld, hv), 'op'] or ''}"
+                  f"<br>{H.SLOTS[shift][k - 1]}: {trips.loc[(ld, hv), k]:.0f} trips" for k in trips.columns]
+                 for ld, hv in trips.index]
+        fig = go.Figure(go.Heatmap(
+            z=ratio.values, x=H.SLOTS[shift][:now_slot], y=ylab,
+            text=trips.map(lambda v: f"{v:.0f}" if v else "·").values, texttemplate="%{text}",
+            hovertext=hover, hoverinfo="text", zmin=0, zmax=1, xgap=2, ygap=2,
+            colorscale=[[0, T.MISS], [.5, "#8A5A34"], [.75, T.PA_COLOR], [1, "#2E8C76"]],
+            colorbar=dict(title="of best hour", tickvals=[0, .5, 1], ticktext=["0%", "50%", "100%"])))
+        fig.update_layout(title="Trips per hauler per hour (grouped by loader; colour = share of its best hour)",
+                          yaxis=dict(autorange="reversed", type="category"), xaxis=dict(type="category"))
+        dash.plot(fig, max(320, 24 * len(trips) + 120))
+        tot = pd.DataFrame({"Loader": [ld for ld, _ in trips.index], "Hauler": [hv for _, hv in trips.index],
+                            "Model": first["model"].values, "Operator": first["op"].values,
+                            "Hours worked": (trips > 0).sum(axis=1).values, "Trips": trips.sum(axis=1).values,
+                            unit: hl.groupby(["loader", "hauler"])["volume"].sum().reindex(trips.index).values})
+        tot["Trips/hour"] = tot["Trips"] / tot["Hours worked"].replace(0, pd.NA)
+        st.dataframe(tot, hide_index=True, width="stretch",
+                     column_config={"Trips/hour": st.column_config.NumberColumn(format="%.1f"),
+                                    unit: st.column_config.NumberColumn(format="%,.0f")})
+        excel_download(tot, f"hourly_haulers_{site}_{date:%Y-%m-%d}_{shift}_{group}.xlsx", key="hp_haulers")
+        st.divider()
+
         worked = lg[lg["rit"] > 0]
-        by = (worked.assign(hauler=worked["hauler"].fillna(worked["hauler_model"]))
+        by =(worked.assign(hauler=worked["hauler"].fillna(worked["hauler_model"]))
               .groupby(["hauler_nrp", "hauler_operator", "hauler", "hauler_model", "loader"], dropna=False)
               .agg(trips=("rit", "sum"), volume=("volume", "sum"), hours=("slot", "nunique")).reset_index())
         by["trips_per_hour"] = by["trips"] / by["hours"]
