@@ -32,8 +32,64 @@ def parse_data_prod(data: bytes, alias: dict[str, str] | None = None,
                     population: Callable[[dt.date], pd.DataFrame | None] | pd.DataFrame | None = None) -> Parsed:
     """`population` gives the units (unit_id, type, description, model, manufacturer, site) valid for the file's
     month: a DataFrame, or a function month → DataFrame (the Unit_Population version in force). Without one, the
-    old 'Populasi Unit' sheet of the workbook is used."""
-    frames = validate(read_workbook(data))
+    old 'Populasi Unit' sheet of the workbook is used. The file must hold one month (see `parse_months`)."""
+    return parse_frames(validate(read_workbook(data)), alias, tank_site, population)
+
+
+# the production date of each data sheet: a multi-month workbook is split on these
+DATE_COLS = {"Eq.Event": "Date", "Ritasi Unit": "Date", "Data Timbangan": "Date", "Fuel Consume": "DATE",
+             "Fuel Receipt": "DATE_RECEIPT"}
+
+
+@dataclass
+class MonthResult:
+    month: dt.date
+    parsed: Parsed | None = None
+    problems: list[str] = field(default_factory=list)
+
+
+def split_months(frames: dict[str, pd.DataFrame]) -> dict[dt.date, dict[str, pd.DataFrame]]:
+    """Validated frames → one set of frames per month of Eq.Event. Rows of other sheets go to the month of their own
+    date; rows without a readable date go to the first month, where the usual checks report them. Sheets without a
+    date (Populasi Unit) are copied to every month. Excel row numbers (_row) are kept, so findings still point to
+    the right row of the uploaded file."""
+    ev_month = excel_date(frames["Eq.Event"]["Date"]).dt.to_period("M")
+    months = sorted(ev_month.dropna().unique())
+    if not months:
+        raise StructureError(["Sheet 'Eq.Event' has no data rows."])
+    out: dict[dt.date, dict[str, pd.DataFrame]] = {}
+    for per in months:
+        mo = per.to_timestamp().date()
+        part = {}
+        for name, df in frames.items():
+            col = DATE_COLS.get(name)
+            if col is None or col not in df:
+                part[name] = df
+                continue
+            p = excel_date(df[col]).dt.to_period("M")
+            keep = (p == per) | (p.isna() & (per == months[0]))
+            part[name] = df[keep.to_numpy()].reset_index(drop=True)
+        out[mo] = part
+    return out
+
+
+def parse_months(data: bytes, alias: dict[str, str] | None = None, tank_site: dict[str, str] | None = None,
+                 population: Callable[[dt.date], pd.DataFrame | None] | pd.DataFrame | None = None
+                 ) -> list[MonthResult]:
+    """A workbook with one or many months (e.g. a whole year) → one result per month. The structure is checked once
+    for the whole file (StructureError); a month that cannot be read gets its problems instead of failing the file."""
+    out = []
+    for mo, part in split_months(validate(read_workbook(data))).items():
+        try:
+            out.append(MonthResult(mo, parse_frames(part, alias, tank_site, population)))
+        except StructureError as e:
+            out.append(MonthResult(mo, problems=e.problems))
+    return out
+
+
+def parse_frames(frames: dict[str, pd.DataFrame], alias: dict[str, str] | None = None,
+                 tank_site: dict[str, str] | None = None,
+                 population: Callable[[dt.date], pd.DataFrame | None] | pd.DataFrame | None = None) -> Parsed:
     month = _file_month(frames["Eq.Event"])
     units, source = None, ""
     if population is not None:
@@ -49,7 +105,8 @@ def parse_data_prod(data: bytes, alias: dict[str, str] | None = None,
         raise StructureError(["Sheet 'Eq.Event' has no data rows."])
     months = sorted(set(events["month"]))
     if len(months) > 1:
-        raise StructureError([f"A file must contain one month only; found {', '.join(map(str, months))}."])
+        raise StructureError([f"This data holds more than one month ({', '.join(map(str, months))}); "
+                              "use parse_months to read it month by month."])
     stoppages = clean.build_stoppages(events)
     ritase = clean.clean_ritasi(frames["Ritasi Unit"], units, alias)
     coal = clean.clean_timbangan(frames["Data Timbangan"], units, alias)

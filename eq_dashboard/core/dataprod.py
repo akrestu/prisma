@@ -173,7 +173,8 @@ def _bytes(wb: Workbook) -> bytes:
 
 
 RULES = [
-    "One file = one month (month to date is fine). Upload the same month again to replace it; old versions are kept.",
+    "One month per file (month to date is fine), or several months such as a whole year: the app splits it by month. "
+    "Upload the same month again to replace it; old versions are kept.",
     "Do not rename sheets or column headers. Headers are in row 1, except 'Ritasi Unit' where they are in row 2.",
     "Units and their sites come from the separate Unit_Population workbook (Data → Unit population).",
     "Extra columns are allowed and ignored. Empty rows are skipped.",

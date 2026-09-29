@@ -57,9 +57,38 @@ def excel_date(s: pd.Series) -> pd.Series:
     out = pd.to_datetime(serial, unit="D", origin=EXCEL_EPOCH)
     rest = serial.isna() & s.notna()
     if rest.any():
-        other = pd.to_datetime(s.where(rest).map(lambda v: v if isinstance(v, (dt.datetime, dt.date)) or pd.isna(v)
-                                                 else str(v)), errors="coerce", format="mixed")
-        out = out.where(~rest, other)
+        real = rest & is_dt
+        if real.any():
+            out = out.where(~real, pd.to_datetime(s.where(real), errors="coerce"))
+        txt = rest & ~is_dt
+        if txt.any():
+            out = out.where(~txt, _text_dates(s[txt].astype(str).str.strip()))
+    return out
+
+
+TEXT_FORMATS = ("%d/%m/%y %H:%M:%S", "%d/%m/%Y %H:%M:%S", "%d/%m/%y %H:%M", "%d/%m/%Y %H:%M", "%d/%m/%y",
+                "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d")
+
+
+def _text_dates(s: pd.Series) -> pd.Series:
+    """Dates typed or exported as text. Slashed dates are day first (Indonesian sheets: 01/02/23 = 1 Feb 2023);
+    '44984 14:06:34' (an Excel serial number followed by a time) is read too."""
+    out = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+    for f in TEXT_FORMATS:
+        todo = out.isna()
+        if not todo.any():
+            break
+        out[todo] = pd.to_datetime(s[todo], format=f, errors="coerce")
+    todo = out.isna()
+    if todo.any():
+        parts = s[todo].str.split(" ", n=1, expand=True).reindex(columns=[0, 1])
+        serial = pd.to_numeric(parts[0], errors="coerce")
+        tm = pd.to_timedelta(parts[1], errors="coerce")
+        ok = serial.notna() & (serial > 20000) & (serial < 80000)
+        out[ok[ok].index] = (pd.to_datetime(serial[ok], unit="D", origin=EXCEL_EPOCH) + tm[ok].fillna(pd.Timedelta(0)))
+    todo = out.isna()
+    if todo.any():
+        out[todo] = pd.to_datetime(s[todo], errors="coerce", format="mixed", dayfirst=True)
     return out
 
 

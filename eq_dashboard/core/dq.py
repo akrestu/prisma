@@ -49,6 +49,7 @@ def check_ritasi(r: pd.DataFrame) -> list[pd.DataFrame]:
     out = []
     z = r[r["muatan"] <= 0].drop_duplicates("row_ref").rename(columns={"hauler": "unit_id"})
     out.append(_rows(z, "zero_muatan", "warn", "Ritasi Unit", "Muatan is 0 → volume 0"))
+    out.append(_rit_as_volume(r))
     ul = r[r["site"] == UNMAPPED].drop_duplicates("loader").rename(columns={"loader": "unit_id"})
     out.append(_rows(ul, "loader_without_site", "warn", "Ritasi Unit", "Unknown loader → UNMAPPED"))
     x = r[(r["site"] != r["site_hauler"]) & (r["site"] != UNMAPPED) & (r["site_hauler"] != UNMAPPED)]
@@ -59,6 +60,26 @@ def check_ritasi(r: pd.DataFrame) -> list[pd.DataFrame]:
                                  "detail": s.apply(lambda q: f"{q['volume']:,.0f} hauled by site "
                                                              f"{q['site_hauler']} units → counted to the loader site", axis=1)}))
     return out
+
+
+def _rit_as_volume(r: pd.DataFrame) -> pd.DataFrame:
+    """Hour cells must hold trips. When nearly every cell of a site is a whole multiple of Muatan (and at least one
+    load), the sheet was filled with volume: every figure would be Muatan times too high. Critical, so it is never
+    auto-approved."""
+    x = r[(r["muatan"] > 1) & (r["rit"] > 0)]
+    rows = []
+    for site, g in x.groupby("site"):
+        if len(g) < 50:
+            continue
+        ratio = g["rit"] / g["muatan"]
+        share = ((ratio >= 1) & ((ratio - ratio.round()).abs() < 1e-6)).mean()
+        if share >= 0.95:
+            rows.append({"site": site, "rule": "rit_is_volume", "severity": "critical", "sheet": "Ritasi Unit",
+                         "row_ref": None, "unit_id": None, "date": None,
+                         "detail": f"{share:.0%} of hour cells are exact multiples of Muatan (median "
+                                   f"{g['rit'].median():,.0f}): they look like volume, not trips. Divide the hour "
+                                   "columns by Muatan and upload again."})
+    return pd.DataFrame(rows)
 
 
 def check_timbangan(t: pd.DataFrame) -> list[pd.DataFrame]:

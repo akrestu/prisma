@@ -3,7 +3,7 @@
 # ./static disajikan di /app/static (font IBM Plex Sans di-host sendiri, TV tidak butuh internet)
 enableStaticServing = true
 headless = true
-maxUploadSize = 50
+maxUploadSize = 100
 enableXsrfProtection = true
 # CORS aktif: batasi WebSocket lintas origin. Di production isi origin domain Anda, mis.
 # corsAllowedOrigins = ["https://dashboard.example.co.id"]

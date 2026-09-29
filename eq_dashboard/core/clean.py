@@ -10,7 +10,9 @@ from core.config import DOWN, NO_DATA, STATUS_TO_CATEGORY, UNMAPPED
 from core.io import day_fraction, excel_date, num, text
 from core.validate import HOUR_SLOTS
 
-SHIFT_MAP = {"day": "DS", "night": "NS", "ds": "DS", "ns": "NS", "i": "DS", "ii": "NS"}
+# 'l' (lower-case L) and '1'/'2' are common typing slips for the Roman I / II of the fuel sheets
+SHIFT_MAP = {"day": "DS", "night": "NS", "ds": "DS", "ns": "NS", "i": "DS", "ii": "NS", "l": "DS", "ll": "NS",
+             "1": "DS", "2": "NS"}
 DS_SLOTS = set(HOUR_SLOTS[:12])  # 06-07 .. 17-18
 
 
