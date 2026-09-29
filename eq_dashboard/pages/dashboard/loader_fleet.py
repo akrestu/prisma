@@ -34,8 +34,8 @@ st.caption({
     "hourly": "Hourly profile over the selected dates (by production hour 06-07 … 05-06).",
     "daily": "Per day within the selected dates.",
     "weekly": "Per week of each month in the period (1–7, 8–14, 15–21, 22–end).",
-    "monthly": f"Per month of {c.month.year} (all published months, sidebar period ignored).",
-    "yearly": "Per year across all published data (sidebar period ignored).",
+    "monthly": f"Per month of {c.month.year} (all published months, period filter ignored).",
+    "yearly": "Per year across all published data (period filter ignored).",
 }[period])
 
 with st.spinner(f"Calculating {group} productivity ({PERIOD_LABEL[period].lower()})…", show_time=True):

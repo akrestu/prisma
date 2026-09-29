@@ -12,14 +12,15 @@ st.title("PA & UoA")
 
 k = metrics.kpis(c.ev).iloc[0]
 t = dash.targets_for(c)
+pv = dash.headline(c.prev)
 worst_type = metrics.kpis(c.ev, ["type"])["PA"].sort_values()
 dash.summary(dash.gap_text("UoA", k["UoA"], t["uoa"]), dash.gap_text("PA", k["PA"], t["pa"]),
              f"Lowest PA by type: {worst_type.index[0]} at {worst_type.iloc[0]:.0%}" if len(worst_type) else "")
 r = st.columns(4)
-dash.kpi(r[0], "PA (%)", k["PA"], t["pa"], help="(Ready + Idle + Standby) / total hours")
-dash.kpi(r[1], "UoA (%)", k["UoA"], t["uoa"], help="(Ready + Idle) / (Ready + Idle + Standby)")
-dash.kpi(r[2], "MA (%)", k["MA"], help="(Ready + Idle) / (Ready + Idle + Down)")
-dash.kpi(r[3], "EU (%)", k["EU"], help="(Ready + Idle) / total hours")
+dash.kpi(r[0], "PA (%)", k["PA"], t["pa"], help="(Ready + Idle + Standby) / total hours", prev=pv.get("PA"))
+dash.kpi(r[1], "UoA (%)", k["UoA"], t["uoa"], help="(Ready + Idle) / (Ready + Idle + Standby)", prev=pv.get("UoA"))
+dash.kpi(r[2], "MA (%)", k["MA"], help="(Ready + Idle) / (Ready + Idle + Down)", prev=pv.get("MA"))
+dash.kpi(r[3], "EU (%)", k["EU"], help="(Ready + Idle) / total hours", prev=pv.get("EU"))
 
 metric = st.segmented_control("Ranking metric", ["PA", "UoA", "MA"], default="PA", key="rank_metric") or "PA"
 a, b, cc = st.columns(3)

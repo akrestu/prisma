@@ -60,7 +60,7 @@ def test_site_manager_scope_on_dashboard_and_targets(world):
     sm = load_user(world, "sm")
     at = run("overview", sm)
     assert not at.exception
-    assert at.sidebar.multiselect(key="f_site").options == ["WBK-BAU"]
+    assert at.multiselect(key="f_site").options == ["WBK-BAU"]
     at = run("targets_plan", sm)
     assert not at.exception
     assert at.selectbox(key="tgt_site").options == ["WBK-BAU"]
@@ -146,7 +146,7 @@ def test_week_and_shift_filters_apply_to_production_fuel_and_stoppages(world):
     adm = load_user(world, "adm")
     at = run("overview", adm)
     full = {mt.label: mt.value for mt in at.metric}
-    at.sidebar.multiselect(key="f_week").select("Week 1").run()
+    at.multiselect(key="f_week").select("Week 1").run()
     w1 = {mt.label: mt.value for mt in at.metric}
     assert not at.exception
     r = m.FactRitase
@@ -155,28 +155,39 @@ def test_week_and_shift_filters_apply_to_production_fuel_and_stoppages(world):
     assert w1["OB (BCM)"] == f"{ob_w1:,.0f}" and w1["OB (BCM)"] != full["OB (BCM)"]
     assert w1["Fuel (L)"] != full["Fuel (L)"]
     assert w1["MTBS (hrs)"] != full["MTBS (hrs)"]
-    at.sidebar.segmented_control(key="f_shift").set_value(["DS"]).run()   # stoppages follow the shift too
+    at.segmented_control(key="f_shift").set_value(["DS"]).run()   # stoppages follow the shift too
     assert {mt.label: mt.value for mt in at.metric}["MTTR (hrs)"] != w1["MTTR (hrs)"]
 
 
-def test_filters_restore_from_url_and_save_as_default(world):
+def test_filters_restore_from_url_and_are_remembered(world):
     at = AppTest.from_file(str(APP_DIR / "pages/dashboard/overview.py"), default_timeout=180)
     at.session_state["user"] = load_user(world, "adm")
     at.query_params["site"] = "WBK-BAU"
     at.query_params["period"] = "last7"
     at.run()
     assert not at.exception, [e.value for e in at.exception]
-    assert at.sidebar.multiselect(key="f_site").value == ["WBK-BAU"]
-    assert at.sidebar.selectbox(key="f_period").value == "last7"
-    head = at.markdown[0].value
-    assert "WBK-BAU" in head and "– 23 Sep 2026" in head and "last 7 days" in head
-    at.sidebar.button(key="flt_save").click().run()
-    world.expire_all()
+    assert at.multiselect(key="f_site").value == ["WBK-BAU"]
+    assert at.selectbox(key="f_period").value == "last7"
+    head = next(x.value for x in at.markdown if "last 7 days" in x.value)
+    assert "WBK-BAU" in head and "– 23 Sep 2026" in head
+    world.expire_all()                               # remembered for the account without pressing anything
     saved = world.query(m.User).filter(m.User.username == "adm").one().default_filters
     assert saved["f_site"] == ["WBK-BAU"] and saved["f_period"] == "last7"
-    # a new session without URL parameters opens with the saved default
+    # a new session without URL parameters (refresh after sign-in, another device) opens with the same filters
     at2 = run("overview", load_user(world, "adm"))
-    assert at2.sidebar.multiselect(key="f_site").value == ["WBK-BAU"]
+    assert at2.multiselect(key="f_site").value == ["WBK-BAU"]
+
+
+def test_compare_shows_change_against_previous_period(world):
+    at = AppTest.from_file(str(APP_DIR / "pages/dashboard/overview.py"), default_timeout=180)
+    at.session_state["user"] = load_user(world, "adm")
+    at.query_params["period"] = "last7"
+    at.query_params["cmp"] = "1"
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.toggle(key="f_cmp").value is True
+    assert any("compared with" in x.value for x in at.markdown)
+    assert any("vs previous" in c.value for c in at.caption)
 
 
 def test_system_health_for_admin_only(world):

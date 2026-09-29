@@ -13,6 +13,7 @@ st.title("Overview")
 k = metrics.kpis(c.ev).iloc[0]
 rel = metrics.reliability(c.ev, c.st).iloc[0]
 t = dash.targets_for(c)
+pv = dash.headline(c.prev)
 ob = c.rit.loc[c.rit["material_group"] == "OB", "volume"].sum() if len(c.rit) else 0
 coal = c.coal["ton"].sum() if len(c.coal) else 0
 fuel = c.fuel["liters"].sum() if len(c.fuel) else 0
@@ -24,15 +25,15 @@ dash.summary(dash.gap_text("UoA", k["UoA"], t["uoa"]), dash.gap_text("PA", k["PA
              f"OB {fmt_num(ob)} BCM and coal {fmt_num(coal)} t in the selected dates")
 
 r1 = st.columns(4)
-dash.kpi(r1[0], "PA (%)", k["PA"], t["pa"])
-dash.kpi(r1[1], "UoA (%)", k["UoA"], t["uoa"])
-dash.kpi(r1[2], "MTBS (hrs)", rel["MTBS"], t["mtbs"], "h")
-dash.kpi(r1[3], "MTTR (hrs)", rel["MTTR"], t["mttr"], "h", higher_better=False)
+dash.kpi(r1[0], "PA (%)", k["PA"], t["pa"], prev=pv.get("PA"))
+dash.kpi(r1[1], "UoA (%)", k["UoA"], t["uoa"], prev=pv.get("UoA"))
+dash.kpi(r1[2], "MTBS (hrs)", rel["MTBS"], t["mtbs"], "h", prev=pv.get("MTBS"))
+dash.kpi(r1[3], "MTTR (hrs)", rel["MTTR"], t["mttr"], "h", higher_better=False, prev=pv.get("MTTR"))
 r2 = st.columns(4)
 plan = dash.plan_range(c.sites, c.date_from, c.date_to)
-dash.kpi(r2[0], "OB (BCM)", ob, plan["ob_plan"].sum(min_count=1), "n")
-dash.kpi(r2[1], "Coal (t)", coal, plan["coal_plan"].sum(min_count=1), "n1")
-dash.kpi(r2[2], "Fuel (L)", fuel, None, "n")
+dash.kpi(r2[0], "OB (BCM)", ob, plan["ob_plan"].sum(min_count=1), "n", prev=pv.get("OB"))
+dash.kpi(r2[1], "Coal (t)", coal, plan["coal_plan"].sum(min_count=1), "n1", prev=pv.get("coal"))
+dash.kpi(r2[2], "Fuel (L)", fuel, None, "n", higher_better=False, prev=pv.get("fuel"))
 r2[3].metric("Fuel ratio", f"{fmt_num(fuel / ob, 2)} L/BCM" if ob else "—")
 
 left, right = st.columns(2)

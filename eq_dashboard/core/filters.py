@@ -1,7 +1,8 @@
 """Dashboard period presets and filter (de)serialisation for the URL and the per-user default. No Streamlit here.
 
-Relative presets count back from the last date that has data (the anchor), not from today: uploads always lag a
-few days, and "last 7 days" should never be half empty.
+Most presets count back from the last date that has data (the anchor), not from today: uploads always lag a
+few days, and "last 7 days" should never be half empty. The calendar presets (today, yesterday, this/last week)
+follow the real date instead and may land where no data exists yet; the dashboard says so rather than moving them.
 """
 from __future__ import annotations
 
@@ -9,6 +10,10 @@ import contextlib
 import datetime as dt
 
 PRESETS: dict[str, str] = {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "this_week": "This week",
+    "last_week": "Last week",
     "last_day": "Last complete day",
     "last7": "Last 7 days",
     "mtd": "Month to date",
@@ -17,9 +22,10 @@ PRESETS: dict[str, str] = {
     "custom": "Custom range",
 }
 DEFAULT_PRESET = "mtd"
+CALENDAR = {"today", "yesterday", "this_week", "last_week"}   # follow today's date, not the data
 # session/widget keys → URL parameter names; list values are comma-separated in the URL
 FIELDS = {"f_site": "site", "f_period": "period", "f_week": "week", "f_shift": "shift", "f_type": "type",
-          "f_model": "model", "f_unit": "unit"}
+          "f_model": "model", "f_unit": "unit", "f_cmp": "cmp"}
 LIST_FIELDS = {"f_site", "f_week", "f_shift", "f_type", "f_model", "f_unit"}
 
 
@@ -33,8 +39,15 @@ def month_end(d: dt.date) -> dt.date:
 
 
 def preset_range(key: str, anchor: dt.date, first: dt.date, last_complete: dt.date | None = None,
-                 custom: tuple[dt.date, dt.date] | None = None) -> tuple[dt.date, dt.date]:
-    """(from, to) for a preset, clamped to the data that exists [first, anchor]."""
+                 custom: tuple[dt.date, dt.date] | None = None,
+                 today: dt.date | None = None) -> tuple[dt.date, dt.date]:
+    """(from, to) for a preset, clamped to the data that exists [first, anchor]. Calendar presets are not clamped."""
+    if key in CALENDAR:
+        t = today or anchor
+        monday = t - dt.timedelta(days=t.weekday())
+        return {"today": (t, t), "yesterday": (t - dt.timedelta(days=1),) * 2,
+                "this_week": (monday, t),
+                "last_week": (monday - dt.timedelta(days=7), monday - dt.timedelta(days=1))}[key]
     if key == "last_day":
         d0 = d1 = last_complete or anchor
     elif key == "last7":
@@ -52,6 +65,21 @@ def preset_range(key: str, anchor: dt.date, first: dt.date, last_complete: dt.da
     if d0 > d1:                                        # e.g. "last month" when only this month exists
         d0 = d1 = anchor
     return d0, d1
+
+
+def previous_range(key: str, d0: dt.date, d1: dt.date) -> tuple[dt.date, dt.date]:
+    """The period to compare with: the same days one month earlier for month presets, one year earlier for YTD,
+    otherwise the equally long span right before."""
+    if key in ("mtd", "last_month"):
+        p0 = month_start(month_start(d0) - dt.timedelta(days=1))
+        p1 = month_end(p0) if key == "last_month" else min(p0.replace(day=1) + (d1 - month_start(d1)), month_end(p0))
+        return p0, p1
+    if key == "ytd":
+        return d0.replace(year=d0.year - 1), d1.replace(year=d1.year - 1, day=min(d1.day, 28 if d1.month == 2 else 31))
+    if key in ("this_week", "last_week"):
+        return d0 - dt.timedelta(days=7), d1 - dt.timedelta(days=7)
+    n = (d1 - d0).days + 1
+    return d0 - dt.timedelta(days=n), d0 - dt.timedelta(days=1)
 
 
 def months_between(d0: dt.date, d1: dt.date) -> list[dt.date]:
@@ -78,7 +106,10 @@ def to_query(state: dict) -> dict[str, str]:
     q = {}
     for key, name in FIELDS.items():
         v = state.get(key)
-        if v in (None, "", [], ()):
+        if v in (None, "", [], (), False):
+            continue
+        if key == "f_cmp":
+            q[name] = "1"
             continue
         q[name] = ",".join(map(str, v)) if key in LIST_FIELDS else str(v)
     rng = state.get("f_range")
@@ -95,6 +126,9 @@ def from_query(params: dict) -> dict:
         if not raw:
             continue
         raw = str(raw)[:2000]
+        if key == "f_cmp":
+            state[key] = raw in ("1", "true", "True")
+            continue
         state[key] = [x for x in raw.split(",") if x] if key in LIST_FIELDS else raw
     if state.get("f_period") not in PRESETS:
         state.pop("f_period", None)
@@ -116,6 +150,8 @@ def from_saved(saved: dict | None) -> dict:
     if not saved:
         return {}
     out = {k: v for k, v in saved.items() if k in FIELDS}
+    if out.get("f_period") not in PRESETS:
+        out.pop("f_period", None)
     if saved.get("f_range"):
         with contextlib.suppress(TypeError, ValueError):
             out["f_range"] = tuple(dt.date.fromisoformat(x) for x in saved["f_range"])

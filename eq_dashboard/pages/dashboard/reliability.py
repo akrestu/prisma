@@ -13,15 +13,16 @@ rel = metrics.reliability(c.ev, c.st).iloc[0]
 iv = dash.pm_intervals()
 pm = metrics.pm_accuracy(c.ev, iv)
 t = dash.targets_for(c)
+pv = dash.headline(c.prev)
 comp = c.ev[c.ev["category"] == "D"].groupby("reason_text")["hours"].sum().sort_values(ascending=False)
 dash.summary(dash.gap_text("MTBS", rel["MTBS"], t["mtbs"], "hrs"),
              dash.gap_text("MTTR", rel["MTTR"], t["mttr"], "hrs", higher_better=False),
              f"{str(comp.index[0]).capitalize()} is the largest down cause ({comp.iloc[0] / comp.sum():.0%})" if len(comp) else "")
 r = st.columns(6)
-dash.kpi(r[0], "MTBS (hrs)", rel["MTBS"], t["mtbs"], "h", help="Working hours / number of stoppages (SM + USM)")
-dash.kpi(r[1], "MTTR (hrs)", rel["MTTR"], t["mttr"], "h", higher_better=False, help="Down hours / number of stoppages")
-dash.kpi(r[2], "MTBF (hrs)", rel["MTBF"], None, "h", help="Working hours / number of USM (breakdown) stoppages")
-dash.kpi(r[3], "Scheduled down (%)", rel["SchedDown"], t["sched_down"], help="SM hours / down hours")
+dash.kpi(r[0], "MTBS (hrs)", rel["MTBS"], t["mtbs"], "h", help="Working hours / number of stoppages (SM + USM)", prev=pv.get("MTBS"))
+dash.kpi(r[1], "MTTR (hrs)", rel["MTTR"], t["mttr"], "h", higher_better=False, help="Down hours / number of stoppages", prev=pv.get("MTTR"))
+dash.kpi(r[2], "MTBF (hrs)", rel["MTBF"], None, "h", help="Working hours / number of USM (breakdown) stoppages", prev=pv.get("MTBF"))
+dash.kpi(r[3], "Scheduled down (%)", rel["SchedDown"], t["sched_down"], help="SM hours / down hours", prev=pv.get("SchedDown"))
 pm_row = pm.iloc[0] if len(pm) else None
 if pm_row is not None and pm_row["assessable"] > 0:
     dash.kpi(r[4], "PM accuracy (%)", pm_row["PMAccuracy"], t["pm_accuracy"],

@@ -55,3 +55,26 @@ def test_saved_default_is_json_safe():
     saved = json.loads(json.dumps(F.to_saved(state)))
     assert F.from_saved(saved)["f_range"] == (D(2026, 9, 1), D(2026, 9, 15))
     assert F.from_saved(None) == {}
+
+
+def test_calendar_presets_follow_today_not_the_data():
+    today = D(2026, 9, 30)                                     # a Wednesday
+    r = lambda k: F.preset_range(k, ANCHOR, FIRST, LAST_COMPLETE, today=today)  # noqa: E731
+    assert r("today") == (today, today) and r("yesterday") == (D(2026, 9, 29),) * 2
+    assert r("this_week") == (D(2026, 9, 28), today)
+    assert r("last_week") == (D(2026, 9, 21), D(2026, 9, 27))
+
+
+def test_previous_range_for_compare():
+    assert F.previous_range("mtd", D(2026, 9, 1), D(2026, 9, 23)) == (D(2026, 8, 1), D(2026, 8, 23))
+    assert F.previous_range("mtd", D(2026, 3, 1), D(2026, 3, 31)) == (D(2026, 2, 1), D(2026, 2, 28))
+    assert F.previous_range("last_month", D(2026, 8, 1), D(2026, 8, 31)) == (D(2026, 7, 1), D(2026, 7, 31))
+    assert F.previous_range("ytd", D(2026, 1, 1), D(2026, 9, 23)) == (D(2025, 1, 1), D(2025, 9, 23))
+    assert F.previous_range("last7", D(2026, 9, 17), D(2026, 9, 23)) == (D(2026, 9, 10), D(2026, 9, 16))
+    assert F.previous_range("this_week", D(2026, 9, 28), D(2026, 9, 30)) == (D(2026, 9, 21), D(2026, 9, 23))
+
+
+def test_compare_flag_round_trips():
+    assert F.to_query({"f_cmp": True})["cmp"] == "1" and "cmp" not in F.to_query({"f_cmp": False})
+    assert F.from_query({"cmp": "1"})["f_cmp"] is True
+    assert F.from_saved({"f_period": "gone"}) == {}
