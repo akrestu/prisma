@@ -294,9 +294,11 @@ CSS = """
 .th .site{font-size:2.2cqw;font-weight:700;letter-spacing:-.02em}
 .th .per{font-size:1.15cqw;font-weight:600;color:%(ACCENT)s;margin-left:1cqw}
 .th .rng{font-size:1.05cqw;color:%(MUTED)s;margin-left:1cqw}
+.th .rev{font-size:1.05cqw;font-weight:700;letter-spacing:.06em;color:%(BG)s;background:%(MISS)s;padding:.15cqw .6cqw;border-radius:.3cqw;margin-left:1cqw}
 .th .clk{font-size:2cqw;font-weight:600}
 .th .brand{width:2.1cqw;height:2.1cqw;margin-right:.8cqw;vertical-align:-.3cqw}
 .th .app{font-size:1.05cqw;font-weight:700;letter-spacing:.08em;color:%(MUTED)s;margin-right:1.2cqw}
+.th .app{display:inline-flex;flex-direction:column;align-items:flex-end;line-height:1.1;vertical-align:middle}.th .app small{font-size:.62em;font-weight:500;letter-spacing:.02em;opacity:.75}
 .hero{display:flex;flex-direction:column;gap:.8cqw;border-right:.1cqw solid %(LINE)s;padding-right:1.4cqw;min-height:0}
 .hero .when{font-size:1.1cqw;color:%(MUTED)s}
 .hm{display:grid;gap:.05cqw}
@@ -363,10 +365,12 @@ def render(d: TvData, kiosk: bool = False, now: dt.datetime | None = None) -> st
     period = PERIOD_LABEL.get(d.period, d.period)
     head = (f'<div class="th"><div><img class="brand" alt="" src="{brand.data_uri("logo-64.png")}">'
             f'<span class="site">{escape(d.site)}</span><span class="per">{period}</span>'
-            f'<span class="rng">{escape(d.range_label)}</span></div>'
-            f'<div><span class="app">{brand.NAME}</span><span class="clk">{now:%H:%M}</span></div></div>')
+            + ('<span class="rev">REVIEW</span>' if d.review else '')
+            + f'<span class="rng">{escape(d.range_label)}</span></div>'
+            + f'<div><span class="app">{brand.NAME}<small>{escape(brand.FULL_NAME)}</small></span><span class="clk">{now:%H:%M}</span></div></div>')
     if d.empty:
-        return f'{css}<div class="tv {mode}">{head}<div class="tv-empty">No published data for this site yet.</div></div>'
+        msg = "No published data in the review range." if d.review else "No published data for this site yet."
+        return f'{css}<div class="tv {mode}">{head}<div class="tv-empty">{msg}</div></div>'
     k = {x.key: x for x in d.kpis}
     h = d.hero
     pa_t, uoa_t = k["pa"].target, k["uoa"].target

@@ -14,12 +14,12 @@ from db.engine import session_scope
 
 
 @st.cache_data(ttl=3600, max_entries=40, show_spinner=False)
-def _payload(site: str, period: str, version_key: tuple) -> tv.TvData:
-    """Cached per site × period × published version (+ config). Never per user, so safe to share."""
+def _payload(site: str, period: str, version_key: tuple, review: tuple | None = None) -> tv.TvData:
+    """Cached per site × period × review range × published version (+ config). Never per user, so safe to share."""
     with session_scope() as s:
         iv = pd.DataFrame([(p.model, p.interval_hm, p.tolerance_pct) for p in s.scalars(select(m.PMInterval))],
                           columns=["model", "interval_hm", "tolerance_pct"])
-        return tv.build(s, site, iv, period)
+        return tv.build(s, site, iv, period, *(review or (None, None)))
 
 
 def version_key(site: str) -> tuple:
@@ -41,8 +41,10 @@ def version_key(site: str) -> tuple:
     return pub, cfg
 
 
-def show(site: str, kiosk: bool, period: str = "daily") -> None:
-    st.html(render(_payload(site, period, version_key(site)), kiosk=kiosk))
+def show(site: str, kiosk: bool, period: str = "daily", review: tuple | None = None) -> None:
+    """`review` = (from, to) shows that fixed range, marked REVIEW on screen; None follows the live data."""
+    review = tuple(review) if review and all(review) else None
+    st.html(render(_payload(site, period, version_key(site), review), kiosk=kiosk))
 
 
 # ------------------------------------------------------------------ hourly production screen

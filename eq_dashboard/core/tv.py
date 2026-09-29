@@ -19,7 +19,17 @@ from sqlalchemy.orm import Session
 from core import metrics
 from core.config import DOWN, UNMAPPED
 from core.ingest import PUBLISHED
-from core.periods import PERIODS, bucket, bucket_order, fleet_summary, pretty, productivity, split_hourly, with_week
+from core.periods import (
+    PERIOD_LABEL,
+    PERIODS,
+    bucket,
+    bucket_order,
+    fleet_summary,
+    pretty,
+    productivity,
+    split_hourly,
+    with_week,
+)
 from core.targets import METRICS
 from core.validate import HOUR_SLOTS
 from db import models as m
@@ -65,6 +75,7 @@ class TvData:
     footer: dict = field(default_factory=dict)
     uoa_target: float | None = None
     hero: dict = field(default_factory=dict)  # lead numbers: latest day / week / month / year vs the full range
+    review: bool = False                      # a fixed date range chosen by the Admin, not the live data
 
     @property
     def empty(self) -> bool:
@@ -133,21 +144,40 @@ def _fmt_pct(v) -> str:
     return "—" if v is None or pd.isna(v) else f"{v * 100:.1f}%"
 
 
-def build(s: Session, site: str, intervals: pd.DataFrame | None = None, period: str = "daily") -> TvData:
+def build(s: Session, site: str, intervals: pd.DataFrame | None = None, period: str = "daily",
+          date_from: dt.date | None = None, date_to: dt.date | None = None) -> TvData:
+    """Live: the latest month / year / all data, depending on `period`. With `date_from`–`date_to` (review): exactly
+    that range, broken down by `period`; 'hourly' then shows the last day of the range."""
     period = period if period in PERIODS else "daily"
-    tv = TvData(site=site, period=period)
+    review = date_from is not None and date_to is not None
+    tv = TvData(site=site, period=period, review=review)
     ver = _versions(s, site)
     if ver.empty:
         return tv
+    if review:
+        date_from, date_to = sorted((date_from, date_to))
+        ver = ver[[date_from.replace(day=1) <= mo <= date_to for mo in ver["month"]]]
+        if ver.empty:
+            tv.range_label = f"Review {date_from:%d %b %Y} – {date_to:%d %b %Y} · no published data"
+            return tv
     latest = ver["month"].max()
-    if period in ("hourly", "daily", "weekly"):
+    if review:
+        pass
+    elif period in ("hourly", "daily", "weekly"):
         ver = ver[ver["month"] == latest]
     elif period == "monthly":
         ver = ver[[mo.year == latest.year for mo in ver["month"]]]
     tv.updated_at = ver["reviewed_at"].max()
     ev, st_, rit, coal, fuel = _load(s, site, [int(x) for x in ver["upload_id"]])
+    if review:
+        inside = lambda d, c="date": d[(d[c] >= date_from) & (d[c] <= date_to)] if len(d) else d  # noqa: E731
+        ev, rit, coal, fuel, st_ = inside(ev), inside(rit), inside(coal), inside(fuel), inside(st_, "start_date")
     if ev.empty:
+        if review:
+            tv.range_label = f"Review {date_from:%d %b %Y} – {date_to:%d %b %Y} · no published data"
         return tv
+    if review:
+        latest = ev["date"].max().replace(day=1)
 
     complete = metrics.complete_days(ev[ev["date"] >= latest]) if len(ev) else pd.Series(dtype=bool)
     tv.last_complete = complete[complete].index.max() if complete.any() else None
@@ -156,11 +186,14 @@ def build(s: Session, site: str, intervals: pd.DataFrame | None = None, period: 
         ev, rit = ev[ev["date"] == day], rit[rit["date"] == day]
         coal, fuel = coal[coal["date"] == day], fuel[fuel["date"] == day]
         st_ = st_[st_["start_date"] == day]
-        tv.range_label = f"{day:%d %b %Y} · last complete day, hourly"
+        tv.range_label = f"{day:%d %b %Y} · " + ("review, hourly" if review else "last complete day, hourly")
     tv.first_date, tv.last_date = ev["date"].min(), ev["date"].max()
     if period != "hourly":
         span = {"daily": "month to date, daily", "weekly": "month to date, weekly",
                 "monthly": "year to date, monthly", "yearly": "all data, yearly"}[period]
+        if review:
+            span = f"review, {PERIOD_LABEL[period].lower()}"
+            tv.first_date, tv.last_date = date_from, min(date_to, tv.last_date)
         tv.range_label = f"{tv.first_date:%d %b %Y} – {tv.last_date:%d %b %Y} · {span}"
 
     # breakdown frames
@@ -316,6 +349,8 @@ def build(s: Session, site: str, intervals: pd.DataFrame | None = None, period: 
     else:
         yr = ev["date"].max().year
         hero_ev, hero_label, range_name = ev[[d.year == yr for d in ev["date"]]], f"Latest year · {yr}", "All data"
+    if review and period != "hourly":
+        range_name = "Selected range"
     hk = metrics.kpis(hero_ev).iloc[0]
     tv.hero = {"label": hero_label, "range_name": range_name, "pa": float(hk["PA"]), "uoa": float(hk["UoA"]),
                "pa_range": float(k["PA"]), "uoa_range": float(k["UoA"]),

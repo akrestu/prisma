@@ -70,6 +70,8 @@ class DisplayDevice(Base):
     screen: Mapped[str] = mapped_column(String(12), default="equipment", server_default="equipment")  # | hourly
     hourly_date: Mapped[dt.date | None] = mapped_column(Date)       # None = live (the shift running now)
     hourly_shift: Mapped[str | None] = mapped_column(String(2))
+    review_from: Mapped[dt.date | None] = mapped_column(Date)       # None = live; else a fixed range (equipment)
+    review_to: Mapped[dt.date | None] = mapped_column(Date)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -40,6 +40,19 @@ def test_split_hourly_keeps_hours(parsed):
     assert s["hour_slot"].tolist()[0] == "18-19" and s["hour_slot"].tolist()[-1] == "05-06" and len(s) == 12
 
 
+def test_review_range_shows_only_that_range(published):
+    d = tv.build(published, "WBK-MAS", period="daily", date_from=dt.date(2026, 9, 5), date_to=dt.date(2026, 9, 11))
+    assert d.review and d.first_date == dt.date(2026, 9, 5) and d.last_date == dt.date(2026, 9, 11)
+    assert len(d.trend) == 7 and "review" in d.range_label
+    assert d.hero["range_name"] == "Selected range"
+    assert "REVIEW" in render(d)
+    live = tv.build(published, "WBK-MAS", period="daily")
+    assert not live.review and "REVIEW" not in render(live)
+    assert {x.key: x for x in d.kpis}["ob"].value < {x.key: x for x in live.kpis}["ob"].value
+    none = tv.build(published, "WBK-MAS", period="daily", date_from=dt.date(2020, 1, 1), date_to=dt.date(2020, 1, 31))
+    assert none.empty and "No published data in the review range" in render(none)
+
+
 def test_daily_payload_mas(published):
     d = tv.build(published, "WBK-MAS", period="daily")
     k = {x.key: x for x in d.kpis}

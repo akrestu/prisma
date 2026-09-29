@@ -54,7 +54,8 @@ with st.form("new_device", clear_on_submit=True):
             st.rerun()
 
 with session_scope() as s:
-    rows = [(d.id, d.name, d.site_code, d.period, d.active, d.last_seen, d.screen, d.hourly_date, d.hourly_shift)
+    rows = [(d.id, d.name, d.site_code, d.period, d.active, d.last_seen, d.screen, d.hourly_date, d.hourly_shift,
+             d.review_from, d.review_to)
             for d in s.scalars(select(m.DisplayDevice).order_by(m.DisplayDevice.site_code, m.DisplayDevice.name))]
 if not rows:
     st.info("No TV devices yet.")
@@ -62,13 +63,15 @@ if not rows:
 
 now = dt.datetime.now(dt.UTC)
 st.subheader("TVs")
-for did, name, site, period, active, seen, screen, h_date, h_shift in rows:
+for did, name, site, period, active, seen, screen, h_date, h_shift, r_from, r_to in rows:
     online = active and seen is not None and now - seen < dt.timedelta(minutes=10)
     state = ":yellow-badge[online]" if online else (":gray-badge[offline]" if active else ":orange-badge[revoked]")
     seen_txt = seen.astimezone(WIB).strftime("%d %b %H:%M") if seen else "never"
     with st.container(border=True):
         a, q, p, b, c, d = st.columns([2.8, 1.6, 1.4, 1.5, 0.9, 0.9])
-        a.markdown(f"**{name}** · {site} {state}  \nlast seen: {seen_txt} WIB")
+        review_txt = (f" :orange-badge[review {r_from:%d %b} – {r_to:%d %b %Y}]"
+                      if screen != "hourly" and r_from and r_to else "")
+        a.markdown(f"**{name}** · {site} {state}{review_txt}  \nlast seen: {seen_txt} WIB")
         new_screen = q.selectbox("Screen", list(SCREENS), index=list(SCREENS).index(screen) if screen in SCREENS
                                  else 0, format_func=SCREENS.get, key=f"scr{did}", label_visibility="collapsed")
         if new_screen != screen:
@@ -107,6 +110,28 @@ for did, name, site, period, active, seen, screen, h_date, h_shift in rows:
         else:
             new_period = p.selectbox("Period", PERIODS, index=PERIODS.index(period) if period in PERIODS else 1,
                                      format_func=PERIOD_LABEL.get, key=f"per{did}", label_visibility="collapsed")
+            # which data the equipment screen shows: live (latest month / year) or a fixed range to review
+            live_now = r_from is None
+            r1, r2, _ = st.columns([1.6, 2.3, 3.6])
+            mode = r1.segmented_control("Data on this TV", ["Live", "Review range"],
+                                        default="Live" if live_now else "Review range", key=f"rmode{did}",
+                                        help="Live follows the newest published data. Review range keeps a fixed "
+                                             "period on screen (marked REVIEW) until you switch back to Live.") or "Live"
+            t = today_wib()
+            rng = r2.date_input("From – to", (r_from or t.replace(day=1), r_to or t), max_value=t, key=f"rrng{did}",
+                                format="DD/MM/YYYY", disabled=mode == "Live")
+            pick = (None, None)
+            if mode == "Review range":
+                pick = tuple(rng) if isinstance(rng, (list, tuple)) and len(rng) == 2 else (r_from, r_to)
+            if pick != (r_from, r_to) and (pick == (None, None) or all(pick)):
+                with session_scope() as s:
+                    dev = s.get(m.DisplayDevice, did)
+                    dev.review_from, dev.review_to = pick
+                    audit(s, user.username, "display_review_range", site,
+                          f"{name}: {'live' if pick[0] is None else f'{pick[0]:%Y-%m-%d} – {pick[1]:%Y-%m-%d}'}")
+                st.toast(f"{name}: " + ("live data" if pick[0] is None else f"review {pick[0]:%d %b %Y} – {pick[1]:%d %b %Y}")
+                         + " (applied on the TV within a minute)")
+                st.rerun()
         if new_period != period:
             with session_scope() as s:
                 s.get(m.DisplayDevice, did).period = new_period

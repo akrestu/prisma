@@ -1,0 +1,25 @@
+"""Equipment TV screen: live or a fixed review date range per TV.
+
+Revision ID: e6f0a1b2c3d4
+Revises: d5e9f0a1b2c3
+Create Date: 2026-09-29
+"""
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "e6f0a1b2c3d4"
+down_revision: str | Sequence[str] | None = "d5e9f0a1b2c3"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.add_column("display_devices", sa.Column("review_from", sa.Date(), nullable=True))
+    op.add_column("display_devices", sa.Column("review_to", sa.Date(), nullable=True))
+
+
+def downgrade() -> None:
+    op.drop_column("display_devices", "review_to")
+    op.drop_column("display_devices", "review_from")
