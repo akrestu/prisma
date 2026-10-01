@@ -48,7 +48,7 @@ def show(site: str, kiosk: bool, period: str = "daily", review: tuple | None = N
 
 
 # ------------------------------------------------------------------ hourly production screen
-SCREENS = {"equipment": "Equipment & monthly", "hourly": "Hourly production"}
+SCREENS = {"equipment": "Equipment & monthly", "hourly": "Hourly Production"}
 
 
 @st.cache_data(ttl=60, max_entries=40, show_spinner=False)

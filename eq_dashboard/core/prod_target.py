@@ -1,23 +1,24 @@
-"""Prod_Target workbook (sheet PDTY): excavator productivity per model and hauler truck factors per model family.
+"""Productivity targets: the rules shared by Production Data and Hourly Production. No Streamlit or database.
 
-- Excavator block: EqBrand (model), TargetBy (WBK = internal target, BAU = client target), Pdty OB, Pdty Mud (BCM/h).
-- Hauler block: EqBrand (model family), truck factor for OB, Mud Blending, Mud and Coal, speeds empty/loaded/average.
+Two separate sets, each with an internal (WBK) and a client (BAU) value:
+- Production Data default, company-wide per equipment model: excavators (OB, mud BCM/h; coal t/h) and haulers
+  (OB BCM/h, coal t/h). It changes rarely and is the yardstick of the productivity dashboard.
+- Hourly Production target, per site: per excavator model, plus overrides for single units. Where a site has no
+  hourly target for an excavator, the Production Data default is used and marked 'default'.
 
-Names are matched to the unit population by prefix after dropping 'CAT': '390FL' → CAT390FL, 'SK520XDLC-10' → SK520,
-'777E-KDP' → CAT777E, 'CWE37064R' → CWE370. Prod_Target is the master; the Mst Hourly Link Muatan only fills gaps.
-No Streamlit or database here.
+Model names are matched by prefix after dropping 'CAT': a target for '390FL' covers CAT390FL, 'SK520' covers
+SK520XDLC-10, '777E' covers 777E-KDP (the longest matching key wins).
 """
 from __future__ import annotations
 
 import pandas as pd
 
-from core.io import read_workbook
-from core.validate import StructureError
-
 BASIS = {"WBK": "internal", "BAU": "client"}
 BASIS_LABEL = {"internal": "Internal target (WBK)", "client": "Client target (BAU)"}
-DEFAULT_MATERIALS = ("OB - FreeDig", "OB - Ripping", "OB - Blasting", "OB - Top Soil", "OB - MUD",
-                     "OB - Mud Blending", "CG - Coal Getting")
+BASES = tuple(BASIS_LABEL)
+# where an Hourly Production target came from
+UNIT, HOURLY, DEFAULT = "unit", "hourly", "default"
+SOURCE_LABEL = {UNIT: "unit override", HOURLY: "hourly target", DEFAULT: "Production Data default"}
 
 
 def norm(model) -> str:
@@ -30,7 +31,7 @@ def match(model, keys) -> str | None:
     m = norm(model)
     if not m:
         return None
-    hits = [k for k in keys if m.startswith(norm(k)) and norm(k)]
+    hits = [k for k in keys if isinstance(k, str) and norm(k) and m.startswith(norm(k))]
     return max(hits, key=lambda k: len(norm(k))) if hits else None
 
 
@@ -46,90 +47,81 @@ def material_class(material) -> str:
     return "OB"
 
 
-def parse(data: bytes) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(excavator targets [model, basis, pdty_ob, pdty_mud], hauler factors [family, tf_ob, tf_mudb, tf_mud,
-    tf_coal, sp_empty, sp_loaded, sp_avg])."""
-    raw = read_workbook(data)
-    if "PDTY" not in raw:
-        raise StructureError(["Sheet 'PDTY' was not found in the Prod_Target workbook."])
-    x = raw["PDTY"]
-    head = None
-    for i in range(min(10, len(x))):
-        row = [str(v).strip() for v in x.iloc[i].tolist()]
-        if "TargetBy" in row and "Pdty OB" in row:
-            head = i
-            break
-    if head is None:
-        raise StructureError(["'PDTY': the header row with 'EqBrand', 'TargetBy', 'Pdty OB' was not found."])
-    names = [str(v).strip() for v in x.iloc[head].tolist()]
-    col = {n: j for j, n in enumerate(names) if n and n != "nan"}
-    ex_brand = names.index("EqBrand")
-    hl_brand = names.index("EqBrand", ex_brand + 1) if names.count("EqBrand") > 1 else None
-    body = x.iloc[head + 1:]
-    num = lambda s: pd.to_numeric(s, errors="coerce")  # noqa: E731
-    ex = pd.DataFrame({"model": body.iloc[:, ex_brand].astype("string").str.strip(),
-                       "basis": body.iloc[:, col["TargetBy"]].astype("string").str.strip().str.upper().map(BASIS),
-                       "pdty_ob": num(body.iloc[:, col["Pdty OB"]]),
-                       "pdty_mud": num(body.iloc[:, col["Pdty Mud"]]) if "Pdty Mud" in col else None})
-    ex = ex.dropna(subset=["model", "basis"]).drop_duplicates(["model", "basis"], keep="last").reset_index(drop=True)
-    hl = pd.DataFrame(columns=["family", "tf_ob", "tf_mudb", "tf_mud", "tf_coal", "sp_empty", "sp_loaded", "sp_avg"])
-    if hl_brand is not None:
-        pick = {"tf_ob": "TF - OB (BCM)", "tf_mudb": "TF - Mud B. (BCM)", "tf_mud": "TF - Mud (BCM)",
-                "tf_coal": "TF - Coal (ton)", "sp_empty": "Sp - Empty (km/h)", "sp_loaded": "Sp - Loaded (km/h)",
-                "sp_avg": "Sp - Average (km/h)"}
-        hl = pd.DataFrame({"family": body.iloc[:, hl_brand].astype("string").str.strip(),
-                           **{k: num(body.iloc[:, col[v]]) if v in col else None for k, v in pick.items()}})
-        hl = hl.dropna(subset=["family"]).drop_duplicates("family", keep="last").reset_index(drop=True)
-    if ex.empty:
-        raise StructureError(["'PDTY': no excavator rows with TargetBy WBK or BAU."])
-    return ex, hl
+def _positive(v) -> float | None:
+    return float(v) if v is not None and pd.notna(v) and v > 0 else None
 
 
-def load_factors(hl: pd.DataFrame, pop_models, materials, fallback: pd.DataFrame | None = None
-                 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load per trip for every truck model of the population × material. Prod_Target families first; models it
-    does not cover take the Mst Hourly Link Muatan values of the same model (via hourly.load_model), if any.
-    Returns (rows [material, material_group, hauler_model, muatan], report [model, source, detail])."""
-    from core.clean import material_group
-    from core.hourly import load_model
-    tf_col = {"OB": "tf_ob", "MUDB": "tf_mudb", "MUD": "tf_mud", "CG": "tf_coal"}
-    fb = fallback if fallback is not None else pd.DataFrame(columns=["material", "hauler_model", "muatan"])
-    fb_models = sorted(set(fb["hauler_model"])) if len(fb) else []
-    rows, report = [], []
-    for pm in sorted({str(x) for x in pop_models if isinstance(x, str) and x.strip()}):
-        fam = match(pm, hl["family"]) if len(hl) else None
-        if fam is not None:
-            f = hl.set_index("family").loc[fam]
-            n = 0
-            for mat in materials:
-                v = f[tf_col[material_class(mat)]]
-                if pd.notna(v) and v > 0:
-                    rows.append((mat, pm, float(v)))
-                    n += 1
-            report.append((pm, "Prod_Target", f"family {fam} · {n} materials"))
-            continue
-        src = load_model(pm, fb_models)
-        if src is not None:
-            sub = fb[(fb["hauler_model"] == src) & fb["material"].isin(materials)]
-            rows += [(r.material, pm, float(r.muatan)) for r in sub.itertuples()]
-            report.append((pm, "Mst Hourly", f"Link Muatan model {src} · {len(sub)} materials"))
-            continue
-        report.append((pm, "—", "not in Prod_Target or Mst Hourly: fill in by hand"))
-    out = pd.DataFrame(rows, columns=["material", "hauler_model", "muatan"])
-    out.insert(1, "material_group", material_group(out["material"]).to_numpy())
-    return out, pd.DataFrame(report, columns=["model", "source", "detail"])
+def _row(table: pd.DataFrame | None, model, basis: str) -> pd.Series | None:
+    if table is None or table.empty or not isinstance(model, str):
+        return None
+    t = table[table["basis"] == basis]
+    key = match(model, t["model"])
+    return None if key is None else t[t["model"] == key].iloc[0]
 
 
 def model_target(loader_model, material, targets: pd.DataFrame, basis: str) -> float | None:
-    """Default hourly target of an excavator from its model: Pdty Mud for mud materials, Pdty OB for everything
-    else, coal included (coal getting is held to the excavator's OB productivity, in t/h)."""
+    """Production Data default of an excavator for a material: mud value for mud and mud blending, coal value for
+    coal (the OB value when no coal value is set), OB value otherwise."""
+    r = _row(targets, loader_model, basis)
+    if r is None:
+        return None
     cls = material_class(material)
-    if targets is None or targets.empty:
-        return None
-    t = targets[targets["basis"] == basis]
-    key = match(loader_model, t["model"])
-    if key is None:
-        return None
-    r = t[t["model"] == key].iloc[0]
-    v = r["pdty_mud"] if cls in ("MUD", "MUDB") else r["pdty_ob"]
-    return float(v) if pd.notna(v) and v > 0 else None
+    if cls in ("MUD", "MUDB"):
+        return _positive(r["pdty_mud"])
+    if cls == "CG":
+        return _positive(r.get("pdty_coal")) or _positive(r["pdty_ob"])
+    return _positive(r["pdty_ob"])
+
+
+def hauler_target(hauler_model, group: str, targets: pd.DataFrame, basis: str) -> float | None:
+    """Production Data default of a hauler model: BCM/h for OB, t/h for coal."""
+    r = _row(targets, hauler_model, basis)
+    return None if r is None else _positive(r["pdty_coal" if group == "CG" else "pdty_ob"])
+
+
+def hourly_target(unit, model, material, basis: str, overrides: pd.DataFrame | None,
+                  hourly_models: pd.DataFrame | None, defaults: pd.DataFrame | None) -> tuple[float | None, str | None]:
+    """Hourly Production target of one excavator and its source: the unit override, else the site's hourly target
+    for the model, else the Production Data default (marked 'default'), else none."""
+    group = "CG" if material_class(material) == "CG" else "OB"
+    if overrides is not None and len(overrides):
+        o = overrides
+        if "basis" in o:
+            o = o[o["basis"] == basis]
+        hit = o[(o["unit_id"] == unit) & (o["material_group"] == group)]
+        if len(hit) and _positive(hit["target_per_hour"].iloc[0]):
+            return float(hit["target_per_hour"].iloc[0]), UNIT
+    r = _row(hourly_models, model, basis)
+    if r is not None:
+        cls = material_class(material)
+        v = _positive(r["mud"]) if cls in ("MUD", "MUDB") else _positive(r["coal"]) if cls == "CG" else None
+        v = v or _positive(r["ob"])
+        if v:
+            return v, HOURLY
+    v = model_target(model, material, defaults, basis)
+    return (v, DEFAULT) if v else (None, None)
+
+
+def wide(table: pd.DataFrame, values: dict[str, str]) -> pd.DataFrame:
+    """Long (model, basis, value columns) → one row per model with '<label> · <basis>' columns, for editing."""
+    cols = [f"{lbl} · {b}" for b in BASES for lbl in values.values()]
+    if table is None or table.empty:
+        return pd.DataFrame(columns=["model", *cols])
+    out = table.pivot_table(index="model", columns="basis", values=list(values), aggfunc="first")
+    out.columns = [f"{values[v]} · {b}" for v, b in out.columns]
+    return out.reindex(columns=cols).reset_index().sort_values("model").reset_index(drop=True)
+
+
+def long(grid: pd.DataFrame, values: dict[str, str]) -> pd.DataFrame:
+    """Inverse of `wide`: rows without a model or without any value are dropped."""
+    recs = []
+    for r in grid.to_dict("records"):
+        model = str(r.get("model") or "").strip()
+        if not model or model.lower() == "nan":
+            continue
+        for b in BASES:
+            vals = {v: _positive(r.get(f"{lbl} · {b}")) for v, lbl in values.items()}
+            if any(x is not None for x in vals.values()):
+                recs.append({"model": model, "basis": b, **vals})
+    out = pd.DataFrame(recs, columns=["model", "basis", *values])
+    return out.drop_duplicates(["model", "basis"], keep="last").reset_index(drop=True)

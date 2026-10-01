@@ -1,4 +1,4 @@
-"""Data_Prod workbook specification (single source of truth) and structure validation.
+"""Production Data workbook specification (single source of truth) and structure validation.
 
 The same column list drives three things: the upload check, the downloadable template and the export, so they can
 never drift apart. Extra columns in a workbook are allowed and ignored.
@@ -11,8 +11,17 @@ import pandas as pd
 
 from core.io import frame
 
-DATASET = "Data_Prod"
-TEMPLATE_VERSION = 1
+# the three datasets, named the same everywhere: menu, page titles, templates, file names
+UNIT_POPULATION, PRODUCTION_DATA, HOURLY_PRODUCTION = "Unit Population", "Production Data", "Hourly Production"
+
+
+def file_stem(dataset: str) -> str:
+    """'Production Data' → 'Production_Data' (file names have no spaces)."""
+    return dataset.replace(" ", "_")
+
+
+DATASET = PRODUCTION_DATA
+TEMPLATE_VERSION = 2    # v2: English sheet names (v1 names are still read, see LEGACY_SHEETS)
 META_SHEET = "_meta"
 HOUR_SLOTS = ["06-07", "07-08", "08-09", "09-10", "10-11", "11-12", "12-13", "13-14", "14-15", "15-16",
               "16-17", "17-18", "18-19", "19-20", "20-21", "21-22", "22-23", "23-00", "00-01", "01-02",
@@ -37,7 +46,7 @@ class Sheet:
 
 
 SHEETS: tuple[Sheet, ...] = (
-    Sheet("Populasi Unit", 0, "Unit master: one row per equipment. The Site column decides which site owns the unit.", (
+    Sheet("Unit Population", 0, "Unit master: one row per equipment. The Site column decides which site owns the unit.", (
         Col("Type", "text", "Equipment type (Hauling, Loading, Dozing, …)", "Hauling"),
         Col("Description", "text", "Short description", "Dump Truck"),
         Col("Equipment", "text", "Unit ID, unique (spaces are removed on import)", "WHT026"),
@@ -45,10 +54,10 @@ SHEETS: tuple[Sheet, ...] = (
         Col("Manufacturer", "text", "Manufacturer", "Caterpillar"),
         Col("Site", "list", "Site code; units without a site stay UNMAPPED until an Admin maps them", "WBK-MAS"),
     )),
-    Sheet("Eq.Event", 0, "Time events per unit and shift: what each unit did, from when to when.", (
+    Sheet("Equipment Events", 0, "Time events per unit and shift: what each unit did, from when to when.", (
         Col("Date", "date", "Production date (one month per file)", "2026-09-01"),
         Col("Shift", "list", "DS (day) or NS (night); day/night are also accepted", "DS", ("DS", "NS")),
-        Col("Unit ID", "text", "Unit ID as in Populasi Unit", "WHT026"),
+        Col("Unit ID", "text", "Unit ID as in the Unit Population", "WHT026"),
         Col("Operator", "text", "Operator name (optional)", "Budi S."),
         Col("Jam Awal", "time", "Start time (HH:MM)", "06:00"),
         Col("Jam Akhir", "time", "End time (HH:MM)", "07:30"),
@@ -60,7 +69,7 @@ SHEETS: tuple[Sheet, ...] = (
         Col("Reason", "text", "3-digit reason code + text: 1xx operating, 2xx idle, 3xx standby, 4xx USM, 5xx SM",
             "101 LOADING"),
     )),
-    Sheet("Ritasi Unit", 1, "Trips per hauler × loader × material, counted per production hour (06-07 … 05-06).", (
+    Sheet("Hauler Trips", 1, "Trips per hauler × loader × material, counted per production hour (06-07 … 05-06).", (
         Col("Date", "date", "Production date", "2026-09-01"),
         Col("EqNumber", "text", "Hauler unit ID", "WHT026"),
         Col("EqModel", "text", "Hauler model", "777E"),
@@ -74,7 +83,7 @@ SHEETS: tuple[Sheet, ...] = (
         Col("H Distance", "number", "Horizontal haul distance (m)", 1800),
         *(Col(h, "int", f"Trips in hour {h}", None) for h in HOUR_SLOTS),
     )),
-    Sheet("Data Timbangan", 0, "Weighbridge coal tickets. Tickets with supplier BATAL are excluded.", (
+    Sheet("Coal Weighbridge", 0, "Weighbridge coal tickets. Tickets with supplier BATAL are excluded.", (
         Col("Date", "date", "Production date", "2026-09-01"),
         Col("No. ID.", "text", "Ticket number", "CG-M090000811"),
         Col("Nama Supplier", "text", "Supplier; BATAL = cancelled ticket", "WBK"),
@@ -88,7 +97,7 @@ SHEETS: tuple[Sheet, ...] = (
         Col("Tone", "number", "Net weight in ton", 28.5),
         Col("V Distance", "number", "Vertical haul distance (m)", 40),
     )),
-    Sheet("Fuel Consume", 0, "Fuel given to each unit.", (
+    Sheet("Fuel Consumption", 0, "Fuel given to each unit.", (
         Col("DATE", "date", "Date", "2026-09-01"),
         Col("SHIFT", "list", "I (day) or II (night); DS/NS also accepted", "I", ("I", "II")),
         Col("MODEL", "text", "Unit model", "CGE37084R"),
@@ -96,7 +105,7 @@ SHEETS: tuple[Sheet, ...] = (
         Col("TIME", "time", "Time of refuelling (HH:MM)", "07:10"),
         Col("FLUID CONSUMPTION", "number", "Litres", 159),
     )),
-    Sheet("Fuel Receipt", 0, "Fuel received per delivery note.", (
+    Sheet("Fuel Receipts", 0, "Fuel received per delivery note.", (
         Col("DATE_RECEIPT", "date", "Date received", "2026-09-03"),
         Col("SHIFT", "list", "I or II", "I", ("I", "II")),
         Col("LOCATION", "text", "Vendor / location", "PT. TBM"),
@@ -107,17 +116,23 @@ SHEETS: tuple[Sheet, ...] = (
     )),
 )
 SHEET_BY_NAME = {sh.name: sh for sh in SHEETS}
-POPULATION = SHEET_BY_NAME["Populasi Unit"]
-# Unit population now lives in its own workbook (Unit_Population, versioned with an effective date). The sheet is
-# still accepted in older Data_Prod files and used when no population version applies to the month.
-OPTIONAL = {"Populasi Unit"}
+POPULATION = SHEET_BY_NAME["Unit Population"]
+EVENTS, TRIPS, WEIGHBRIDGE, FUEL, RECEIPTS = ("Equipment Events", "Hauler Trips", "Coal Weighbridge",
+                                              "Fuel Consumption", "Fuel Receipts")
+# template v1 (and every Data_Prod workbook made before it) used these sheet names; they are still read
+LEGACY_SHEETS = {"Populasi Unit": "Unit Population", "Eq.Event": EVENTS, "Ritasi Unit": TRIPS,
+                 "Data Timbangan": WEIGHBRIDGE, "Fuel Consume": FUEL, "Fuel Receipt": RECEIPTS}
+OLD_NAME = {new: old for old, new in LEGACY_SHEETS.items()}
+# Unit population lives in its own workbook (Unit Population, versioned with an effective date). The sheet is
+# still accepted in older Production Data files and used when no population version applies to the month.
+OPTIONAL = {"Unit Population"}
 DATA_SHEETS = tuple(sh for sh in SHEETS if sh.name not in OPTIONAL)
 # legacy view used by older code: sheet -> (header row, required columns)
 SPEC: dict[str, tuple[int, list[str]]] = {sh.name: (sh.header_row, [c.name for c in sh.cols]) for sh in SHEETS}
 
 
 class StructureError(ValueError):
-    """The workbook does not follow the Data_Prod format. `problems` holds one message per issue."""
+    """The workbook does not follow the Production Data format. `problems` holds one message per issue."""
 
     def __init__(self, problems: list[str]):
         self.problems = problems
@@ -132,9 +147,15 @@ def template_meta(raw: dict[str, pd.DataFrame]) -> dict[str, str]:
     return {str(k).strip(): str(v).strip() for k, v in zip(m.iloc[:, 0], m.iloc[:, 1], strict=True) if pd.notna(k)}
 
 
+def rename_legacy(raw: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """Old sheet names (template v1, Data_Prod) → current names. A sheet already under its new name wins."""
+    return {(LEGACY_SHEETS[k] if k in LEGACY_SHEETS and LEGACY_SHEETS[k] not in raw else k): v for k, v in raw.items()}
+
+
 def validate(raw: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """Return a framed DataFrame per sheet, or raise StructureError listing every problem at once."""
     problems, frames = [], {}
+    raw = rename_legacy(raw)
     meta = template_meta(raw)
     ver = meta.get("template_version")
     if ver and ver.isdigit() and int(ver) > TEMPLATE_VERSION:
@@ -144,7 +165,8 @@ def validate(raw: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         if sh.name not in raw and sh.name in OPTIONAL:
             continue
         if sh.name not in raw:
-            problems.append(f"Sheet '{sh.name}' was not found (sheet names must match the template exactly).")
+            problems.append(f"Sheet '{sh.name}' was not found (sheet names must match the template exactly; "
+                            f"the old name '{OLD_NAME[sh.name]}' is also accepted).")
             continue
         if len(raw[sh.name]) <= sh.header_row:
             problems.append(f"Sheet '{sh.name}' is empty: the column names belong in row {sh.header_row + 1}.")

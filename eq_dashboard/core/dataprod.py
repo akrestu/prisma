@@ -1,4 +1,4 @@
-"""Data_Prod workbooks: the blank template, the export of stored data, and the file-name convention.
+"""Production Data workbooks: the blank template, the export of stored data, and the file-name convention.
 
 Both the template and the export are written from core.validate.SHEETS, so an exported file can be corrected in
 Excel and uploaded again (round trip), and a filled template always passes the structure check.
@@ -18,9 +18,23 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from core.config import now_wib
-from core.validate import DATA_SHEETS, DATASET, HOUR_SLOTS, META_SHEET, TEMPLATE_VERSION, Sheet
+from core.validate import (
+    DATA_SHEETS,
+    DATASET,
+    EVENTS,
+    FUEL,
+    HOUR_SLOTS,
+    META_SHEET,
+    RECEIPTS,
+    TEMPLATE_VERSION,
+    TRIPS,
+    WEIGHBRIDGE,
+    Sheet,
+    file_stem,
+)
 
-NAME_RE = re.compile(r"data[_ -]?prod[_ -]?(\d{4})[-_]?(\d{2})", re.I)
+# Production_Data_2026-09 (current) or Data_Prod_2026-09 (older files)
+NAME_RE = re.compile(r"(?:production[_ -]?data|data[_ -]?prod)[_ -]?(\d{4})[-_]?(\d{2})", re.I)
 MAX_ROWS = 100_000          # validation / formatting range per sheet
 HEAD_FILL = PatternFill("solid", fgColor="F2C230")  # PRISMA hi-vis yellow
 HEAD_FONT = Font(bold=True, color="141517")
@@ -32,8 +46,8 @@ SHIFT_FUEL = {"DS": "I", "NS": "II"}
 
 # ------------------------------------------------------------------ file names
 def file_name(month: dt.date, site: str | None = None, ext: str = "xlsx") -> str:
-    """Data_Prod_2026-09.xlsx / Data_Prod_2026-09_WBK-MAS.xlsx"""
-    return f"{DATASET}_{month:%Y-%m}" + (f"_{site}" if site else "") + f".{ext}"
+    """Production_Data_2026-09.xlsx / Production_Data_2026-09_WBK-MAS.xlsx"""
+    return f"{file_stem(DATASET)}_{month:%Y-%m}" + (f"_{site}" if site else "") + f".{ext}"
 
 
 def month_from_name(name: str) -> dt.date | None:
@@ -173,22 +187,25 @@ def _bytes(wb: Workbook) -> bytes:
 
 
 RULES = [
-    "One month per file (month to date is fine), or several months such as a whole year: the app splits it by month. "
-    "Upload the same month again to replace it; old versions are kept.",
-    "Do not rename sheets or column headers. Headers are in row 1, except 'Ritasi Unit' where they are in row 2.",
-    "Units and their sites come from the separate Unit_Population workbook (Data → Unit population).",
+    "One month per file (month to date is fine), or several months such as a whole year: the app splits it by month "
+    "and each site × month is approved on its own. Upload a month again to replace it; old versions are kept.",
+    f"Do not rename sheets or column headers. Headers are in row 1, except '{TRIPS}' where they are in row 2. "
+    "Files with the old sheet names (Eq.Event, Ritasi Unit, Data Timbangan, Fuel Consume, Fuel Receipt) still work.",
+    "Units and their sites come from the separate Unit Population workbook (Input & upload → Unit Population).",
     "Extra columns are allowed and ignored. Empty rows are skipped.",
     "Dates must be real Excel dates, times real Excel times (hover a header to see its description and an example).",
-    "Save as .xlsx or .xlsb and name it Data_Prod_YYYY-MM.xlsx, for example Data_Prod_2026-09.xlsx.",
-    "Upload it in PRISMA → Data → Data_Prod → Import. Structure and data quality are checked before anything is saved.",
+    f"Save as .xlsx or .xlsb and name it {file_stem(DATASET)}_YYYY-MM.xlsx (one month, e.g. "
+    f"{file_stem(DATASET)}_2026-09.xlsx) or {file_stem(DATASET)}_YYYY.xlsx (a whole year).",
+    f"Upload it in PRISMA → Input & upload → {DATASET} → Import. Structure and data quality are checked before "
+    "anything is saved. Small corrections can also be made in the Edit tab without Excel.",
 ]
 
 
 # ------------------------------------------------------------------ template
 def build_template(sites: list[str]) -> bytes:
-    """Blank Data_Prod workbook. Units and their sites come from the separate Unit_Population workbook."""
+    """Blank Production Data workbook. Units and their sites come from the separate Unit Population workbook."""
     wb = Workbook()
-    _readme(wb, "PRISMA · Data_Prod template", [
+    _readme(wb, f"PRISMA · {DATASET} template", [
         "Production & Reliability Information System for Mining Analytics — monthly production data workbook.", "", *RULES])
     lists = _lists(wb, sites)
     for sh in DATA_SHEETS:
@@ -226,32 +243,56 @@ def _time(frac) -> dt.time | None:
     return dt.time(secs // 3600, secs % 3600 // 60, secs % 60)
 
 
-# ------------------------------------------------------------------ export (stored data → Data_Prod workbook)
-def export_workbook(t: dict[str, pd.DataFrame], month: dt.date, sites: list[str]) -> bytes:
-    """`t` holds stored tables keyed like repo.EXPLORER_TABLES short names: units, events, ritase, coal, fuel,
-    receipt. The result re-imports to the same numbers (round trip)."""
+# ------------------------------------------------------------------ export (stored data → Production Data workbook)
+def export_rows(t: dict[str, pd.DataFrame]) -> dict[str, list[list]]:
+    """`t` holds stored tables keyed like repo.EXPORT_TABLES: units, events, ritase, coal, fuel, receipt.
+    Returns the rows of every data sheet in template column order; they re-import to the same numbers."""
+    return {
+        EVENTS: _event_rows(t["events"]),
+        TRIPS: _ritase_rows(t["ritase"]),
+        WEIGHBRIDGE: [[_v(r.date), _v(r.ticket_id), _v(r.supplier), _v(r.product), _v(r.time_in), _v(r.time_out),
+                       _v(r.loader), _v(r.shift), _v(r.dt_unit), _v(r.dist_h), _v(r.ton), _v(r.dist_v)]
+                      for r in t["coal"].sort_values(["date", "time_in"]).itertuples()],
+        FUEL: [[_v(r.date), SHIFT_FUEL.get(r.shift, _v(r.shift)), _v(r.model), _v(r.unit_id), _time(r.time),
+                _v(r.liters)] for r in t["fuel"].sort_values(["date", "unit_id"]).itertuples()],
+        RECEIPTS: [[_v(r.date), SHIFT_FUEL.get(r.shift, _v(r.shift)), _v(r.vendor), _v(r.operator), _v(r.unit),
+                    _v(r.dn_no), _v(r.liters)] for r in t["receipt"].sort_values("date").itertuples()],
+    }
+
+
+def export_frames(t: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """The same rows as DataFrames with the template's column names (the manual-edit grids)."""
+    return {sh.name: pd.DataFrame(export_rows(t)[sh.name] or None, columns=[c.name for c in sh.cols])
+            for sh in DATA_SHEETS}
+
+
+def workbook(rows: dict[str, list[list]], month: dt.date, sites: list[str], kind: str, note: str) -> bytes:
+    """A Production Data workbook from rows per sheet (export and manual edit share it, so both re-import exactly
+    like an uploaded file)."""
     wb = Workbook()
-    _readme(wb, f"PRISMA · Data_Prod export · {month:%B %Y} · {', '.join(sites)}", [
-        "Exported from PRISMA (PUBLISHED data). Edit in Excel and upload again to create a new version.",
-        "Stoppages, weeks and data quality are recalculated on upload, so they are not part of this file.", "",
+    _readme(wb, f"PRISMA · {DATASET} {kind} · {month:%B %Y} · {', '.join(sites)}", [
+        note, "Stoppages, weeks and data quality are recalculated on upload, so they are not part of this file.", "",
         *RULES])
     lists = _lists(wb, sites)
-    rows = {
-        "Eq.Event": _event_rows(t["events"]),
-        "Ritasi Unit": _ritase_rows(t["ritase"]),
-        "Data Timbangan": [[_v(r.date), _v(r.ticket_id), _v(r.supplier), _v(r.product), _v(r.time_in),
-                            _v(r.time_out), _v(r.loader), _v(r.shift), _v(r.dt_unit), _v(r.dist_h), _v(r.ton),
-                            _v(r.dist_v)] for r in t["coal"].sort_values(["date", "time_in"]).itertuples()],
-        "Fuel Consume": [[_v(r.date), SHIFT_FUEL.get(r.shift, _v(r.shift)), _v(r.model), _v(r.unit_id),
-                          _time(r.time), _v(r.liters)] for r in t["fuel"].sort_values(["date", "unit_id"]).itertuples()],
-        "Fuel Receipt": [[_v(r.date), SHIFT_FUEL.get(r.shift, _v(r.shift)), _v(r.vendor), _v(r.operator), _v(r.unit),
-                          _v(r.dn_no), _v(r.liters)] for r in t["receipt"].sort_values("date").itertuples()],
-    }
     for sh in DATA_SHEETS:
-        _sheet(wb, sh, rows[sh.name], lists)
+        _sheet(wb, sh, rows.get(sh.name), lists)
     wb.move_sheet("Lists", offset=len(wb.sheetnames))
-    _meta(wb, "export", {"month": f"{month:%Y-%m}", "sites": ",".join(sites)})
+    _meta(wb, kind, {"month": f"{month:%Y-%m}", "sites": ",".join(sites)})
     return _bytes(wb)
+
+
+def export_workbook(t: dict[str, pd.DataFrame], month: dt.date, sites: list[str]) -> bytes:
+    return workbook(export_rows(t), month, sites, "export",
+                    "Exported from PRISMA (PUBLISHED data). Edit in Excel and upload again to create a new version.")
+
+
+def frames_workbook(frames: dict[str, pd.DataFrame], month: dt.date, sites: list[str]) -> bytes:
+    """Edited grids (export_frames layout) → workbook bytes for the normal import pipeline."""
+    rows = {}
+    for sh in DATA_SHEETS:
+        df = frames[sh.name].dropna(how="all")
+        rows[sh.name] = [[_v(x) for x in r] for r in df[[c.name for c in sh.cols]].itertuples(index=False)]
+    return workbook(rows, month, sites, "manual_edit", "Made in PRISMA from the manual edit grids.")
 
 
 def _event_rows(ev: pd.DataFrame) -> list[list]:

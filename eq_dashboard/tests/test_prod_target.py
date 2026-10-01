@@ -1,73 +1,82 @@
-"""Prod_Target: parsing PDTY, name matching, model targets by basis and material, truck factors per population."""
+"""Targets: Production Data defaults (excavator + hauler per model) and Hourly Production targets (per site model,
+unit overrides, fallback to the default), the wide/long grids and the hourly targets workbook."""
 from __future__ import annotations
-
-from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from core import hourly as H
+from core import hourly_targets as HT
 from core import prod_target as PT
 
-FILE = Path(__file__).resolve().parents[2] / "Prod_Target.xlsx"
-pytestmark = pytest.mark.skipif(not FILE.exists(), reason="Prod_Target.xlsx not found")
+DEFAULTS = pd.DataFrame([  # Production Data default, excavators
+    ("CAT6020B", "internal", 800.0, None, None), ("CAT6020B", "client", 625.0, None, None),
+    ("EX1200", "internal", 450.0, 200.0, None), ("SK330", "internal", 175.0, 100.0, 150.0),
+], columns=["model", "basis", "pdty_ob", "pdty_mud", "pdty_coal"])
+HAULERS = pd.DataFrame([("CAT777E", "internal", 160.0, 120.0)], columns=["model", "basis", "pdty_ob", "pdty_coal"])
+HOURLY = pd.DataFrame([("6020B", "internal", 900.0, None, None)], columns=["model", "basis", "ob", "mud", "coal"])
+OVERRIDES = pd.DataFrame([("WEX015", "6020B", "OB", "internal", 1000.0)],
+                         columns=["unit_id", "model", "material_group", "basis", "target_per_hour"])
 
 
-@pytest.fixture(scope="module")
-def pdty():
-    return PT.parse(FILE.read_bytes())
+def test_names_match_by_prefix():
+    assert PT.match("390FL", ["CAT390FL"]) == "CAT390FL" and PT.match("SK520XDLC-10", ["SK520", "SK5"]) == "SK520"
+    assert PT.match("777E-KDP", HAULERS["model"]) == "CAT777E" and PT.match("KINGKAN 380", ["CAT777E"]) is None
 
 
-def test_parse_both_blocks(pdty):
-    ex, hl = pdty
-    assert set(ex["basis"]) == {"internal", "client"} and ex["model"].nunique() == 12
-    r = ex[(ex["model"] == "CAT390FL")].set_index("basis")
-    assert (r.loc["internal", "pdty_ob"], r.loc["client", "pdty_ob"], r.loc["internal", "pdty_mud"]) == (480, 400, 200)
-    f = hl.set_index("family")
-    assert f.loc["CAT777E", "tf_ob"] == 41 and f.loc["CAT777E", "tf_mudb"] == 28 and f.loc["CWE280", "tf_coal"] == 22.5
+def test_production_data_default_by_basis_and_material():
+    assert PT.model_target("6020B", "OB - FreeDig", DEFAULTS, "internal") == 800
+    assert PT.model_target("6020B", "OB - FreeDig", DEFAULTS, "client") == 625
+    assert PT.model_target("EX1200-6", "OB - MUD", DEFAULTS, "internal") == 200
+    assert PT.model_target("SK330-10", "OB - Mud Blending", DEFAULTS, "internal") == 100
+    assert PT.model_target("SK330-10", "CG - Coal Getting", DEFAULTS, "internal") == 150    # own coal value
+    assert PT.model_target("6020B", "CG - Coal Getting", DEFAULTS, "internal") == 800      # no coal value → OB
+    assert PT.model_target("PC2000", "OB", DEFAULTS, "internal") is None
+    assert PT.hauler_target("777E-KDP", "OB", HAULERS, "internal") == 160
+    assert PT.hauler_target("777E-KDP", "CG", HAULERS, "internal") == 120
+    assert PT.hauler_target("777E-KDP", "OB", HAULERS, "client") is None
 
 
-def test_population_names_match_prod_target_names(pdty):
-    ex, hl = pdty
-    assert PT.match("390FL", ex["model"]) == "CAT390FL" and PT.match("EX1200-6", ex["model"]) == "EX1200"
-    assert PT.match("SK520XDLC-10", ex["model"]) == "SK520" and PT.match("ZX470LC-5G", ex["model"]) == "ZX470"
-    assert PT.match("777E-KDP", hl["family"]) == "CAT777E" and PT.match("CWE28064R", hl["family"]) == "CWE280"
-    assert PT.match("KINGKAN 380", hl["family"]) is None
+@pytest.mark.parametrize(("unit", "model", "basis", "want"), [
+    ("WEX015", "CAT6020B", "internal", (1000.0, PT.UNIT)),       # unit override first
+    ("WEX016", "CAT6020B", "internal", (900.0, PT.HOURLY)),      # then the site's hourly target of the model
+    ("WEX016", "CAT6020B", "client", (625.0, PT.DEFAULT)),       # then the Production Data default
+    ("WEX099", "PC2000", "internal", (None, None)),              # nothing anywhere
+])
+def test_hourly_target_order(unit, model, basis, want):
+    assert PT.hourly_target(unit, model, "OB - FreeDig", basis, OVERRIDES, HOURLY, DEFAULTS) == want
 
 
-def test_model_target_follows_material_and_basis(pdty):
-    ex, _ = pdty
-    assert PT.model_target("6020B", "OB - FreeDig", ex, "internal") == 800
-    assert PT.model_target("6020B", "OB - FreeDig", ex, "client") == 625
-    assert PT.model_target("EX1200-6", "OB - MUD", ex, "internal") == 200
-    assert PT.model_target("SK330-10", "OB - Mud Blending", ex, "internal") == 100
-    assert PT.model_target("SK330-10", "CG - Coal Getting", ex, "internal") == 175       # coal = OB productivity
+def test_wide_long_round_trip():
+    values = {"pdty_ob": "OB BCM/h", "pdty_mud": "Mud BCM/h", "pdty_coal": "Coal t/h"}
+    g = PT.wide(DEFAULTS, values)
+    assert list(g.columns) == ["model", "OB BCM/h · internal", "Mud BCM/h · internal", "Coal t/h · internal",
+                               "OB BCM/h · client", "Mud BCM/h · client", "Coal t/h · client"]
+    back = PT.long(pd.concat([g, pd.DataFrame({"model": ["EMPTY"]})]), values)   # a row without values is dropped
+    pd.testing.assert_frame_equal(back.sort_values(["model", "basis"]).reset_index(drop=True),
+                                  DEFAULTS.sort_values(["model", "basis"]).reset_index(drop=True), check_dtype=False)
 
 
-def test_truck_factors_per_population_model_with_mst_fallback(pdty):
-    _, hl = pdty
-    mst = pd.DataFrame([("OB - FreeDig", "7555B", 20.0), ("OB - MUD", "7555B", 12.0)],
-                       columns=["material", "hauler_model", "muatan"])
-    mats = ["OB - FreeDig", "OB - MUD", "OB - Mud Blending", "CG - Coal Getting"]
-    rows, rep = PT.load_factors(hl, ["777E-KDP", "CWE37064R", "7555B", "KINGKAN 380"], mats, mst)
-    look = rows.set_index(["material", "hauler_model"])["muatan"]
-    assert look[("OB - FreeDig", "777E-KDP")] == 41 and look[("OB - Mud Blending", "777E-KDP")] == 28
-    assert look[("CG - Coal Getting", "CWE37064R")] == 22.5 and ("CG - Coal Getting", "777E-KDP") not in look
-    assert look[("OB - MUD", "7555B")] == 12                                     # from Mst Hourly
-    src = rep.set_index("model")["source"]
-    assert src["777E-KDP"] == "Prod_Target" and src["7555B"] == "Mst Hourly" and src["KINGKAN 380"] == "—"
+def test_resolve_marks_default_targets():
+    lf = pd.DataFrame({"material": ["OB - FreeDig"], "material_group": ["OB"], "hauler_model": ["777E"],
+                       "muatan": [41.0]})
+    units = pd.DataFrame({"unit_id": ["WEX015", "WEX016", "WHT026"], "model": ["CAT6020B", "CAT6020B", "777E"],
+                          "type": ["Loading", "Loading", "Hauling"], "site": ["WBK-BAU"] * 3})
+    rows = pd.DataFrame({"loader": ["WEX015", "WEX016"], "hauler": ["WHT026", "WHT026"],
+                         "material": ["OB - FreeDig"] * 2, "r1": [3, 2]})
+    res = H.resolve(rows, lf, OVERRIDES, units, model_targets=DEFAULTS, basis="client", hourly_models=HOURLY)
+    assert res.rows["target_per_hour"].tolist() == [625.0, 625.0]          # client: no override, no hourly target
+    assert res.rows["target_source"].tolist() == ["default", "default"]
+    assert any("Production Data default" in w for w in res.warnings)
+    res = H.resolve(rows, lf, OVERRIDES, units, model_targets=DEFAULTS, basis="internal", hourly_models=HOURLY)
+    assert res.rows["target_source"].tolist() == ["unit", "hourly"]
 
 
-def test_resolve_uses_model_target_unless_overridden(pdty):
-    ex, _ = pdty
-    lf = pd.DataFrame([("OB - MUD", "OB", "777E-KDP", 18.0)], columns=["material", "material_group", "hauler_model",
-                                                                     "muatan"])
-    units = pd.DataFrame([("WEX008", "Loading", "EX", "EX1200-6", "HIT", "WBK-BAU"),
-                          ("WHT018", "Hauling", "DT", "777E-KDP", "CAT", "WBK-BAU")],
-                         columns=["unit_id", "type", "description", "model", "manufacturer", "site"])
-    rows = pd.DataFrame([{"loader": "WEX008", "hauler": "WHT018", "material": "OB - MUD", "r1": 3}])
-    no_ov = pd.DataFrame(columns=["unit_id", "model", "material_group", "target_per_hour"])
-    assert H.resolve(rows, lf, no_ov, units, model_targets=ex).rows.loc[0, "target_per_hour"] == 200
-    assert H.resolve(rows, lf, no_ov, units, model_targets=ex, basis="client").rows.loc[0, "target_per_hour"] == 200
-    ov = pd.DataFrame([("WEX008", "EX1200-6", "OB", 260.0)], columns=no_ov.columns)
-    assert H.resolve(rows, lf, ov, units, model_targets=ex).rows.loc[0, "target_per_hour"] == 260
+def test_hourly_targets_workbook_round_trip():
+    data = HT.build_template("WBK-BAU", HOURLY, OVERRIDES, DEFAULTS, ["CAT6020B", "EX1200-6"])
+    tf = HT.parse_template(data)
+    assert tf.site == "WBK-BAU" and not tf.problems
+    assert tf.models[["model", "basis", "ob"]].values.tolist() == [["6020B", "internal", 900.0]]
+    assert tf.overrides[["unit_id", "material_group", "basis", "target_per_hour"]].values.tolist() == \
+        [["WEX015", "OB", "internal", 1000.0]]
+    assert HT.file_name("WBK-BAU") == "Hourly_Production_targets_WBK-BAU.xlsx"

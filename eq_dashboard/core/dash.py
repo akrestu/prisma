@@ -172,9 +172,9 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
     if pub.empty:
         msg = "No published data for your sites yet."
         if user.role in ("admin", "site_manager"):
-            msg += " Open **Data → Approval** to approve pending uploads."
+            msg += " Open **Approval** to approve pending uploads."
         elif user.role == "data_officer":
-            msg += " Import a workbook in **Data → Data_Prod**, then wait for Site Manager approval."
+            msg += " Import a workbook in **Input & upload → Production Data**, then wait for Site Manager approval."
         st.info(msg)
         st.stop()
     _seed_filters(user)
@@ -342,7 +342,7 @@ def coverage(c: Ctx) -> None:
     if c.compare and c.prev_range:
         parts.append(f"compared with {F.range_label(*c.prev_range)}" if c.prev is not None
                      else f"no published data to compare for {F.range_label(*c.prev_range)}")
-    st.markdown(f'<div style="color:{T.MUTED};font-size:.85rem;margin:0 0 -.4rem">{" · ".join(parts)}</div>',
+    st.markdown(f'<div style="color:var(--pr-muted);font-size:.85rem;margin:0 0 -.4rem">{" · ".join(parts)}</div>',
                 unsafe_allow_html=True)
 
 
@@ -469,7 +469,7 @@ def plot(fig: go.Figure, height: int = 360, bottom: int = 10) -> None:
         fig.update_layout(legend=dict(orientation="h", traceorder="normal", x=0, xanchor="left",
                                       yref="container", y=0, yanchor="bottom"))
         bottom, height = max(bottom, 56), height + 30
-    fig.update_layout(template="haulroad", height=height, margin=dict(l=10, r=10, t=48, b=bottom), legend_title_text="")
+    fig.update_layout(template="streamlit+haulroad", height=height, margin=dict(l=10, r=10, t=48, b=bottom), legend_title_text="")
     st.plotly_chart(fig, width="stretch", config={"displaylogo": False})
 
 
@@ -519,7 +519,7 @@ def summary(*parts: str) -> None:
     if text:
         text = html.escape(text)  # parts contain names read from uploaded workbooks (reasons, units, sites)
         st.markdown(f'<div style="border-left:3px solid {T.ACCENT};padding:2px 0 2px 12px;margin:-4px 0 14px;'
-                    f'font-size:1.02rem;color:{T.TEXT}">{text}.</div>', unsafe_allow_html=True)
+                    f'font-size:1.02rem;color:var(--pr-text)">{text}.</div>', unsafe_allow_html=True)
 
 
 def gap_text(name: str, value, target, unit: str = "%", higher_better: bool = True) -> str:

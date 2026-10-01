@@ -1,4 +1,4 @@
-"""Unit population: versioned master list of units and their site (Unit_Population workbook, effective date)."""
+"""Unit Population: versioned master list of units and their site (Unit Population workbook, effective date)."""
 import pandas as pd
 import streamlit as st
 
@@ -7,7 +7,7 @@ from core.config import UNMAPPED, today_wib
 from core.ingest import audit
 from core.io import sha256
 from core.ui import excel_download, fmt_num, require, sites_for
-from core.validate import StructureError
+from core.validate import StructureError, file_stem
 from db import repo
 from db.engine import session_scope
 
@@ -15,10 +15,10 @@ MAX_MB = 20
 
 user = require("unit_population")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
-st.title("Unit population")
-st.caption("The master list of units and the site that owns each one. Upload a new version whenever units arrive, "
-           "leave or move; each version applies from its effective date, so older months keep the population "
-           "that was valid then.")
+st.title(pop.DATASET)
+st.caption("The master list of units and the site that owns each one. It changes rarely: upload a new version only "
+           "when a unit arrives, leaves, moves site or changes type/model. Each version applies from its effective "
+           "date, so older months keep the population that was valid then.")
 
 msg = st.session_state.pop("pop_msg", None)
 if msg:
@@ -44,17 +44,18 @@ t_imp, t_now, t_hist = st.tabs(["Import", "Current units", "Versions"])
 with t_imp:
     c1, c2 = st.columns([2, 1])
     f = c1.file_uploader(f"Choose a {pop.DATASET} workbook (.xlsx or .xlsb)", type=["xlsx", "xlsb"],
-                         key="pop_file", max_upload_size=MAX_MB)
+                         key=f"pop_file_{st.session_state.get('pop_ver', 0)}", max_upload_size=MAX_MB)
     with c2:
         st.download_button("Download template (.xlsx)",
                            lambda: pop.build_template(sites, current, today_wib()),
-                           file_name=f"{pop.DATASET}_{today_wib():%Y-%m-%d}.xlsx", on_click="ignore",
+                           file_name=pop.file_name(today_wib()), on_click="ignore",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        st.caption("Pre-filled with the units in force today: edit and upload it back.")
+        st.caption("Pre-filled with the units in force today: change only what changed and upload it back.")
     if f is not None:
         data = f.getvalue()
         try:
-            pf = pop.parse_population(data)
+            with st.spinner(f"Reading {f.name}…"):
+                pf = pop.parse_population(data)
         except StructureError as e:
             for p_ in e.problems:
                 st.error(p_)
@@ -96,23 +97,27 @@ with t_imp:
         if len(same_day):
             st.caption(f"A version effective {eff:%d %b %Y} already exists (#{int(same_day['id'].iloc[0])}); "
                        "the new one takes precedence because it is newer.")
+        if len(changes) == 0 and before is not None:
+            st.caption("Saving is possible but not needed: the population would stay the same.")
         if st.button("Save version", type="primary", key="pop_save"):
-            with session_scope() as s:
+            with st.spinner(f"Saving {len(pf.units):,} units…"), session_scope() as s:
                 v = repo.save_population(s, pf.units, eff, f.name, sha256(data), user.id, note)
                 audit(s, user.username, "population_import", None,
                       f"#{v.id} effective {eff:%Y-%m-%d}: {len(pf.units)} units, {len(changes)} changes")
                 vid = v.id
             st.cache_data.clear()
+            st.session_state["pop_ver"] = st.session_state.get("pop_ver", 0) + 1   # empty the uploader
             st.session_state["pop_msg"] = (f"Version #{vid} saved: {len(pf.units):,} units effective "
-                                           f"{eff:%d %b %Y}. It applies to Data_Prod imports from that month on.")
+                                           f"{eff:%d %b %Y}. It applies to Production Data imports from that month "
+                                           "on.")
             st.rerun()
     st.caption("Saving a version does not change data already imported. To apply it to a month that is already "
-               "published, import that month's Data_Prod again.")
+               "published, import that month's Production Data again.")
 
 # ------------------------------------------------------------------ current units
 with t_now:
     if current is None:
-        st.info("No population version yet. Import a Unit_Population workbook first.")
+        st.info(f"No population version yet. Import a {pop.DATASET} workbook first.")
     else:
         q = st.text_input("Search", key="pop_q", placeholder="unit, type, model, site…").strip().lower()
         view = current
@@ -120,7 +125,7 @@ with t_now:
             view = current[current.astype(str).apply(lambda col: col.str.lower().str.contains(q, regex=False))
                            .any(axis=1)]
         st.dataframe(view, hide_index=True, width="stretch", height=480)
-        excel_download(current, f"{pop.DATASET}_current.xlsx", key="pop_dl_cur")
+        excel_download(current, f"{file_stem(pop.DATASET)}_current.xlsx", key="pop_dl_cur")
 
 # ------------------------------------------------------------------ versions
 with t_hist:
@@ -138,4 +143,4 @@ with t_hist:
                             f"{versions.loc[versions['id'] == i, 'effective_from'].iloc[0]:%d %b %Y}")
         with session_scope() as s:
             units_v = repo.population_units(s, int(pick))
-        excel_download(units_v, f"{pop.DATASET}_v{pick}.xlsx", key="pop_dl_v")
+        excel_download(units_v, f"{file_stem(pop.DATASET)}_v{pick}.xlsx", key="pop_dl_v")

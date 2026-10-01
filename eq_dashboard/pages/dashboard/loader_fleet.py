@@ -1,10 +1,12 @@
-"""Loader & hauler productivity for OB (BCM/h) and CG (t/h) with haul distance, hourly → yearly."""
+"""Loader & hauler productivity for OB (BCM/h) and CG (t/h) with haul distance, hourly → yearly, against the
+Production Data default productivity per model (internal or client)."""
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from auth.access import scope_filter
 from core import dash
+from core import prod_target as PT
 from core import theme as T
 from core.periods import (
     PERIOD_LABEL,
@@ -19,11 +21,20 @@ from core.periods import (
     with_week,
 )
 from core.ui import excel_download, fmt_num
+from db import repo
+from db.engine import session_scope
 
 c = dash.context("loader_fleet", unit_filter=False)
 st.title("Loader & hauler productivity")
 
-a, b = st.columns([3, 2])
+with session_scope() as s:
+    ld_def, hl_def = repo.model_targets(s), repo.hauler_targets(s)
+    site_basis = repo.site_basis(s, c.sites[0])
+a, b, bb = st.columns([3, 2, 2])
+basis = bb.segmented_control("Target", list(PT.BASES), default=site_basis, key="prod_basis",
+                             format_func=lambda x: "Internal (WBK)" if x == "internal" else "Client (BAU)",
+                             help="Production Data default productivity per model (Settings → Production targets)"
+                             ) or site_basis
 period = a.segmented_control("Granularity", PERIODS, default="daily", format_func=PERIOD_LABEL.get,
                              key="prod_period") or "daily"
 group = b.segmented_control("Material", ["OB", "CG"], default="OB", key="prod_group",
@@ -74,6 +85,25 @@ with st.spinner(f"Calculating {group} productivity ({PERIOD_LABEL[period].lower(
     labels = [pretty(x, period) for x in order]
 
 tot_l, tot_h = fleet_summary(ld, []), fleet_summary(hl, [])
+material = "OB" if group == "OB" else "CG - Coal Getting"
+
+
+def target_of(role: str, model) -> float | None:
+    return (PT.model_target(model, material, ld_def, basis) if role == "loader"
+            else PT.hauler_target(model, group, hl_def, basis))
+
+
+def fleet_target(df: pd.DataFrame, role: str) -> float | None:
+    """Ready-hour weighted default of the units that have one (the fleet's yardstick)."""
+    if df.empty:
+        return None
+    u = df.groupby("unit").agg(model=("model", "first"), h=("ready_h", "sum"))
+    u["t"] = [target_of(role, mo) for mo in u["model"]]
+    u = u.dropna(subset=["t"])
+    return float((u["t"] * u["h"]).sum() / u["h"].sum()) if len(u) and u["h"].sum() else None
+
+
+tgt_l, tgt_h = fleet_target(ld, "loader"), fleet_target(hl, "hauler")
 best = ld.groupby("unit").agg(v=("volume", "sum"), h=("ready_h", "sum"))
 best = (best["v"] / best["h"].where(best["h"] > 0)).dropna().sort_values(ascending=False)
 dash.summary(f"Loaders move {fmt_num(tot_l['per_hour'].iloc[0], 1)} {unit} per Ready hour and haulers "
@@ -84,8 +114,10 @@ dash.summary(f"Loaders move {fmt_num(tot_l['per_hour'].iloc[0], 1)} {unit} per R
 k = st.columns(6)
 k[0].metric(f"{group} volume", f"{fmt_num(tot_l['volume'].iloc[0])} {unit}")
 k[1].metric("Trips", fmt_num(tot_l["rit"].iloc[0]))
-k[2].metric(f"Loader {unit}/h", fmt_num(tot_l["per_hour"].iloc[0], 1), help="Volume / loader Ready hours")
-k[3].metric(f"Hauler {unit}/h", fmt_num(tot_h["per_hour"].iloc[0], 1), help="Volume / hauler Ready hours")
+dash.kpi(k[2], f"Loader {unit}/h", tot_l["per_hour"].iloc[0], tgt_l, kind="n1",
+         help="Volume / loader Ready hours; target = default per model weighted by Ready hours")
+dash.kpi(k[3], f"Hauler {unit}/h", tot_h["per_hour"].iloc[0], tgt_h, kind="n1",
+         help="Volume / hauler Ready hours; target = default per model weighted by Ready hours")
 k[4].metric("Horizontal distance", f"{fmt_num(tot_l['dist_h'].iloc[0])} m", "trip-weighted", delta_color="off")
 k[5].metric("Vertical distance", f"{fmt_num(tot_l['dist_v'].iloc[0])} m", "trip-weighted", delta_color="off")
 
@@ -118,14 +150,18 @@ def unit_table(df: pd.DataFrame, role: str) -> pd.DataFrame:
     g["per_hour_work"] = g["volume"] / g["work_h"].where(g["work_h"] > 0)
     g["trips_per_hour"] = g["trips"] / g["ready_h"].where(g["ready_h"] > 0)
     g["dist_h"], g["dist_v"] = w["wh"] / g["trips"], w["wv"] / g["trips"]
+    g["target"] = [target_of(role, mo) for mo in g["model"]]
+    g["ach"] = g["per_hour"] / g["target"]
     g = g.reset_index().sort_values("volume", ascending=False)
     return g.rename(columns={"unit": role.title(), "model": "Model", "volume": f"Volume ({unit})", "trips": "Trips",
                              "ready_h": "Ready h", "work_h": "Ready+Idle h", "per_hour": f"{unit}/Ready h",
                              "per_hour_work": f"{unit}/(Ready+Idle) h", "trips_per_hour": "Trips/Ready h",
-                             "dist_h": "Horizontal (m)", "dist_v": "Vertical (m)"})
+                             "dist_h": "Horizontal (m)", "dist_v": "Vertical (m)",
+                             "target": f"Target {unit}/h", "ach": "Achievement"})
 
 
-cfg = lambda cols: {x: st.column_config.NumberColumn(format="%,.1f") for x in cols}  # noqa: E731
+cfg = lambda cols: {x: st.column_config.NumberColumn(format="percent" if x == "Achievement" else "%,.1f")  # noqa: E731
+                    for x in cols}
 t1, t2 = st.tabs(["Loaders", "Haulers"])
 with t1:
     tl = unit_table(ld, "loader")
@@ -148,6 +184,8 @@ with t2:
         st.dataframe(th, hide_index=True, width="stretch", height=420, column_config=cfg(th.columns[2:]))
         excel_download(th, f"hauler_productivity_{group}_{period}.xlsx", key="dl_hl")
 
-st.caption("Ready hours come from the Eq.Event sheet. A unit working on both OB and CG in the same "
+st.caption(f"Targets: Production Data default productivity per model, {PT.BASIS_LABEL[basis].lower()} "
+           "(Settings → Production targets); a unit without a default has no target. "
+           "Ready hours come from the Equipment Events sheet. A unit working on both OB and CG in the same "
            f"{'hour' if period == 'hourly' else 'day'} has its hours shared by its trip share. "
            "Distances are averages weighted by trips.")

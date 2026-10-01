@@ -67,9 +67,10 @@ def month_digest(data: bytes, month) -> str:
 
 def ingest(s: Session, data: bytes, filename: str, user_id: int | None = None,
            username: str | None = None, parsed: Parsed | None = None,
-           digest: str | None = None) -> tuple[m.Upload, list[m.UploadSite]]:
+           digest: str | None = None, sites: list[str] | None = None) -> tuple[m.Upload, list[m.UploadSite]]:
     """`parsed` boleh diisi hasil preview (parse_data_prod) agar file tidak diparse dua kali. For one month of a
-    multi-month file pass its `parsed` month and `digest` (month_digest)."""
+    multi-month file pass its `parsed` month and `digest` (month_digest). `sites` limits the versions created (a
+    manual edit of one site must not create partial versions for other sites its rows mention)."""
     digest = digest or sha256(data)
     if s.scalar(select(m.Upload.id).where(m.Upload.sha256 == digest)):
         raise DuplicateUpload("An identical file has already been uploaded.")
@@ -101,7 +102,7 @@ def ingest(s: Session, data: bytes, filename: str, user_id: int | None = None,
     from core.dq import summary as dq_summary
     dqs = dq_summary(p.dq)
     result = []
-    for code in p.sites:
+    for code in (c for c in p.sites if sites is None or c in sites):
         us = m.UploadSite(upload_id=up.id, site_code=code, month=month, status=PENDING,
                           summary=site_summary(p, code), dq_summary=dqs.get(code, {}))
         s.add(us)

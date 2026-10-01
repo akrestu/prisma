@@ -11,7 +11,8 @@ enableCORS = true
 
 [client]
 showErrorDetails = false
-toolbarMode = "minimal"
+# "viewer": the ⋮ menu keeps Settings → theme (Light / Dark / System) for every user
+toolbarMode = "viewer"
 
 [logger]
 level = "info"
@@ -21,23 +22,34 @@ messageFormat = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 gatherUsageStats = false
 
 [theme]
-base = "dark"
-# haul road tokens (core/theme.py)
+# shared by both modes; colours per mode below (tokens in core/theme.py). Users switch in ⋮ → Settings.
+chartCategoricalColors = ["#F2C230", "#4E9BD8", "#4FC1A6", "#C08BE0", "#9CC7EA", "#C98DA8", "#A7D38B", "#F08A3C"]
+orangeColor = "#F08A3C"
+blueColor = "#4E9BD8"
+font = "ibm-plex-sans"
+codeFont = "ibm-plex-sans"
+headingFont = "ibm-plex-sans"
+
+
+[theme.dark]
+# haul road: asphalt, chalk text, hi-vis yellow
 primaryColor = "#F2C230"
 backgroundColor = "#141517"
 secondaryBackgroundColor = "#1C1E21"
 textColor = "#EDEAE3"
 borderColor = "#2C2F33"
-# basic palette mapped to tokens: orange = missed target, yellow = hi-vis, blue = ready, gray = neutral
-orangeColor = "#F08A3C"
 yellowColor = "#F2C230"
-blueColor = "#4E9BD8"
 grayColor = "#9C9A93"
-chartCategoricalColors = ["#F2C230", "#4E9BD8", "#4FC1A6", "#C08BE0", "#9CC7EA", "#C98DA8", "#A7D38B", "#F08A3C"]
-font = "ibm-plex-sans"
-codeFont = "ibm-plex-sans"
-headingFont = "ibm-plex-sans"
 
+[theme.light]
+# paper and concrete; primary is a darker ochre so white button text stays readable
+primaryColor = "#9A6B00"
+backgroundColor = "#F7F6F2"
+secondaryBackgroundColor = "#ECEAE4"
+textColor = "#1E1F21"
+borderColor = "#D8D5CD"
+yellowColor = "#B88600"
+grayColor = "#686660"
 
 [[theme.fontFaces]]
 family = "ibm-plex-sans"

@@ -2,6 +2,8 @@
 import streamlit as st
 
 from core import brand
+from core import theme as T
+from core.validate import HOURLY_PRODUCTION, PRODUCTION_DATA, UNIT_POPULATION
 
 st.set_page_config(page_title=brand.NAME, page_icon=brand.FAVICON, layout="wide")
 
@@ -56,7 +58,7 @@ def P(path, title, icon, **kw):
 
 DASH = {
     "overview": P("pages/dashboard/overview.py", "Overview", "dashboard", default=True),
-    "hourly": P("pages/dashboard/hourly.py", "Hourly production", "timer"),
+    "hourly": P("pages/dashboard/hourly.py", "Hourly dashboard", "timer"),
     "pa_ua": P("pages/dashboard/pa_ua.py", "PA & UoA", "speed"),
     "time_distribution": P("pages/dashboard/time_distribution.py", "Time distribution", "donut_large"),
     "reliability": P("pages/dashboard/reliability.py", "Reliability", "build"),
@@ -68,17 +70,18 @@ DASH = {
 }
 OTHER = {
     "preview_tv": P("pages/tv/preview.py", "TV preview", "tv"),
-    "upload": P("pages/data/upload.py", "Monthly import (Data_Prod)", "upload_file"),
+    "upload": P("pages/data/upload.py", PRODUCTION_DATA, "upload_file"),
     "approval": P("pages/data/approval.py", "Approval", "fact_check"),
     "upload_history": P("pages/data/upload_history.py", "Upload history", "history"),
     "data_explorer": P("pages/data/explorer.py", "Data explorer", "table_view"),
-    "hourly_input": P("pages/data/hourly_input.py", "Hourly input", "schedule_send"),
+    "hourly_input": P("pages/data/hourly_input.py", HOURLY_PRODUCTION, "schedule_send"),
     "hourly_setup": P("pages/admin/hourly_setup.py", "Hourly setup", "tune"),
     "operators": P("pages/admin/operators.py", "Operators", "badge"),
-    "unit_population": P("pages/admin/unit_population.py", "Unit population", "precision_manufacturing"),
+    "unit_population": P("pages/admin/unit_population.py", UNIT_POPULATION, "precision_manufacturing"),
     "delete_data": P("pages/admin/delete_data.py", "Delete data", "delete_forever"),
     "users_roles": P("pages/admin/users_roles.py", "Users & roles", "group"),
-    "targets_plan": P("pages/admin/targets_plan.py", "Targets & plan", "flag"),
+    "targets_plan": P("pages/admin/targets_plan.py", "Production targets", "flag"),
+    "hourly_targets": P("pages/admin/hourly_targets.py", "Hourly targets", "avg_pace"),
     "pm_interval": P("pages/admin/pm_interval.py", "PM intervals & standby", "schedule"),
     "sites_mapping": P("pages/admin/sites_mapping.py", "Sites & mapping", "account_tree"),
     "display_devices": P("pages/admin/display_devices.py", "TV devices", "cast"),
@@ -109,10 +112,11 @@ else:
     sections = {
         "Dashboard": pick(["overview", "hourly", "pa_ua", "reliability", "production_ob", "coal_getting", "fuel"], DASH),
         "Analysis": pick(["loader_fleet", "time_distribution", "data_quality"], DASH) + pick(["data_explorer"]),
-        "Input & upload": pick(["home", "hourly_input", "upload", "unit_population", "upload_history"]),
+        # the three datasets in the order they are needed: units first, then production, then hourly
+        "Input & upload": pick(["home", "unit_population", "upload", "hourly_input", "upload_history"]),
         "Approval": pick(["approval"]),
         "TV": pick(["preview_tv", "display_devices"]),
-        "Settings": pick(["targets_plan", "hourly_setup", "operators", "pm_interval", "sites_mapping", "users_roles",
+        "Settings": pick(["targets_plan", "hourly_targets", "hourly_setup", "operators", "pm_interval", "sites_mapping", "users_roles",
                           "audit_log", "delete_data"]),
         "Account": pick(["account"]),
     }
@@ -121,6 +125,7 @@ else:
     nav = st.navigation({k: v for k, v in sections.items() if v})
 
 brand.sidebar_logo()
+st.html(T.css_vars())
 # Streamlit's default ~6rem top padding leaves a large empty band above every page title
 st.html("<style>[data-testid='stMainBlockContainer']{padding-top:1rem}"
         "[data-testid='stMainBlockContainer'] h1{padding-top:0}</style>")

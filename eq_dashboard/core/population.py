@@ -1,7 +1,7 @@
-"""Unit_Population workbook: master list of units and their site, versioned by an effective date. No database here.
+"""Unit Population workbook: master list of units and their site, versioned by an effective date. No database here.
 
-One sheet with the same columns as the old 'Populasi Unit' sheet of Data_Prod. A version applies from its
-effective date until the next version; a Data_Prod month uses the newest version effective on or before the
+One sheet with the same columns as the 'Unit Population' sheet of older Production Data files. A version applies from its
+effective date until the next version; a Production Data month uses the newest version effective on or before the
 month's last day, so re-importing an old month keeps the population that was valid then.
 """
 from __future__ import annotations
@@ -15,10 +15,11 @@ from openpyxl import Workbook
 
 from core import clean
 from core.io import frame, read_workbook
-from core.validate import META_SHEET, POPULATION, StructureError
+from core.validate import META_SHEET, POPULATION, UNIT_POPULATION, StructureError, file_stem
 
-DATASET = "Unit_Population"
-SHEET_NAMES = ("Unit_Population", "Populasi Unit")   # new name first; the old Data_Prod sheet name is accepted
+DATASET = UNIT_POPULATION
+SHEET = POPULATION.name                                  # "Unit Population"
+SHEET_NAMES = (SHEET, "Unit_Population", "Populasi Unit")   # current name first; older names are still read
 COLS = ["unit_id", "type", "description", "model", "manufacturer", "site"]
 
 
@@ -33,7 +34,8 @@ def parse_population(data: bytes) -> PopulationFile:
     raw = read_workbook(data)
     name = next((n for n in SHEET_NAMES if n in raw), None)
     if name is None:
-        raise StructureError([f"Sheet '{SHEET_NAMES[0]}' was not found (the old name 'Populasi Unit' also works)."])
+        raise StructureError([f"Sheet '{SHEET}' was not found (the old names 'Unit_Population' and 'Populasi Unit' "
+                              "also work)."])
     df = frame(raw[name], 0)
     missing = [c.name for c in POPULATION.cols if c.name not in df.columns]
     if missing:
@@ -64,25 +66,31 @@ def diff(old: pd.DataFrame | None, new: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_template(sites: list[str], units: pd.DataFrame | None = None, effective: dt.date | None = None) -> bytes:
-    """Unit_Population workbook in the template style (README, yellow headers with notes, Site drop-down)."""
+    """Unit Population workbook in the template style (README, yellow headers with notes, Site drop-down)."""
     from core import dataprod  # shares the styling helpers
     wb = Workbook()
-    dataprod._readme(wb, "PRISMA · Unit_Population", [
-        "Master list of units and the site that owns each one. Upload it whenever units arrive, leave or move site.",
+    dataprod._readme(wb, f"PRISMA · {DATASET}", [
+        "Master list of units and the site that owns each one. Upload it only when units change: a unit arrives, "
+        "leaves, moves site or changes type/model.",
         "Every upload becomes a version with an 'effective from' date chosen in the app; older months keep the "
         "population that was valid then.", "",
         "One row per unit. Equipment (unit ID) must be unique; spaces are removed on import.",
         "Units without a Site stay UNMAPPED until an Admin maps them. Extra columns are ignored.",
-        f"Name the file {DATASET}_YYYY-MM-DD.xlsx (the effective date)."], sheets=(POPULATION,))
+        f"Name the file {file_name(dt.date(2026, 9, 1))} (the effective date).",
+        "Upload it in PRISMA → Input & upload → Unit Population."], sheets=(POPULATION,))
     lists = dataprod._lists(wb, sites)
     rows = dataprod._unit_rows(units) if units is not None and len(units) else None
-    ws = dataprod._sheet(wb, POPULATION, rows, lists)
-    ws.title = DATASET
+    dataprod._sheet(wb, POPULATION, rows, lists)
     wb.move_sheet("Lists", offset=len(wb.sheetnames))
-    dataprod._meta(wb, "unit_population", {"effective_from": effective.isoformat() if effective else ""})
+    dataprod._meta(wb, "unit_population", {"dataset": DATASET, "effective_from": effective.isoformat() if effective else ""})
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def file_name(effective: dt.date) -> str:
+    """Unit_Population_2026-09-01.xlsx"""
+    return f"{file_stem(DATASET)}_{effective:%Y-%m-%d}.xlsx"
 
 
 def effective_from_name(name: str) -> dt.date | None:

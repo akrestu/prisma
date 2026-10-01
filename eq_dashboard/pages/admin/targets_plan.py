@@ -1,4 +1,5 @@
-"""Monthly targets per site (import Target.xlsx / edit) and OB & coal production plan."""
+"""Production Data targets: default productivity per equipment model (internal and client, company-wide), monthly
+availability & reliability targets per site (import Target.xlsx / edit) and the OB & coal production plan."""
 import datetime as dt
 
 import pandas as pd
@@ -6,6 +7,8 @@ import streamlit as st
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from core import hourly as H
+from core import prod_target as PT
 from core.config import UNMAPPED, today_wib
 from core.ingest import audit
 from core.targets import METRICS, import_targets
@@ -18,12 +21,79 @@ EXTRA = ("sr", "distance")  # production targets used by the hourly screen (not 
 
 user = require("targets_plan")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
-st.title("Targets & plan")
+st.title("Production targets")
+st.caption("Targets of Production Data. Hourly Production has its own targets in Settings → Hourly targets.")
 if not sites:
     st.info("No sites yet.")
     st.stop()
 
-tab_t, tab_p = st.tabs(["Monthly targets", "Production plan"])
+tab_d, tab_t, tab_p = st.tabs(["Productivity defaults", "Availability & reliability", "Production plan"])
+
+LOADER_VALUES = {"pdty_ob": "OB BCM/h", "pdty_mud": "Mud BCM/h", "pdty_coal": "Coal t/h"}
+HAULER_VALUES = {"pdty_ob": "OB BCM/h", "pdty_coal": "Coal t/h"}
+
+
+def defaults_grid(table: pd.DataFrame, values: dict[str, str], pop_models: list[str]) -> pd.DataFrame:
+    """Wide grid of a defaults table plus an empty row for every population model not covered yet."""
+    g = PT.wide(table, values)
+    extra = [mo for mo in pop_models if PT.match(mo, g["model"]) is None]
+    return pd.concat([g, pd.DataFrame({"model": extra})], ignore_index=True) if extra else g
+
+
+with tab_d:
+    with session_scope() as s:
+        ld_t, hl_t = repo.model_targets(s), repo.hauler_targets(s)
+        units = repo.population_for(s, today_wib())
+        bases = repo.frame(s, select(m.Site.code, m.Site.target_basis).where(m.Site.code.in_(sites))
+                           .order_by(m.Site.code))
+    u = units if units is not None else pd.DataFrame(columns=["type", "model"])
+    is_loader = u["type"].fillna("").str.contains("Load", case=False)
+    pop_loaders = sorted(u.loc[is_loader, "model"].dropna().unique()) if len(u) else []
+    pop_haulers = sorted(u.loc[H.is_hauler(u), "model"].dropna().unique()) if len(u) else []
+    st.caption("Standard productivity per equipment model, the same for every site: the yardstick of the "
+               "Production Data dashboards (Loader & hauler productivity) and the fallback of Hourly Production "
+               "where a site has no hourly target. It changes rarely. A model name also covers longer unit models "
+               "('SK520' covers SK520XDLC-10). Models of the unit population without a value are listed empty.")
+    num = lambda lbl: st.column_config.NumberColumn(lbl, min_value=0, format="%.0f")  # noqa: E731
+
+    def editor(table, values, pop_models, key):
+        g = defaults_grid(table, values, pop_models)
+        return st.data_editor(g, num_rows="dynamic", hide_index=True, width="stretch", key=key,
+                              column_config={"model": st.column_config.TextColumn("Model", required=True),
+                                             **{c: num(c) for c in g.columns if c != "model"}})
+
+    def save_defaults(**kw) -> None:
+        with st.spinner("Saving defaults…"), session_scope() as s:
+            n = repo.save_default_targets(s, **kw)
+            audit(s, user.username, "default_targets", None, ", ".join(f"{k} {v}" for k, v in n.items()))
+        st.cache_data.clear()
+        st.success("Saved: " + ", ".join(f"{v} {k} rows" for k, v in n.items()) + ".")
+
+    st.markdown("**Excavators** · OB and mud in BCM per hour, coal in ton per hour (empty coal = the OB value)")
+    ed_l = editor(ld_t, LOADER_VALUES, pop_loaders, "pd_loaders")
+    if st.button("Save excavator defaults", type="primary", key="pd_loaders_save"):
+        save_defaults(loaders=PT.long(ed_l, LOADER_VALUES))
+    st.markdown("**Haulers** · OB in BCM per hour, coal in ton per hour")
+    ed_h = editor(hl_t, HAULER_VALUES, pop_haulers, "pd_haulers")
+    if st.button("Save hauler defaults", type="primary", key="pd_haulers_save"):
+        save_defaults(haulers=PT.long(ed_h, HAULER_VALUES))
+
+    st.markdown("**Target basis per site** · which value counts for achievement on dashboards and TVs")
+    bases["target_basis"] = bases["target_basis"].fillna("internal")
+    ed_b = st.data_editor(bases, hide_index=True, width="content", key="pd_bases", disabled=["code"],
+                          column_config={"code": st.column_config.TextColumn("Site"),
+                                         "target_basis": st.column_config.SelectboxColumn(
+                                             "Basis", options=list(PT.BASES), required=True,
+                                             help="internal = WBK target, client = BAU target")})
+    if st.button("Save target basis", key="pd_bases_save"):
+        with session_scope() as s:
+            for r in ed_b.itertuples():
+                s.get(m.Site, r.code).target_basis = r.target_basis
+            audit(s, user.username, "target_basis", None,
+                  ", ".join(f"{r.code} {r.target_basis}" for r in ed_b.itertuples()))
+        st.cache_data.clear()
+        st.success("Target basis saved.")
+
 
 with tab_t:
     with st.expander("Import Target.xlsx"):

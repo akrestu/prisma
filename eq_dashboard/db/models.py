@@ -358,15 +358,30 @@ class LoadFactor(Base):
 
 
 class LoaderTarget(Base):
-    """Hourly target of one excavator (BCM/h for OB, t/h for coal)."""
+    """Hourly Production target of one excavator that differs from its model (BCM/h for OB, t/h for coal), per
+    basis: internal (WBK) or client (BAU)."""
     __tablename__ = "loader_target"
-    __table_args__ = (UniqueConstraint("site", "unit_id", "material_group"),)
+    __table_args__ = (UniqueConstraint("site", "unit_id", "material_group", "basis"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     site: Mapped[str] = mapped_column(String(40), index=True)
     unit_id: Mapped[str] = mapped_column(String(40))
     model: Mapped[str | None] = mapped_column(String(80))
     material_group: Mapped[str] = mapped_column(String(5))
+    basis: Mapped[str] = mapped_column(String(10), default="internal", server_default="internal")
     target_per_hour: Mapped[float] = mapped_column(Float)
+
+
+class HourlyModelTarget(Base):
+    """Hourly Production target per excavator model of a site and basis. Empty = the Production Data default."""
+    __tablename__ = "hourly_model_target"
+    __table_args__ = (UniqueConstraint("site", "model", "basis"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site: Mapped[str] = mapped_column(String(40), index=True)
+    model: Mapped[str] = mapped_column(String(80))
+    basis: Mapped[str] = mapped_column(String(10))            # internal | client
+    ob: Mapped[float | None] = mapped_column(Float)           # BCM/h
+    mud: Mapped[float | None] = mapped_column(Float)          # BCM/h for mud / mud blending
+    coal: Mapped[float | None] = mapped_column(Float)         # t/h
 
 
 class HourlyShift(Base):
@@ -404,6 +419,7 @@ class HourlyRow(Base):
     hauler_model: Mapped[str] = mapped_column(String(80))
     muatan: Mapped[float] = mapped_column(Float)
     target_per_hour: Mapped[float | None] = mapped_column(Float)
+    target_source: Mapped[str | None] = mapped_column(String(10))     # unit | hourly | default (Production Data)
     remark_code: Mapped[str | None] = mapped_column(String(10))
     remark: Mapped[str | None] = mapped_column(Text)
     r1: Mapped[float | None] = mapped_column(Float)
@@ -444,7 +460,8 @@ class HaulerModelMap(Base):
 
 
 class LoaderModelTarget(Base):
-    """Excavator productivity per model (Prod_Target PDTY): internal (WBK) and client (BAU) targets, BCM/h."""
+    """Production Data default productivity of an excavator model, company-wide: internal (WBK) and client (BAU).
+    BCM/h for OB and mud, t/h for coal (empty coal = the OB value). Also the fallback of Hourly Production targets."""
     __tablename__ = "loader_model_target"
     __table_args__ = (UniqueConstraint("model", "basis"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -452,6 +469,18 @@ class LoaderModelTarget(Base):
     basis: Mapped[str] = mapped_column(String(10))            # internal | client
     pdty_ob: Mapped[float | None] = mapped_column(Float)
     pdty_mud: Mapped[float | None] = mapped_column(Float)
+    pdty_coal: Mapped[float | None] = mapped_column(Float)
+
+
+class HaulerModelTarget(Base):
+    """Production Data default productivity of a hauler model, company-wide, per basis: BCM/h (OB), t/h (coal)."""
+    __tablename__ = "hauler_model_target"
+    __table_args__ = (UniqueConstraint("model", "basis"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model: Mapped[str] = mapped_column(String(80))
+    basis: Mapped[str] = mapped_column(String(10))
+    pdty_ob: Mapped[float | None] = mapped_column(Float)
+    pdty_coal: Mapped[float | None] = mapped_column(Float)
 
 
 class HaulerFactor(Base):

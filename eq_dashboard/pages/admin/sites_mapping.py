@@ -76,5 +76,5 @@ with tab_u:
         st.success("All IDs are mapped.")
     else:
         st.caption("IDs not recognised in uploads. Add an alias or a tank mapping, or fill in the Site column of "
-                   "Populasi Unit in the source file.")
+                   "Unit Population in the source file.")
         st.dataframe(rows.drop_duplicates(["rule", "unit_id"]), hide_index=True, width="stretch")

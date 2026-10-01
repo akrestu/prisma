@@ -95,12 +95,94 @@ def explorer_rows(s: Session, table: str, versions: list[tuple[int, str]], date_
     return frame(s, q.order_by(model.site, *order, model.id).limit(limit))
 
 
+# ---------------------------------------------------------------- deleting data (Admin)
+PRODUCTION_TABLES = (m.FactEvent, m.FactStoppage, m.FactRitase, m.FactCoalTicket, m.FactFuel, m.FactFuelReceipt,
+                     m.DimUnit, m.DQFinding)
+
+
+def delete_production(s: Session, sites: list[str] | None = None, m0=None, m1=None,
+                      dry_run: bool = False) -> dict[str, int]:
+    """Production Data versions (every status) of `sites` (None = all) with a month in [m0, m1] (None = open),
+    and every row imported with them. An upload with no site left is removed too. dry_run only counts."""
+    from sqlalchemy import delete
+    us = m.UploadSite
+    q = select(us.id, us.upload_id, us.site_code)
+    if sites is not None:
+        q = q.where(us.site_code.in_(sites))
+    if m0 is not None:
+        q = q.where(us.month >= m0)
+    if m1 is not None:
+        q = q.where(us.month <= m1)
+    picked = s.execute(q).all()
+    by_upload: dict[int, list[str]] = {}
+    for _id, up, site in picked:
+        by_upload.setdefault(up, []).append(site)
+    counts = {"versions": len(picked), "months": len({(up, site) for _id, up, site in picked})}
+    for model in PRODUCTION_TABLES:
+        n = 0
+        for up, ss in by_upload.items():
+            cond = (model.upload_id == up, model.site.in_(ss))
+            n += (s.scalar(select(func.count()).select_from(model).where(*cond)) if dry_run
+                  else s.execute(delete(model).where(*cond)).rowcount) or 0
+        counts[model.__tablename__] = n
+    if dry_run or not picked:
+        return counts
+    s.execute(delete(us).where(us.id.in_([r[0] for r in picked])))
+    left = set(s.scalars(select(us.upload_id).where(us.upload_id.in_(list(by_upload)))))
+    orphans = [up for up in by_upload if up not in left]
+    if orphans:   # rows of sites without a version (e.g. UNMAPPED) and the upload record itself
+        for model in PRODUCTION_TABLES:
+            s.execute(delete(model).where(model.upload_id.in_(orphans)))
+        counts["uploads"] = s.execute(delete(m.Upload).where(m.Upload.id.in_(orphans))).rowcount or 0
+    return counts
+
+
+def delete_hourly(s: Session, sites: list[str] | None = None, d0=None, d1=None,
+                  dry_run: bool = False) -> dict[str, int]:
+    """Hourly Production shifts of `sites` (None = all) dated in [d0, d1], with their lines."""
+    from sqlalchemy import delete
+    h = m.HourlyShift
+    q = select(h.id)
+    if sites is not None:
+        q = q.where(h.site.in_(sites))
+    if d0 is not None:
+        q = q.where(h.date >= d0)
+    if d1 is not None:
+        q = q.where(h.date <= d1)
+    ids = list(s.scalars(q))
+    if dry_run:
+        rows = s.scalar(select(func.count()).select_from(m.HourlyRow).where(m.HourlyRow.shift_id.in_(ids))) or 0
+        return {"shifts": len(ids), "lines": rows}
+    rows = s.execute(delete(m.HourlyRow).where(m.HourlyRow.shift_id.in_(ids))).rowcount or 0
+    s.execute(delete(h).where(h.id.in_(ids)))
+    return {"shifts": len(ids), "lines": rows}
+
+
+def delete_population(s: Session, d0=None, d1=None, dry_run: bool = False) -> dict[str, int]:
+    """Unit Population versions effective in [d0, d1] (None = open), with their units. Data already imported keeps
+    the units it was imported with."""
+    from sqlalchemy import delete
+    v = m.PopulationVersion
+    q = select(v.id)
+    if d0 is not None:
+        q = q.where(v.effective_from >= d0)
+    if d1 is not None:
+        q = q.where(v.effective_from <= d1)
+    ids = list(s.scalars(q))
+    pu = m.PopulationUnit
+    if dry_run:
+        return {"versions": len(ids),
+                "units": s.scalar(select(func.count()).select_from(pu).where(pu.version_id.in_(ids))) or 0}
+    units = s.execute(delete(pu).where(pu.version_id.in_(ids))).rowcount or 0
+    s.execute(delete(v).where(v.id.in_(ids)))
+    return {"versions": len(ids), "units": units}
+
+
 def delete_all_data(s: Session) -> dict[str, int]:
-    """Remove every upload and all data derived from it. Users, sites, targets, plans and settings stay."""
+    """Every Production Data upload and all data derived from it (users, sites, targets and settings stay)."""
     from sqlalchemy import delete
     counts = {}
-    for model in (m.FactEvent, m.FactStoppage, m.FactRitase, m.FactCoalTicket, m.FactFuel, m.FactFuelReceipt,
-                  m.DimUnit, m.DQFinding, m.UploadSite, m.Upload):
+    for model in (*PRODUCTION_TABLES, m.UploadSite, m.Upload):
         counts[model.__tablename__] = s.execute(delete(model)).rowcount or 0
     return counts
 
@@ -170,7 +252,7 @@ def save_population(s: Session, units: pd.DataFrame, effective_from, filename: s
 # ---------------------------------------------------------------- hourly production
 HOURLY_ROW_COLS = ["line", "loader", "loader_model", "operator", "loader_nrp", "hauler", "hauler_nrp",
                    "hauler_operator", "material", "material_group", "pit", "disposal",
-                   "distance_m", "hauler_model", "muatan", "target_per_hour", "remark_code", "remark",
+                   "distance_m", "hauler_model", "muatan", "target_per_hour", "target_source", "remark_code", "remark",
                    *[f"r{i}" for i in range(1, 13)]]
 
 
@@ -181,9 +263,16 @@ def load_factors(s: Session, site: str) -> pd.DataFrame:
 
 
 def loader_targets(s: Session, site: str) -> pd.DataFrame:
+    """Hourly Production unit overrides of a site (both bases)."""
     t = m.LoaderTarget
-    return frame(s, select(t.unit_id, t.model, t.material_group, t.target_per_hour).where(t.site == site)
-                 .order_by(t.material_group.desc(), t.unit_id))
+    return frame(s, select(t.unit_id, t.model, t.material_group, t.basis, t.target_per_hour).where(t.site == site)
+                 .order_by(t.basis, t.material_group.desc(), t.unit_id))
+
+
+def hourly_model_targets(s: Session, site: str) -> pd.DataFrame:
+    """Hourly Production targets per excavator model of a site (both bases)."""
+    t = m.HourlyModelTarget
+    return frame(s, select(t.model, t.basis, t.ob, t.mud, t.coal).where(t.site == site).order_by(t.model, t.basis))
 
 
 def replace_site_rows(s: Session, model, site: str, df: pd.DataFrame, cols: list[str]) -> int:
@@ -238,6 +327,14 @@ def save_hourly(s: Session, site: str, date, shift: str, coordinator: str, rows:
     return sh
 
 
+def last_hourly_shift(s: Session, sites: list[str]) -> tuple[str, object, str] | None:
+    """(site, date, shift) of the newest Hourly Production shift within the sites."""
+    h = m.HourlyShift
+    row = s.execute(select(h.site, h.date, h.shift).where(h.site.in_(sites))
+                    .order_by(h.date.desc(), h.shift.desc()).limit(1)).first()
+    return tuple(row) if row else None
+
+
 def hourly_range(s: Session, sites: list[str], d0, d1) -> pd.DataFrame:
     """All hourly rows of the sites between two production dates, with their shift header."""
     r, h = m.HourlyRow, m.HourlyShift
@@ -268,7 +365,7 @@ def _units_from_data_prod(s: Session, last) -> pd.DataFrame | None:
     units = pd.concat(parts, ignore_index=True).drop_duplicates("unit_id") if parts else pd.DataFrame()
     if units.empty:
         return None
-    units.attrs["source"] = "units of the latest published Data_Prod (no Unit_Population version yet)"
+    units.attrs["source"] = "units of the latest published Production Data (no Unit Population version yet)"
     return units
 
 
@@ -277,29 +374,56 @@ def hauler_model_map(s: Session, site: str) -> dict[str, str]:
     return dict(s.execute(select(t.unit_model, t.load_model).where(t.site == site)).all())
 
 
-# ---------------------------------------------------------------- Prod_Target
+# ---------------------------------------------------------------- Production Data default productivity
 def model_targets(s: Session) -> pd.DataFrame:
+    """Production Data default productivity of excavator models (company-wide, both bases)."""
     t = m.LoaderModelTarget
-    return frame(s, select(t.model, t.basis, t.pdty_ob, t.pdty_mud).order_by(t.basis, t.model))
+    return frame(s, select(t.model, t.basis, t.pdty_ob, t.pdty_mud, t.pdty_coal).order_by(t.model, t.basis))
 
 
-def hauler_factors(s: Session) -> pd.DataFrame:
-    t = m.HaulerFactor
-    return frame(s, select(t.family, t.tf_ob, t.tf_mudb, t.tf_mud, t.tf_coal, t.sp_empty, t.sp_loaded, t.sp_avg)
-                 .order_by(t.family))
+def hauler_targets(s: Session) -> pd.DataFrame:
+    """Production Data default productivity of hauler models (company-wide, both bases)."""
+    t = m.HaulerModelTarget
+    return frame(s, select(t.model, t.basis, t.pdty_ob, t.pdty_coal).order_by(t.model, t.basis))
 
 
 def site_basis(s: Session, site: str) -> str:
     return s.scalar(select(m.Site.target_basis).where(m.Site.code == site)) or "internal"
 
 
-def save_prod_target(s: Session, ex: pd.DataFrame, hl: pd.DataFrame) -> None:
-    """Replace the excavator model targets and hauler factors (company-wide; they carry no site)."""
+def _replace(s: Session, model, df: pd.DataFrame, cols: list[str], **where) -> int:
     from sqlalchemy import delete, insert
-    s.execute(delete(m.LoaderModelTarget))
-    s.execute(delete(m.HaulerFactor))
-    clean = lambda df: df.astype(object).where(df.notna(), None).to_dict("records")  # noqa: E731
-    if len(ex):
-        s.execute(insert(m.LoaderModelTarget), clean(ex[["model", "basis", "pdty_ob", "pdty_mud"]]))
-    if len(hl):
-        s.execute(insert(m.HaulerFactor), clean(hl))
+    q = delete(model)
+    for k, v in where.items():
+        q = q.where(getattr(model, k) == v)
+    s.execute(q)
+    recs = df[cols].astype(object).where(df[cols].notna(), None).to_dict("records") if len(df) else []
+    for r in recs:
+        r.update(where)
+    if recs:
+        s.execute(insert(model), recs)
+    return len(recs)
+
+
+def save_default_targets(s: Session, loaders: pd.DataFrame | None = None, haulers: pd.DataFrame | None = None
+                         ) -> dict[str, int]:
+    """Replace the Production Data defaults (a table passed as None is left as it is)."""
+    out = {}
+    if loaders is not None:
+        out["loaders"] = _replace(s, m.LoaderModelTarget, loaders, ["model", "basis", "pdty_ob", "pdty_mud",
+                                                                    "pdty_coal"])
+    if haulers is not None:
+        out["haulers"] = _replace(s, m.HaulerModelTarget, haulers, ["model", "basis", "pdty_ob", "pdty_coal"])
+    return out
+
+
+def save_hourly_targets(s: Session, site: str, models: pd.DataFrame | None = None,
+                        overrides: pd.DataFrame | None = None) -> dict[str, int]:
+    """Replace a site's Hourly Production targets per model and/or its unit overrides."""
+    out = {}
+    if models is not None:
+        out["models"] = _replace(s, m.HourlyModelTarget, models, ["model", "basis", "ob", "mud", "coal"], site=site)
+    if overrides is not None:
+        out["overrides"] = _replace(s, m.LoaderTarget, overrides,
+                                    ["unit_id", "model", "material_group", "basis", "target_per_hour"], site=site)
+    return out

@@ -52,6 +52,31 @@ def _confirm(action: str, row, comment: str) -> None:
         st.rerun()
 
 
+@st.dialog("Approve all")
+def _approve_all(rows) -> None:
+    """Bulk approval for a yearly import: every listed site × month without critical findings, oldest first."""
+    st.markdown(f"Publish **{len(rows)}** site × month version(s) without critical findings? Viewers and TVs show "
+                "them right away; the previous version of each site & month becomes SUPERSEDED.")
+    st.caption(", ".join(f"{r['site']} {r['month']:%b %Y}" for r in rows))
+    a, b = st.columns(2)
+    if a.button("Approve and publish all", type="primary", width="stretch"):
+        done, failed = 0, []
+        bar = st.progress(0.0, text="Publishing…")
+        for i, r in enumerate(rows, 1):
+            try:
+                with session_scope() as s:
+                    ing.publish(s, s.get(m.UploadSite, int(r["id"])), user.id, user.username, comment="approve all")
+                done += 1
+            except ValueError as e:
+                failed.append(str(e))
+            bar.progress(i / len(rows), text=f"Published {i} of {len(rows)}")
+        st.cache_data.clear()
+        st.toast(f"{done} version(s) PUBLISHED" + (f", {len(failed)} skipped" if failed else ""))
+        st.rerun()
+    if b.button("Cancel", width="stretch", key="all_cancel"):
+        st.rerun()
+
+
 user = require("approval")
 sites = sites_for(user)
 st.title("Data approval")
@@ -70,6 +95,17 @@ dash.summary(f"{len(queue)} site upload(s) waiting for approval",
              f"oldest from {queue['uploaded_at'].min():%d %b %H:%M}")
 st.caption("Data reaches Viewers and TVs only after approval; the previous version for the same site & month "
            "automatically becomes SUPERSEDED.")
+
+# newest pending version per site × month, without critical findings (older duplicates and critical ones are
+# reviewed one by one below)
+clean_rows = (queue[[not (d or {}).get("critical") for d in queue["dq_summary"]]]
+              .sort_values("upload_id").drop_duplicates(["site", "month"], keep="last").sort_values(["month", "site"]))
+if len(clean_rows) > 1:
+    a, b = st.columns([1.3, 4])
+    if a.button(f"Approve all {len(clean_rows)} without critical findings", key="approve_all"):
+        _approve_all(clean_rows.to_dict("records"))
+    b.caption("Useful after a yearly import. Versions with critical findings stay in the list for a one-by-one "
+              "review.")
 
 for _, row in queue.iterrows():
     dq = row["dq_summary"] or {}

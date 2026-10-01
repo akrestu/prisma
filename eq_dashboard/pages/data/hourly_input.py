@@ -1,4 +1,4 @@
-"""Hourly input: trips per excavator × hauler per hour for one site and shift (web grid or Excel template).
+"""Hourly Production input: trips per excavator × hauler per hour for one site and shift (web grid or Excel template).
 
 Flash data: saved immediately without approval and shown on the hourly production TV screen within a minute.
 """
@@ -15,7 +15,9 @@ from db.engine import session_scope
 
 user = require("hourly_input")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
-st.title("Hourly input")
+st.title(H.DATASET)
+st.caption("Trips per hauler per production hour, entered here in the grid or uploaded with the Excel template of "
+           "the shift. Flash data: saved at once without approval and shown on the hourly TV within a minute.")
 if not sites:
     st.info("No site access.")
     st.stop()
@@ -43,11 +45,11 @@ with session_scope() as s:
     prev = repo.previous_lines(s, site, date, shift) if sh is None else None
     units = repo.population_for(s, date)
     ops = repo.operators(s, site)
-    mtg, basis = repo.model_targets(s), repo.site_basis(s, site)
+    mtg, basis, hmt = repo.model_targets(s), repo.site_basis(s, site), repo.hourly_model_targets(s, site)
     coord_now = sh.coordinator if sh else ""
     stamp = f"{sh.updated_by} · {sh.updated_at.astimezone(WIB):%d %b %H:%M} WIB" if sh else ""
 if lf.empty:
-    st.warning(f"No load factors for {site} yet. An Admin or Site Manager sets them in **Admin → Hourly setup**.")
+    st.warning(f"No load factors for {site} yet. An Admin or Site Manager sets them in **Settings → Hourly setup**.")
     st.stop()
 
 site_units = units[units["site"] == site] if units is not None else pd.DataFrame(columns=["unit_id", "type"])
@@ -97,7 +99,7 @@ with t_web:
                           help="Shown in the header of the hourly TV screen")
     ver = st.session_state.get("hi_ver", 0)
     if ops.empty:
-        st.caption("⚠ No operators for this site yet: add them in **Admin → Operators** to pick them by NRP.")
+        st.caption("⚠ No operators for this site yet: add them in **Settings → Operators** to pick them by NRP.")
     cfg = {
         "loader": st.column_config.SelectboxColumn("Excavator", options=loaders, required=True),
         "loader_nrp": st.column_config.SelectboxColumn("Operator", options=list(op_label.values()),
@@ -120,7 +122,7 @@ with t_web:
     gkey = f"hi_grid_{site}_{date}_{shift}_{ver}"
     grid = st.data_editor(to_grid(base), num_rows="dynamic", hide_index=True, width="stretch", column_config=cfg,
                           key=gkey, height=min(600, 38 * (len(base) + 3) + 40))
-    res = H.resolve(from_grid(grid), lf, tg, units, ops, model_targets=mtg, basis=basis)
+    res = H.resolve(from_grid(grid), lf, tg, units, ops, model_targets=mtg, basis=basis, hourly_models=hmt)
     st.caption("One row per hauler. When a hauler's operator changes during the shift, add a second row for the "
                "same hauler with the new operator.")
     edits = st.session_state.get(gkey) or {}
@@ -142,7 +144,7 @@ with t_web:
         k[3].metric("Fleets", res.rows["loader"].nunique())
         k[4].metric("Haulers", res.rows["hauler"].nunique())
     if st.button("Save shift", type="primary", key="hi_save", disabled=bool(res.problems)) and not res.problems:
-        with session_scope() as s:
+        with st.spinner("Saving the shift…"), session_scope() as s:
             repo.save_hourly(s, site, date, shift, coord, res.rows, user.username, "web")
             audit(s, user.username, "hourly_save", site, f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines")
         st.cache_data.clear()
@@ -157,16 +159,21 @@ with t_xls:
     lines = rows if sh is not None else (prev if prev is not None else None)
     st.download_button(f"Download template · {site} {date:%d %b} {shift}",
                        lambda: H.build_template(site, date, shift, lf, tg, lines, coord_now, units, ops),
-                       file_name=f"Hourly_{site}_{date:%Y-%m-%d}_{shift}.xlsx", on_click="ignore",
+                       file_name=H.file_name(site, date, shift), on_click="ignore",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     f = st.file_uploader("Filled template (.xlsx)", type=["xlsx"], key=f"hi_file_{st.session_state.get('hi_ver', 0)}",
                          max_upload_size=10)
     if f is not None:
         try:
-            hf = H.parse_template(f.getvalue())
+            with st.spinner(f"Reading {f.name}…"):
+                hf = H.parse_template(f.getvalue())
         except StructureError as e:
             for p in e.problems:
                 st.error(p)
+            st.stop()
+        except Exception as e:  # unreadable / corrupt file
+            st.error(f"The workbook could not be opened ({type(e).__name__}). Save it again in Excel as .xlsx and "
+                     "retry.")
             st.stop()
         if hf.site not in sites:
             st.error(f"The file is for site {hf.site}, which you do not have access to.")
@@ -177,7 +184,8 @@ with t_xls:
             units_f = repo.population_for(s, hf.date)
             ops_f = repo.operators(s, hf.site)
             mtg_f, basis_f = repo.model_targets(s), repo.site_basis(s, hf.site)
-        rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f, model_targets=mtg_f, basis=basis_f)
+            hmt_f = repo.hourly_model_targets(s, hf.site)
+        rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f, model_targets=mtg_f, basis=basis_f, hourly_models=hmt_f)
         st.markdown(f"**{hf.site} · {hf.date:%d %b %Y} · {hf.shift}** · {len(rf.rows)} lines"
                     + (f" · coordinator {hf.coordinator}" if hf.coordinator else ""))
         for p in rf.problems:
@@ -189,7 +197,7 @@ with t_xls:
             st.warning("This shift already has data; saving replaces it.")
             ok = st.checkbox("Replace the existing lines of this shift", key=f"hi_xrep_{st.session_state.get('hi_ver', 0)}")
         if not rf.problems and st.button("Save uploaded shift", type="primary", key="hi_xsave", disabled=not ok):
-            with session_scope() as s:
+            with st.spinner("Saving the shift…"), session_scope() as s:
                 repo.save_hourly(s, hf.site, hf.date, hf.shift, hf.coordinator, rf.rows, user.username, "excel")
                 audit(s, user.username, "hourly_upload", hf.site,
                       f"{hf.date:%Y-%m-%d} {hf.shift}: {len(rf.rows)} lines from {f.name}")
@@ -201,5 +209,5 @@ with t_xls:
             st.session_state["hi_msg"] = (
                 f"{hf.site} {hf.date:%d %b %Y} {hf.shift} saved from {f.name}: {len(rf.rows)} lines, "
                 f"{lg['rit'].sum():,.0f} trips, OB {vol.get('OB', 0):,.0f} BCM, coal {vol.get('CG', 0):,.0f} t. "
-                "It is shown below; on the TV and in Dashboard → Hourly production pick this date and shift.")
+                "It is shown below; on the TV and in Dashboard → Hourly dashboard pick this date and shift.")
             st.rerun()

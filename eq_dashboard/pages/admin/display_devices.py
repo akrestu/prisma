@@ -38,7 +38,7 @@ with st.form("new_device", clear_on_submit=True):
     name = c1.text_input("TV name", placeholder="MAS control room TV")
     site = c2.selectbox("Site", [x for x in sites_for(user) if x != UNMAPPED])
     screen = c3.selectbox("Screen", list(SCREENS), format_func=SCREENS.get,
-                          help="Equipment & monthly: availability, reliability, production. Hourly production: "
+                          help="Equipment & monthly: availability, reliability, production. Hourly Production: "
                                "trips per fleet per hour (flash data), refreshed every minute.")
     period = c4.selectbox("Period", PERIODS, index=1, format_func=PERIOD_LABEL.get,
                           help="Used by the Equipment & monthly screen")

@@ -119,5 +119,5 @@ with c2:
         excel_download(df, f"{fname}.xlsx", key="dx_xlsx")
     else:
         st.caption(f"Excel download up to {EXCEL_MAX:,} rows; use CSV.")
-st.caption("Read-only. To correct data, export it from Data_Prod, fix it in Excel and import it again; "
+st.caption("Read-only. To correct data, use Production Data → Edit (or export, fix in Excel and import again); "
            "the old version stays in Upload history.")

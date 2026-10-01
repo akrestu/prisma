@@ -15,16 +15,16 @@ def _frames():
                        "_row": [2, 3, 4, 5]})
     fuel = pd.DataFrame({"DATE": [pd.Timestamp("2023-02-02"), None, pd.Timestamp("2023-03-01")], "_row": [2, 3, 4]})
     pop = pd.DataFrame({"Equipment": ["WHT001"]})
-    return {"Eq.Event": ev, "Fuel Consume": fuel, "Populasi Unit": pop}
+    return {"Equipment Events": ev, "Fuel Consumption": fuel, "Unit Population": pop}
 
 
 def test_split_months_keeps_rows_and_row_numbers():
     parts = split_months(_frames())
     assert list(parts) == [dt.date(2023, 1, 1), dt.date(2023, 2, 1), dt.date(2023, 3, 1)]
-    assert parts[dt.date(2023, 1, 1)]["Eq.Event"]["_row"].tolist() == [2, 3]
-    assert parts[dt.date(2023, 2, 1)]["Fuel Consume"]["_row"].tolist() == [2]
-    assert parts[dt.date(2023, 1, 1)]["Fuel Consume"]["_row"].tolist() == [3]      # no date → first month, checked there
-    assert all(len(p["Populasi Unit"]) == 1 for p in parts.values())                  # copied to every month
+    assert parts[dt.date(2023, 1, 1)]["Equipment Events"]["_row"].tolist() == [2, 3]
+    assert parts[dt.date(2023, 2, 1)]["Fuel Consumption"]["_row"].tolist() == [2]
+    assert parts[dt.date(2023, 1, 1)]["Fuel Consumption"]["_row"].tolist() == [3]      # no date → first month, checked there
+    assert all(len(p["Unit Population"]) == 1 for p in parts.values())                  # copied to every month
 
 
 def test_text_dates_are_day_first_and_serial_plus_time_is_read():

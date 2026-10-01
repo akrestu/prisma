@@ -40,7 +40,7 @@ def import_targets(s: Session, data: bytes, sites: list[str] | None = None) -> i
     if "site" not in df.columns or df["site"].isna().all():
         targets = sites or [x.code for x in s.scalars(select(m.Site).where(m.Site.active))]
         if not targets:
-            raise ValueError("No sites yet. Import a Data_Prod workbook first or choose target sites.")
+            raise ValueError("No sites yet. Import a Production Data workbook first or choose target sites.")
         df = pd.concat([df.assign(site=code) for code in targets], ignore_index=True)
     recs = df[["site", "year", "month", *METRICS]].astype(object).where(df.notna(), None).to_dict("records")
     stmt = pg_insert(m.Target).values(recs)

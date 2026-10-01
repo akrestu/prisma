@@ -1,4 +1,4 @@
-"""Cleaning each Data_Prod sheet into tidy, site-tagged fact tables."""
+"""Cleaning each Production Data sheet into tidy, site-tagged fact tables."""
 from __future__ import annotations
 
 import re
@@ -42,7 +42,7 @@ def month_start(d: pd.Series) -> pd.Series:
     return pd.to_datetime(d).dt.to_period("M").dt.to_timestamp().dt.date
 
 
-# ------------------------------------------------------------------ Populasi Unit
+# ------------------------------------------------------------------ Unit Population
 def clean_units(df: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame({
         "unit_id": _ids(df["Equipment"]),
@@ -61,7 +61,7 @@ def _lookup(ids: pd.Series, units: pd.DataFrame, col: str, default=None) -> pd.S
     return out.fillna(default) if default is not None else out
 
 
-# ------------------------------------------------------------------ Eq.Event
+# ------------------------------------------------------------------ Equipment Events
 def clean_events(df: pd.DataFrame, units: pd.DataFrame, week_fn=week_of) -> pd.DataFrame:
     dt_ = excel_date(df["Date"])
     unit = _ids(df["Unit ID"])

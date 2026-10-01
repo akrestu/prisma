@@ -93,17 +93,23 @@ def test_data_explorer_scoped_to_user_sites(world):
     assert len(df) and set(df["site"]) == {"WBK-BAU"}
 
 
-def test_delete_all_data_admin_only_and_keeps_settings(world):
+def test_delete_data_admin_only_per_dataset_and_keeps_settings(world):
     from sqlalchemy import func, select
+
+    from core.validate import PRODUCTION_DATA
     assert any("do not have access" in e.value for e in run("delete_data", load_user(world, "vw")).error)
     at = run("delete_data", load_user(world, "adm"))
     assert not at.exception
-    at.text_input[0].input("delete all data")  # wrong case → refused
+    assert any("Pick the dataset" in i.value for i in at.info)            # nothing chosen → nothing to delete
+    at.session_state["del_sets"] = [PRODUCTION_DATA]
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    at.text_input[0].input("delete")  # wrong case → refused
     at.button[0].click().run()
     assert any("exactly" in e.value for e in at.error)
     assert world.scalar(select(func.count()).select_from(m.FactEvent)) > 0
     n_targets = world.scalar(select(func.count()).select_from(m.Target))
-    at.text_input[0].input("DELETE ALL DATA")
+    at.text_input[0].input("DELETE")
     at.button[0].click().run()
     assert not at.exception
     world.expire_all()
@@ -111,15 +117,17 @@ def test_delete_all_data_admin_only_and_keeps_settings(world):
         assert world.scalar(select(func.count()).select_from(model)) == 0
     assert world.scalar(select(func.count()).select_from(m.Target)) == n_targets
     assert world.scalar(select(func.count()).select_from(m.User)) == 3
+    assert world.scalar(select(func.count()).select_from(m.AuditLog).where(m.AuditLog.action == "delete_data")) == 1
 
 
 def test_data_prod_page_tabs_by_role(world):
     at = run_path("pages/data/upload.py", load_user(world, "adm"))
     assert not at.exception, [e.value for e in at.exception]
-    assert [t.label for t in at.tabs] == ["Import", "Template", "Export"]
+    assert [t.label for t in at.tabs] == ["Import", "Edit", "Template", "Export"]
     at = run_path("pages/data/upload.py", load_user(world, "sm"))   # Site Manager: template + export only
     assert not at.exception
     assert any("Only Admins and Data Officers can import" in i.value for i in at.info)
+    assert any("Only Admins and Data Officers can edit" in i.value for i in at.info)
     assert at.multiselect(key="exp_sites").options == ["WBK-BAU"]
     assert any("do not have access" in e.value for e in run_path("pages/data/upload.py", load_user(world, "vw")).error)
 

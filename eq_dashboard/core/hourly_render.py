@@ -252,7 +252,7 @@ def _board(g: str, d: HourlyTv) -> str:
                  f"<td class='l mu'>{escape(str(r.model or ''))}</td>"
                  f"<td class='l hl'><b>{r.haulers}</b> · {escape(r.hauler_ids or '')}</td>"
                  f"<td class='l mu'>{escape(str(r.material or ''))}</td>"
-                 f"<td class='l mu'>{escape(route)}</td><td class='tg'>{_n(r.target)}</td>{cells}"
+                 f"<td class='l mu'>{escape(route)}</td><td class='tg'>{_n(r.target)}{'*' if r.on_default else ''}</td>{cells}"
                  f"<td class='tot'>{_n(r.total)}</td><td class='ach'>{_bar(ach)}</td>"
                  f"<td class='rm'>{escape(r.remark or '')}</td></tr>")
     if df.empty:
@@ -294,7 +294,10 @@ def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None) -> 
             f'<span><i style="background:rgba(240,138,60,.7)"></i>below target</span>'
             f'<span><i style="box-shadow:inset 0 0 0 .12cqw {NOW}"></i>current hour</span>'
             '<span>white tick = hourly target · dashed = cumulative target · dotted = projection to shift end</span>'
-            f'<span>MTD: {off} · SR = OB BCM per coal t · distance trip-weighted</span></div>')
+            f'<span>MTD: {off} · SR = OB BCM per coal t · distance trip-weighted</span>'
+            + ('<span>* target = Production Data default (no hourly target yet)</span>'
+               if any(len(df) and df["on_default"].any() for df in d.fleets.values()) else '')
+            + '</div>')
     lines = sum(len(d.fleets.get(g, pd.DataFrame())) for g in GROUPS)
     dense = " dense" if lines > 16 else ""
     return f'{css}<div class="hv {mode}{dense}">{head}{top}{boards}{foot}</div>'

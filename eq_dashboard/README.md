@@ -101,7 +101,7 @@ Password minimal 10 karakter dan harus berisi campuran huruf dengan angka atau s
 ### Langkah 5 — Isi data awal (opsional, bisa juga lewat web)
 
 ```bash
-# Unit_Population diimport lewat web: Data → Unit population
+# Unit Population diimport lewat web: Input & upload → Unit Population
 python cli.py import-target ..\Target.xlsx            # target bulanan (ke semua site)
 python cli.py ingest ..\Data_Prod_2026-09.xlsb        # import satu bulan
 python cli.py status                                  # lihat status per site
@@ -138,7 +138,7 @@ Admin membuat user di **Admin → Users & roles**. Password sementara hanya dita
 
 ### Populasi unit (Unit_Population)
 
-Daftar unit dan site pemiliknya tidak lagi ada di Data_Prod. Populasi dikelola sebagai file sendiri di **Data → Unit population**:
+Daftar unit dan site pemiliknya tidak ada di Production Data. Populasi dikelola sebagai file sendiri di **Input & upload → Unit Population**, dan hanya diupload saat ada perubahan unit:
 
 1. Unduh template. Template sudah terisi daftar unit yang berlaku hari ini.
 2. Ubah di Excel: tambah unit baru, hapus unit yang keluar, atau ganti site unit yang pindah.
@@ -151,43 +151,52 @@ Setiap import Data_Prod memakai versi populasi yang berlaku pada bulan data ters
 
 1. Lengkapi workbook **Data_Prod** di Excel seperti biasa (month to date).
    - Nama file yang disarankan: `Data_Prod_YYYY-MM.xlsb`, misalnya `Data_Prod_2026-09.xlsb`.
-   - Belum punya format? Unduh template di **Data → Data_Prod → Template**. Template berisi README, penjelasan tiap kolom, drop-down, dan validasi input.
-2. Buka **Data → Data_Prod → Import** dan pilih file.
+   - Belum punya format? Unduh template di **Input & upload → Production Data → Template**. Template berisi README, penjelasan tiap kolom, drop-down, dan validasi input.
+2. Buka **Input & upload → Production Data → Import** dan pilih file (satu bulan atau satu tahun).
    - Aplikasi mengecek struktur file lalu menampilkan ringkasan per sheet dan per site, beserta temuan data quality.
    - Tidak ada yang tersimpan sebelum tombol **Submit for approval** ditekan.
-3. Site Manager meng-approve di **Data → Approval**.
+3. Site Manager meng-approve di **Approval** (bisa *Approve all* untuk versi tanpa temuan critical).
    - Kalau *auto-approve* aktif untuk site itu dan tidak ada temuan kritis, data langsung PUBLISHED.
 4. Setelah PUBLISHED, semua dashboard langsung memakai data baru, dan layar TV ikut berubah paling lambat sekitar 5 menit.
 
 Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersimpan di *Upload history* dan Admin bisa melakukan rollback.
 
-**Mengoreksi data:** buka **Data_Prod → Export**, pilih bulan dan site, perbaiki file di Excel, lalu import lagi.
+**Mengoreksi data:** buka **Production Data → Edit**, pilih site dan bulan, ubah di grid, isi alasan, lalu *Submit as new version* (menunggu approval). Alternatifnya: **Export**, perbaiki di Excel, lalu import lagi.
 
 ### Produksi per jam (flash data)
 
 **Persiapan per site (sekali, oleh Admin atau Site Manager)**
 
-- **Admin → Operators:** daftar operator per site (NRP, nama, jabatan), bisa diimport dari Excel. NRP menjadi kunci untuk KPI operator nanti.
+- **Settings → Operators:** daftar operator per site (NRP, nama, jabatan), bisa diimport dari Excel. NRP menjadi kunci untuk KPI operator nanti.
 
-**Admin → Hourly setup**
+### Target: Production Data dan Hourly Production terpisah
 
-- **Prod_Target** (tab pertama) adalah acuan utama. Import file `Prod_Target.xlsx` (sheet PDTY), dan Mst Hourly boleh ikut diupload untuk mengisi yang tidak tercakup.
-  - **Produktivitas excavator per model** tersedia dua set: target **internal (WBK)** dan **client (BAU)**. Pilih yang dipakai untuk warna capaian di bagian atas halaman.
-  - Material Mud dan Mud Blending memakai *Pdty Mud*; material lain memakai *Pdty OB*.
-  - **Truck factor per keluarga model** (777E, 773E, A60H, CGE370, CWE370, CWE280) otomatis diterapkan ke model truk di populasi. Model yang tidak tercakup mengambil nilai dari Link Muatan Mst Hourly.
-- **Target coal excavator** sama dengan Pdty OB modelnya (dalam t/jam). Muatan hauler mengikuti material yang dibawa (OB, Mud Blending, Mud, Coal).
-- **Override per unit** hanya diisi untuk excavator yang berbeda dari modelnya.
+Kedua target punya dua basis: **internal (WBK)** dan **client (BAU)**. Basis yang dipakai untuk warna capaian dipilih per site.
+
+**Settings → Production targets** (target Production Data, jarang berubah)
+
+- **Productivity defaults:** produktivitas standar per **model** excavator (OB dan Mud dalam BCM/jam, Coal dalam t/jam; Coal kosong = nilai OB) dan per model hauler (OB BCM/jam, Coal t/jam). Berlaku untuk semua site, menjadi acuan dashboard *Loader & hauler productivity*, sekaligus cadangan untuk Hourly Production.
+- **Availability & reliability:** target PA, UoA, MTBS, MTTR, SR, dan Distance per site per bulan (import Target.xlsx atau isi di web).
+- **Production plan:** rencana OB dan coal per site per bulan/hari.
+- **Target basis per site** juga bisa diatur di sini.
+
+**Settings → Hourly targets** (target Hourly Production, per site)
+
+- **Per model:** target per jam per model excavator site itu (OB, Mud, Coal × internal/client). Kosong = memakai default Production Data.
+- **Unit overrides:** hanya untuk excavator yang berbeda dari modelnya.
+- **In effect:** target yang berlaku untuk setiap excavator beserta sumbernya. Urutannya: override unit → target hourly model → default Production Data (ditandai *default*, dan di TV ditandai `*`).
+- **Excel:** unduh template berisi target site (lengkap dengan default sebagai referensi), edit, lalu upload untuk mengganti.
+
+**Settings → Hourly setup** (muatan per trip)
 
 - **Load factors:** muatan per trip untuk setiap Material × model hauler, misalnya OB-FreeDig × 777E = 41 BCM, atau CG × CWE370Q = 22,5 t.
-- **Hourly targets:** target per jam setiap excavator, dalam BCM/jam untuk OB dan t/jam untuk coal.
-- Keduanya bisa diimport langsung dari sheet **Link Muatan** di workbook Mst Hourly, lalu dilengkapi di web. Target coal belum ada di Link Muatan, jadi perlu ditambahkan di tab *Hourly targets*.
-- Target bulanan **SR** (stripping ratio) dan **Distance** diisi di **Admin → Targets & plan**.
+- **Import from Mst Hourly:** sheet **Link Muatan** mengisi load factor, dan targetnya menjadi override unit OB untuk basis site.
 
-**Input setiap jam (Data Officer atau Site Manager): Data → Hourly input**
+**Input setiap jam (Data Officer atau Site Manager): Input & upload → Hourly Production**
 
 - Isi **Shift boss** (tampil di kepala layar TV), lalu pilih site, tanggal produksi, dan shift. Shift yang sedang berjalan terpilih otomatis. Hari produksi dimulai pukul 06:00, jadi shift malam setelah tengah malam tetap masuk tanggal sebelumnya.
 - **Web input:** grid dengan **satu baris per hauler**. Isi excavator dan operatornya, **Hauler ID dan operatornya** (dipilih lewat NRP), material, PIT, disposal, jarak, rit per jam, dan keterangan (kode + teks).
-  - Model hauler dan muatan terisi otomatis dari Unit_Population. Target terisi dari Hourly setup.
+  - Model hauler dan muatan terisi otomatis dari Unit Population. Target terisi dari Hourly targets (atau default Production Data).
   - Kalau operator hauler berganti di tengah shift, tambahkan baris kedua untuk hauler yang sama dengan operator baru.
   - Shift baru otomatis menyalin baris dari shift sebelumnya, jadi cukup mengisi rit. Klik **Save shift**.
 - **Excel template:** unduh template per site dan shift, isi di Excel, lalu upload. Cocok untuk input massal atau saat koneksi lemah. Upload akan **mengganti** isi shift itu.
@@ -214,7 +223,7 @@ Data per jam langsung tampil tanpa approval. Angka resmi bulanan tetap berasal d
 
 ### Data mentah
 
-**Data → Data explorer** menampilkan baris mentah hasil olahan (events, ritase, coal, fuel, dan lain-lain), lengkap dengan nomor **Excel row** asal. Hasilnya bisa diunduh sebagai CSV atau Excel.
+**Analysis → Data explorer** menampilkan baris mentah hasil olahan (events, ritase, coal, fuel, dan lain-lain), lengkap dengan nomor **Excel row** asal. Hasilnya bisa diunduh sebagai CSV atau Excel.
 
 ---
 
@@ -339,7 +348,7 @@ Sebagian test memakai file contoh `../Eq.Event.xlsb`, `../Target.xlsx`, dan `../
 | Perubahan kode di `core/` tidak terlihat | restart server; Streamlit hanya memuat ulang file halaman, bukan modul `core/` |
 | Terlogout setiap refresh | pastikan `AUTH_COOKIE_KEY` tidak berubah-ubah, lalu login ulang sekali |
 | File ditolak saat import | pesan menyebut sheet/kolom yang salah; bandingkan dengan **Template** (nama sheet & header harus sama persis) |
-| Dashboard kosong setelah import | data masih PENDING; approve di **Data → Approval** |
+| Dashboard kosong setelah import | data masih PENDING; approve di **Approval** |
 | Layar TV "link invalid or revoked" | link dicabut / dibuat ulang; ambil link baru di **Admin → TV devices** |
 | Port 8501 sudah dipakai | hentikan proses lama, atau jalankan dengan `--server.port 8502` |
 

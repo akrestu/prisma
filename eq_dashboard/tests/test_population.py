@@ -1,4 +1,4 @@
-"""Unit_Population: parse, diff, template, effective-date versions, and Data_Prod without a population sheet."""
+"""Unit Population: parse, diff, template, effective-date versions, and Data_Prod without a population sheet."""
 from __future__ import annotations
 
 import datetime as dt
@@ -19,7 +19,7 @@ from db import repo
 def test_template_round_trip_and_diff(parsed):
     units = parsed.units
     tpl = pop.build_template(["WBK-BAU", "WBK-MAS"], units, dt.date(2026, 9, 1))
-    assert "Unit_Population" in read_workbook(tpl)
+    assert "Unit Population" in read_workbook(tpl)
     assert pop.meta_effective(tpl) == dt.date(2026, 9, 1)
     back = pop.parse_population(tpl)
     assert len(back.units) == len(units) and not back.duplicates
@@ -35,7 +35,7 @@ def test_template_round_trip_and_diff(parsed):
 
 def test_parse_population_errors_and_duplicates():
     wb = load_workbook(io.BytesIO(pop.build_template(["WBK-MAS"])))
-    ws = wb["Unit_Population"]
+    ws = wb["Unit Population"]
     ws.append(["Hauling", "DT", "WHT 001", "777E", "CAT", "WBK-MAS"])
     ws.append(["Hauling", "DT", "WHT001", "777E", "CAT", "WBK-MAS"])     # same unit after removing the space
     ws.append(["Loading", "EX", "WEX099", "6015B", "CAT", None])

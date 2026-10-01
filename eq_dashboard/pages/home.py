@@ -1,10 +1,16 @@
-"""Data status: published data per site & month within the user's access."""
+"""Data status: the three datasets at a glance (Unit Population, Production Data, Hourly Production), then the
+published Production Data per site & month within the user's access."""
+import contextlib
+
 import pandas as pd
 import streamlit as st
+from streamlit.errors import StreamlitPageNotFoundError
 
-from auth.access import ROLE_LABEL
+from auth.access import ROLE_LABEL, can_open
 from core import dash
-from core.ui import require, sites_for
+from core.config import today_wib
+from core.ui import fmt_num, require, sites_for
+from core.validate import HOURLY_PRODUCTION, PRODUCTION_DATA, UNIT_POPULATION
 from db import repo
 from db.engine import session_scope
 
@@ -20,6 +26,9 @@ if not sites:
 with session_scope() as s:
     pub = repo.published_versions(s, sites)
     pending = repo.pending_count(s, sites)
+    pop_now = repo.population_for(s, today_wib())
+    pop_versions = repo.population_versions(s)
+    last_shift = repo.last_hourly_shift(s, sites)
 
 latest = pub.sort_values("reviewed_at").iloc[-1] if len(pub) else None
 dash.summary(f"{len(pub)} site-month(s) published" if len(pub) else "Nothing published yet",
@@ -27,7 +36,38 @@ dash.summary(f"{len(pub)} site-month(s) published" if len(pub) else "Nothing pub
              if latest is not None and pd.notna(latest["reviewed_at"]) else "",
              f"{pending} upload(s) waiting for approval" if pending and user.role in ("admin", "site_manager") else "")
 
-st.subheader("Published data")
+st.subheader("Datasets")
+cards = st.columns(3)
+PAGES = {UNIT_POPULATION: ("unit_population", "pages/admin/unit_population.py"),
+         PRODUCTION_DATA: ("upload", "pages/data/upload.py"),
+         HOURLY_PRODUCTION: ("hourly_input", "pages/data/hourly_input.py")}
+in_force = (pop_versions[pd.to_datetime(pop_versions["effective_from"]) <= pd.Timestamp(today_wib())].head(1)
+            if len(pop_versions) else pop_versions)
+facts = {
+    UNIT_POPULATION: ("Changes rarely: upload only when units change.",
+                      f"{fmt_num(len(pop_now))} units · version #{int(in_force['id'].iloc[0])} effective "
+                      f"{pd.Timestamp(in_force['effective_from'].iloc[0]):%d %b %Y}" if len(in_force) and pop_now is not None
+                      else "No version yet: import one first."),
+    PRODUCTION_DATA: ("Monthly or yearly workbook, or edited in the app; approved per site × month.",
+                      f"{len(pub)} site-month(s) published, latest {pd.Timestamp(pub['month'].max()):%B %Y}"
+                      + (f" · {pending} waiting for approval" if pending else "") if len(pub)
+                      else "Nothing published yet."),
+    HOURLY_PRODUCTION: ("Entered per shift in the app or uploaded with the Excel template; no approval.",
+                        f"Last shift saved: {last_shift[0]} {last_shift[1]:%d %b %Y} {last_shift[2]}"
+                        if last_shift else "No shift entered yet."),
+}
+for col, (name, (what, state)) in zip(cards, facts.items(), strict=True):
+    with col.container(border=True):
+        st.markdown(f"**{name}**")
+        st.caption(what)
+        st.markdown(state)
+        key, path = PAGES[name]
+        if can_open(user, key):
+            # the page exists only inside the app's navigation (not when this page runs on its own, e.g. in tests)
+            with contextlib.suppress(StreamlitPageNotFoundError):
+                st.page_link(path, label=f"Open {name}", icon=":material/arrow_forward:")
+
+st.subheader("Published Production Data")
 if pub.empty:
     st.caption("No PUBLISHED data yet.")
 else:

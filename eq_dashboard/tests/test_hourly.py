@@ -153,7 +153,7 @@ def test_template_only_asks_what_the_officer_knows():
     spare = pd.DataFrame([{"loader": "WEX008", "operator": "Saprin", "material": "OB - FreeDig", "hauler": None,
                            "hauler_model": "777E"}])                      # old per-model line → blank truck row
     tpl = H.build_template("WBK-BAU", dt.date(2026, 9, 28), "NS", LF, TG, pd.concat([lines, spare]), "", UNITS, OPS)
-    ws = load_workbook(_io.BytesIO(tpl))["Hourly"]
+    ws = load_workbook(_io.BytesIO(tpl))["Hourly Production"]
     heads = [c.value for c in ws[H.HEADER_ROW]][:8]
     assert heads == ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "PIT", "Disposal",
                      "Distance (m)"]
@@ -202,7 +202,7 @@ def test_population_falls_back_to_published_data_prod(db_session, sample_bytes):
         ing.publish(s, us, None, "t")
     s.commit()
     units = repo.population_for(s, dt.date(2026, 9, 27))
-    assert units is not None and "latest published Data_Prod" in units.attrs["source"]
+    assert units is not None and "latest published Production Data" in units.attrs["source"]
     assert units.set_index("unit_id").loc["WHT018", "model"] == "777E-KDP"
 
 

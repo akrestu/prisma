@@ -125,5 +125,8 @@ def test_approval_page_lists_only_own_site(db_session, sample_bytes, monkeypatch
     text = " ".join(md.value for md in at.markdown)
     assert "WBK-BAU" in text and "WBK-MAS" not in text and UNMAPPED not in text
     at.button(key="a_us" + str(s.query(m.UploadSite).filter_by(site_code="WBK-BAU").one().id)).click().run()
+    # approving opens a confirmation dialog first: nothing is published by the first click
+    assert any("Publish" in md.value and "WBK-BAU" in md.value for md in at.markdown)
+    assert any(b.label == "Approve and publish" for b in at.button)
     s.expire_all()
-    assert s.query(m.UploadSite).filter_by(site_code="WBK-BAU").one().status == ing.PUBLISHED
+    assert s.query(m.UploadSite).filter_by(site_code="WBK-BAU").one().status == ing.PENDING

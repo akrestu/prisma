@@ -3,7 +3,7 @@
 Figures, all for OB (BCM), Coal (t), SR (BCM per t) and Distance (m, trip-weighted):
 - Hour: the current production hour; target = hourly targets of the fleets working that hour.
 - Daily: the production date so far; outlook = run rate per elapsed hour × 24; target = daily plan.
-- MTD: approved Data_Prod ritase up to its last date, then flash data for the days after; target = plan to date.
+- MTD: approved Production Data trips up to its last date, then flash data for the days after; target = plan to date.
 - Outlook: MTD per elapsed day × days in the month; target = the month's plan.
 """
 from __future__ import annotations
@@ -125,7 +125,7 @@ def build(s: Session, site: str, now: dt.datetime, date: dt.date | None = None, 
     tv.summary["Daily"] = _triple(d_ob, d_cg, _dist(ld) if len(ld) else np.nan, p_ob, p_cg, t_sr, t_dist)
     tv.daily_outlook = {"OB": d_ob * k, "Coal": d_cg * k}
 
-    # ---- month to date: official Data_Prod first, flash for the days after it
+    # ---- month to date: official Production Data first, flash for the days after it
     off = _official(s, site, month)
     off = off[off["date"] <= date] if len(off) else off
     tv.official_until = off["date"].max() if len(off) else None
@@ -167,7 +167,8 @@ def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame) -> tuple[pd.DataFrame, 
     vol = long.pivot_table(index="loader", columns="slot", values="volume", aggfunc="sum", fill_value=0.0)         .reindex(columns=range(1, 13), fill_value=0.0)
     vol.columns = [f"s{k}" for k in range(1, 13)]          # string names: itertuples renames integer columns
     rows = rows.assign(hauler_key=rows["hauler"].fillna(rows["hauler_model"]) if "hauler" in rows
-                       else rows["hauler_model"])
+                       else rows["hauler_model"],
+                       on_default=(rows["target_source"] == "default") if "target_source" in rows else False)
     first = rows.sort_values("line").groupby("loader", sort=False).agg(
         model=("loader_model", "first"), material=("material", lambda x: " / ".join(dict.fromkeys(x.dropna()))),
         pit=("pit", "first"), disposal=("disposal", "first"), target=("target_per_hour", "max"),
@@ -175,7 +176,7 @@ def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame) -> tuple[pd.DataFrame, 
         haulers=("hauler_key", "nunique"),
         hauler_ids=("hauler_key", lambda x: ", ".join(dict.fromkeys(str(v) for v in x.dropna()))),
         code=("remark_code", "first"), remark=("remark", lambda x: "; ".join(dict.fromkeys(x.dropna()))),
-        line=("line", "min"))
+        line=("line", "min"), on_default=("on_default", "any"))
     out = first.join(vol).sort_values("line").reset_index()
     cols = [f"s{k}" for k in range(1, 13)]
     out["total"] = out[cols].sum(axis=1)

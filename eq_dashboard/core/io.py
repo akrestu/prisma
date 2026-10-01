@@ -1,4 +1,4 @@
-"""Reading Data_Prod workbooks (.xlsb or .xlsx) without Excel, via the calamine engine."""
+"""Reading Production Data workbooks (.xlsb or .xlsx) without Excel, via the calamine engine."""
 from __future__ import annotations
 
 import datetime as dt

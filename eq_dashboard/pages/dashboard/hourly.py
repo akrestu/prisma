@@ -1,4 +1,4 @@
-"""Hourly production (flash data): the TV screen for any site and shift, plus interactive charts per hour, fleet,
+"""Hourly dashboard (flash data): the TV screen for any site and shift, plus interactive charts per hour, fleet,
 hauler and operator (the base of operator KPIs), the month trend and the raw lines."""
 import pandas as pd
 import plotly.graph_objects as go
@@ -15,10 +15,11 @@ from pages.tv.screen import show_hourly
 
 UNIT = {"OB": "BCM", "CG": "t"}
 COLOR = {"OB": T.ACCENT, "CG": T.READY}
+INK = T.INK   # target lines and neutral labels follow light/dark (Streamlit swaps this placeholder)
 
 user = require("hourly")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
-st.title("Hourly production")
+st.title("Hourly dashboard")
 if not sites:
     st.info("No site access.")
     st.stop()
@@ -33,7 +34,7 @@ group = d.segmented_control("Material", ["OB", "CG"], default="OB", key="hp_grou
 live = (date, shift) == (p_date, p_shift)
 now_slot = p_slot if live else 12
 st.caption(("Live: the shift running now. " if live else "")
-           + "Flash data entered per hour, not approved; the official month figures come from Data_Prod.")
+           + "Flash data entered per hour, not approved; the official month figures come from Production Data.")
 
 with session_scope() as s:
     month = date.replace(day=1)
@@ -82,17 +83,17 @@ with t_pace:
         met = [(v >= t) if t else None for v, t in zip(vol, tgt, strict=True)]
         fig.add_scatter(x=labels, y=vol.values, mode="text", showlegend=False, textposition="top center",
                         text=[f"{v:,.0f}" for v in vol.to_numpy()],
-                        textfont=dict(color=[T.PA_COLOR if x else (T.MISS if x is False else T.MUTED) for x in met]),
+                        textfont=dict(color=[T.PA_COLOR if x else (T.MISS if x is False else INK) for x in met]),
                         customdata=list(zip(tgt, running, strict=True)),
                         hovertemplate="%{x} total %{y:,.0f}<br>target %{customdata[0]:,.0f} · "
                                       "%{customdata[1]} loaders working<extra></extra>")
         fig.add_scatter(x=labels, y=tgt.values, name="Hourly target", mode="markers",
-                        marker=dict(symbol="line-ew-open", size=26, line=dict(width=3, color=T.TEXT)),
+                        marker=dict(symbol="line-ew-open", size=26, color=INK, line=dict(width=3)),
                         hovertemplate="target %{y:,.0f}<extra></extra>")
         fig.add_scatter(x=labels, y=vol.cumsum().values, name="Cumulative actual", yaxis="y2",
                         line=dict(color=COLOR[group], width=4), hovertemplate="cumulative %{y:,.0f}<extra></extra>")
         fig.add_scatter(x=labels, y=tgt.cumsum().values, name="Cumulative target", yaxis="y2",
-                        line=dict(color=T.TEXT, width=2, dash="dash"),
+                        line=dict(color=INK, width=2, dash="dash"),
                         hovertemplate="cumulative target %{y:,.0f}<extra></extra>")
         fig.update_layout(title=f"{'Overburden' if group == 'OB' else 'Coal'} per hour by loader · {date:%d %b} {shift}"
                                 "  ·  total: teal = target met, orange = below",
@@ -137,7 +138,7 @@ with t_fleet:
                     marker_color=[T.PA_COLOR if p and v >= p else T.MISS for v, p in zip(tot, plan, strict=True)],
                     hovertemplate="%{y}: %{x:,.0f}<extra></extra>")
         fig.add_scatter(y=list(tot.index), x=plan.values, mode="markers", name="Target for the hours shown",
-                        marker=dict(symbol="line-ns-open", size=22, line=dict(width=3, color=T.TEXT)),
+                        marker=dict(symbol="line-ns-open", size=22, color=INK, line=dict(width=3)),
                         hovertemplate="target %{x:,.0f}<extra></extra>")
         fig.update_layout(title=f"Shift total per fleet ({unit})",
                           yaxis=dict(autorange="reversed", type="category"), xaxis=dict(tickformat=","))
@@ -194,7 +195,7 @@ with t_ops:
                                          loaders=("loader", lambda x: ", ".join(sorted(set(map(str, x))))))
                .assign(tph=lambda x: x["trips"] / x["hours"]).sort_values("tph", ascending=False))
         st.caption("Trips per working hour of each hauler operator this shift: the starting point for operator "
-                   "KPIs. Operators are identified by NRP from Admin → Operators.")
+                   "KPIs. Operators are identified by NRP from Settings → Operators.")
         fig = go.Figure(go.Bar(
             x=ops.index, y=ops["tph"], marker_color=COLOR[group],
             customdata=ops[["trips", "volume", "hours", "haulers", "loaders"]].values,
@@ -203,7 +204,7 @@ with t_ops:
                           "<br>loader %{customdata[4]}<extra></extra>"))
         avg = ops["trips"].sum() / ops["hours"].sum() if ops["hours"].sum() else None
         if avg:
-            fig.add_hline(y=avg, line_dash="dash", line_color=T.TEXT, annotation_text=f"average {avg:.1f}")
+            fig.add_hline(y=avg, line_dash="dash", line_color=INK, annotation_text=f"average {avg:.1f}")
         fig.update_layout(title="Trips per working hour by hauler operator", xaxis=dict(type="category"),
                           yaxis=dict(title="trips / hour"))
         dash.plot(fig, 380)

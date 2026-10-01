@@ -1,9 +1,9 @@
-"""Hourly production (flash data, no approval): shift slots, the current production hour, master data from the
+"""Hourly Production (flash data, no approval): shift slots, the current production hour, master data from the
 'Link Muatan' sheet, the per-shift Excel template, and turning input rows into volumes. No Streamlit or database.
 
 A shift sheet has one line per hauler (with its loader and both operators) and trips per hour (12 slots). Volume = trips × load
 factor (material × hauler model): BCM for OB, ton for coal. Hourly figures are an estimate for monitoring; the
-official monthly numbers stay those of the approved Data_Prod.
+official monthly numbers stay those of the approved Production Data.
 """
 from __future__ import annotations
 
@@ -19,19 +19,21 @@ from openpyxl.worksheet.datavalidation import DataValidation
 
 from core.clean import _ids, material_group
 from core.io import excel_date, num, read_workbook, text
-from core.validate import HOUR_SLOTS, StructureError
+from core.validate import HOUR_SLOTS, HOURLY_PRODUCTION, StructureError, file_stem
 
 SHIFTS = ("DS", "NS")
 SLOTS = {"DS": HOUR_SLOTS[:12], "NS": HOUR_SLOTS[12:]}      # DS 06-07 … 17-18, NS 18-19 … 05-06
 R = [f"r{i}" for i in range(1, 13)]                          # storage columns for the 12 slots
-SHEET = "Hourly"
+DATASET = HOURLY_PRODUCTION
+SHEET = HOURLY_PRODUCTION                                    # "Hourly Production"; files made before used "Hourly"
+SHEET_NAMES = (SHEET, "Hourly")
 HEADER_ROW = 7                                               # Excel row of the table header in the template
 # the order follows the work: excavator and its operator, material, then each truck it loads
 # the order follows the work: excavator and its operator, material, then each truck it loads. Only what the data
 # officer knows goes in the file; the hauler model and load come from the unit population on upload.
 INPUT_COLS = ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "PIT", "Disposal", "Distance (m)"]
 TAIL_COLS = ["Remark code", "Remark"]
-REMARKS = {  # common reasons on the site boards; any 3-digit Eq.Event reason code is also accepted
+REMARKS = {  # common reasons on the site boards; any 3-digit Equipment Events reason code is also accepted
     "100": "Productivity achieved", "101": "Change shift", "301": "Standby / waiting", "302": "Rain",
     "303": "Slippery road", "304": "Blasting", "305": "Waiting hauler", "401": "Breakdown loader",
     "402": "Breakdown hauler", "501": "Scheduled maintenance", "502": "Digging method / front condition",
@@ -174,8 +176,13 @@ def expand_to_population(load: pd.DataFrame, pop_models) -> tuple[pd.DataFrame, 
 
 def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units: pd.DataFrame | None = None,
             operators: pd.DataFrame | None = None, model_map: dict | None = None,
-            model_targets: pd.DataFrame | None = None, basis: str = "internal") -> Resolved:
+            model_targets: pd.DataFrame | None = None, basis: str = "internal",
+            hourly_models: pd.DataFrame | None = None) -> Resolved:
     """Fill hauler model, load, material group, loader model, hourly target and operator names; check every line.
+
+    Target of each excavator (core.prod_target.hourly_target): `targets` = unit overrides, `hourly_models` = the
+    site's Hourly Production targets per model, `model_targets` = the Production Data defaults (the fallback,
+    marked 'default' in target_source).
 
     rows: loader, loader_nrp, hauler, hauler_nrp, material, pit, disposal, distance_m, r1..r12, remark_code, remark
     (legacy lines without a hauler ID may give hauler_model instead). One line = one hauler for one loader; the
@@ -216,7 +223,7 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
             continue
         if pd.isna(r["hauler_model"]):
             problems.append(f"{line}: hauler {r['hauler']} is not in the unit population, so its model and load "
-                            "are unknown (Data → Unit population).")
+                            "are unknown (Input & upload → Unit Population).")
             continue
         if pd.isna(r["material"]):
             problems.append(f"{line}: material is empty.")
@@ -224,7 +231,7 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
         lm = load_model(r["hauler_model"], lf_models, mapping)
         if lm is None:
             problems.append(f"{line}: hauler model {r['hauler_model']} has no load class; map it in "
-                            "Admin → Hourly setup → Hauler models.")
+                            "Settings → Hourly setup → Hauler models.")
             continue
         hit = lf.get((str(r["material"]).upper(), str(lm).upper()))
         if hit is None:
@@ -240,26 +247,27 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
         if len(bad):
             problems.append(f"{line}: trips of one hauler in one hour must be between 0 and 20.")
 
-    tg = {(u, g): (t, mdl) for u, mdl, g, t in
-          targets[["unit_id", "model", "material_group", "target_per_hour"]].itertuples(index=False)} \
-        if len(targets) else {}
-    keys = list(zip(out["loader"], out["material_group"], strict=True))
-    out["target_per_hour"] = [tg.get(k, (np.nan, None))[0] for k in keys]
-    out["loader_model"] = [tg.get(k, (None, None))[1] for k in keys]
+    from core.prod_target import SOURCE_LABEL, hourly_target
+    ov = targets
+    if ov is not None and len(ov) and "basis" in ov:
+        ov = ov[ov["basis"] == basis]
+    unit_model = dict(zip(ov["unit_id"], ov["model"], strict=True)) if ov is not None and len(ov) else {}
+    out["loader_model"] = out["loader"].map(unit_model)
     if models:
         out["loader_model"] = out["loader_model"].fillna(out["loader"].map(models))
         unknown = sorted(set(out["loader"].dropna()) - set(models))
         if unknown:
             warnings.append(f"Loader not in the unit population: {', '.join(unknown)}.")
-    if model_targets is not None and len(model_targets):
-        # no unit override: the excavator model's target (Pdty Mud for mud, Pdty OB otherwise; coal per unit only)
-        from core.prod_target import model_target
-        dflt = [model_target(mdl, mat, model_targets, basis) if pd.isna(t) else t
-                for mdl, mat, t in zip(out["loader_model"], out["material"], out["target_per_hour"], strict=True)]
-        out["target_per_hour"] = pd.array(dflt, dtype="Float64").astype(float)
+    hits = [hourly_target(u, mdl, mat, basis, ov, hourly_models, model_targets)
+            for u, mdl, mat in zip(out["loader"], out["loader_model"], out["material"], strict=True)]
+    out["target_per_hour"] = pd.array([h[0] for h in hits], dtype="Float64").astype(float)
+    out["target_source"] = [h[1] for h in hits]
     no_target = sorted(set(out.loc[out["target_per_hour"].isna(), "loader"].dropna()))
     if no_target:
-        warnings.append(f"No hourly target set for: {', '.join(no_target)} (Hourly setup).")
+        warnings.append(f"No target for: {', '.join(no_target)} (Settings → Hourly targets).")
+    on_default = sorted(set(out.loc[out["target_source"] == "default", "loader"].dropna()))
+    if on_default:
+        warnings.append(f"Using the {SOURCE_LABEL['default']} (no hourly target yet): {', '.join(on_default)}.")
 
     names = dict(zip(operators["nrp"], operators["name"], strict=True)) if operators is not None and len(operators) \
         else {}
@@ -269,7 +277,7 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
     if names:
         unknown = sorted({x for x in (*out["loader_nrp"], *out["hauler_nrp"]) if isinstance(x, str) and x not in names})
         if unknown:
-            warnings.append(f"NRP not in the operator master: {', '.join(unknown)} (Admin → Operators).")
+            warnings.append(f"NRP not in the operator master: {', '.join(unknown)} (Settings → Operators).")
     missing = out[(out[R].fillna(0).sum(axis=1) > 0) & (out["hauler_nrp"].isna()) & out["hauler"].notna()]
     if len(missing):
         warnings.append(f"{len(missing)} line(s) with trips but no hauler operator: operator KPIs will miss them.")
@@ -315,7 +323,7 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
     wb = Workbook()
     ws = wb.active
     ws.title = SHEET
-    ws["A1"] = f"PRISMA · Hourly production · {shift} · one row per hauler"
+    ws["A1"] = f"PRISMA · {DATASET} · {shift} · one row per hauler"
     ws["A1"].font = Font(bold=True, size=14)
     for r, (k, v) in enumerate([("Site", site), ("Date", date), ("Shift", shift), ("Shift boss", coordinator)],
                                start=2):
@@ -374,7 +382,7 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
         for h, v in vals.items():
             ws[f"{pos[h]}{i}"] = None if v is None or (isinstance(v, float) and pd.isna(v)) else v
     ws.freeze_panes = ws.cell(HEADER_ROW + 1, 5)          # loader, operator, material and truck stay visible
-    dataprod._meta(wb, "hourly", {"site": site, "date": date.isoformat(), "shift": shift, "layout": "per_hauler"})
+    dataprod._meta(wb, "hourly", {"dataset": DATASET, "site": site, "date": date.isoformat(), "shift": shift, "layout": "per_hauler"})
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -389,11 +397,17 @@ class HourlyFile:
     rows: pd.DataFrame
 
 
+def file_name(site: str, date: dt.date, shift: str) -> str:
+    """Hourly_Production_WBK-BAU_2026-09-27_DS.xlsx"""
+    return f"{file_stem(DATASET)}_{site}_{date:%Y-%m-%d}_{shift}.xlsx"
+
+
 def parse_template(data: bytes) -> HourlyFile:
     raw = read_workbook(data)
-    if SHEET not in raw:
-        raise StructureError([f"Sheet '{SHEET}' was not found: use the Hourly production template."])
-    x = raw[SHEET]
+    name = next((n for n in SHEET_NAMES if n in raw), None)
+    if name is None:
+        raise StructureError([f"Sheet '{SHEET}' was not found: use the {DATASET} template of this site and shift."])
+    x = raw[name]
     head = {str(x.iloc[i, 0]).strip(): x.iloc[i, 1] for i in range(1, 5) if i < len(x) and pd.notna(x.iloc[i, 0])}
     problems = []
     site = str(head.get("Site") or "").strip()

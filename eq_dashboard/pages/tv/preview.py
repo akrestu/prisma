@@ -28,7 +28,7 @@ if screen == "hourly":
         sh = d2.segmented_control("Shift", list(H.SHIFTS), default=p_shift, key="tv_h_shift") or p_shift
     live = (day, sh) == (p_date, p_shift)
     st.caption("The shift running now, as the TV shows it (refreshed every minute on the TV)." if live else
-               f"{day:%d %b %Y} {sh}: a past shift. To keep it on a TV, set it in Admin → TV devices.")
+               f"{day:%d %b %Y} {sh}: a past shift. To keep it on a TV, set it in TV → TV devices.")
     show_hourly(site, kiosk=False, date=None if live else day, shift=None if live else sh)
 else:
     from core.config import today_wib
@@ -43,5 +43,5 @@ else:
         rng = m2.date_input("From – to", (t.replace(day=1), t), max_value=t, key="tv_review", format="DD/MM/YYYY")
         review = tuple(rng) if isinstance(rng, (list, tuple)) and len(rng) == 2 else None
     st.caption("Exactly what the site TV shows (PUBLISHED data only). Each TV's screen, period and live/review "
-               "range are set in Admin → TV devices.")
+               "range are set in TV → TV devices.")
     show(site, kiosk=False, period=period, review=review)

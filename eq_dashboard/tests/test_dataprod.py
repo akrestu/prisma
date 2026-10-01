@@ -1,4 +1,4 @@
-"""Data_Prod template, export round trip, file-name convention and the date/time readers."""
+"""Production Data template, export round trip, file-name convention and the date/time readers."""
 from __future__ import annotations
 
 import datetime as dt
@@ -27,7 +27,8 @@ def test_excel_date_serial_and_datetime():
 
 
 def test_file_name_convention():
-    assert dataprod.file_name(dt.date(2026, 9, 1)) == "Data_Prod_2026-09.xlsx"
+    assert dataprod.file_name(dt.date(2026, 9, 1)) == "Production_Data_2026-09.xlsx"
+    assert dataprod.month_from_name("Production_Data_2026-09.xlsx") == dt.date(2026, 9, 1)
     assert dataprod.month_from_name("Data_Prod_2026-09_WBK-MAS.xlsb") == dt.date(2026, 9, 1)
     assert dataprod.month_from_name("data prod 202609.xlsx") == dt.date(2026, 9, 1)
     assert dataprod.name_check("Data_Prod_2026-09.xlsb", dt.date(2026, 9, 1)) is None
@@ -40,9 +41,11 @@ def test_template_has_every_sheet_and_column_and_meta():
     frames = validate(raw)                       # passes the same check as an upload
     for sh in DATA_SHEETS:
         assert [c.name for c in sh.cols] == list(frames[sh.name].columns)[:len(sh.cols)]
-    assert "Populasi Unit" not in raw                  # units live in the Unit_Population workbook now
+    assert "Unit Population" not in raw and "Populasi Unit" not in raw   # units live in their own workbook
+    assert [sh.name for sh in DATA_SHEETS] == ["Equipment Events", "Hauler Trips", "Coal Weighbridge",
+                                               "Fuel Consumption", "Fuel Receipts"]
     meta = template_meta(raw)
-    assert meta["dataset"] == "Data_Prod" and meta["template_version"] == str(TEMPLATE_VERSION)
+    assert meta["dataset"] == "Production Data" and meta["template_version"] == str(TEMPLATE_VERSION)
     with pytest.raises(StructureError, match="no data rows"):
         parse_data_prod(dataprod.build_template(["WBK-MAS"]))
 

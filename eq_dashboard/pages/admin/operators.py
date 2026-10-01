@@ -1,4 +1,4 @@
-"""Operator master per site: NRP, name, position. Hourly input picks operators by NRP, so operator KPIs stay
+"""Operator master per site: NRP, name, position. Hourly Production input picks operators by NRP, so operator KPIs stay
 correct whatever spelling a name has."""
 
 import pandas as pd
@@ -17,7 +17,7 @@ POSITIONS = ["Operator Excavator", "Operator Dump Truck", "Operator Dozer", "Ope
 user = require("operators")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
 st.title("Operators")
-st.caption("One row per operator. The NRP is the key used by Hourly input and, later, by operator KPIs.")
+st.caption("One row per operator. The NRP is the key used by Hourly Production input and, later, by operator KPIs.")
 if not sites:
     st.info("No site access.")
     st.stop()

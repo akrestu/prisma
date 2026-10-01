@@ -48,7 +48,7 @@ def authenticate() -> tuple[CurrentUser | None, stauth.Authenticate]:
         with form_col:
             user = _login_form(auth, creds)
         if user is None:
-            st.html(brand.LOGIN_CSS)
+            st.html(brand.login_css())
             with brand_col:
                 brand.brand_panel()
             with form_col:
