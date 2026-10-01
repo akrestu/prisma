@@ -33,7 +33,7 @@ with session_scope() as s:
 a, b, bb = st.columns([3, 2, 2])
 basis = bb.segmented_control("Target", list(PT.BASES), default=site_basis, key="prod_basis",
                              format_func=lambda x: "Internal (WBK)" if x == "internal" else "Client (BAU)",
-                             help="Production Data default productivity per model (Settings → Production targets)"
+                             help="Production Data default productivity per model (Production Data setup → Production targets)"
                              ) or site_basis
 period = a.segmented_control("Granularity", PERIODS, default="daily", format_func=PERIOD_LABEL.get,
                              key="prod_period") or "daily"
@@ -185,7 +185,7 @@ with t2:
         excel_download(th, f"hauler_productivity_{group}_{period}.xlsx", key="dl_hl")
 
 st.caption(f"Targets: Production Data default productivity per model, {PT.BASIS_LABEL[basis].lower()} "
-           "(Settings → Production targets); a unit without a default has no target. "
+           "(Production Data setup → Production targets); a unit without a default has no target. "
            "Ready hours come from the Equipment Events sheet. A unit working on both OB and CG in the same "
            f"{'hour' if period == 'hourly' else 'day'} has its hours shared by its trip share. "
            "Distances are averages weighted by trips.")

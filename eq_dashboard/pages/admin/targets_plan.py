@@ -22,7 +22,7 @@ EXTRA = ("sr", "distance")  # production targets used by the hourly screen (not 
 user = require("targets_plan")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
 st.title("Production targets")
-st.caption("Targets of Production Data. Hourly Production has its own targets in Settings → Hourly targets.")
+st.caption("Targets of Production Data. Hourly Production has its own targets in Hourly Production setup → Hourly targets.")
 if not sites:
     st.info("No sites yet.")
     st.stop()

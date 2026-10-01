@@ -230,8 +230,8 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
             continue
         lm = load_model(r["hauler_model"], lf_models, mapping)
         if lm is None:
-            problems.append(f"{line}: hauler model {r['hauler_model']} has no load class; map it in "
-                            "Settings → Hourly setup → Hauler models.")
+            problems.append(f"{line}: hauler model {r['hauler_model']} has no load per trip; add it in "
+                            "Hourly Production setup → Load factors.")
             continue
         hit = lf.get((str(r["material"]).upper(), str(lm).upper()))
         if hit is None:
@@ -239,7 +239,7 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
             mats = sorted({a for a, b in lf if b == str(lm).upper()})
             near = difflib.get_close_matches(str(r["material"]).upper(), mats, n=1, cutoff=0.75)
             hint = (f" Did you mean '{next(x for x in load['material'] if str(x).upper() == near[0])}'? Pick the "
-                    "material from the drop-down, or rename it in Hourly setup → Load factors.") if near else                 " Add it in Hourly setup → Load factors."
+                    "material from the drop-down, or rename it in Load factors.") if near else                 " Add it in Load factors."
             problems.append(f"{line}: no load factor for {r['material']} × {lm}.{hint}")
             continue
         out.loc[i, ["muatan", "material_group"]] = list(hit)
@@ -264,7 +264,7 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
     out["target_source"] = [h[1] for h in hits]
     no_target = sorted(set(out.loc[out["target_per_hour"].isna(), "loader"].dropna()))
     if no_target:
-        warnings.append(f"No target for: {', '.join(no_target)} (Settings → Hourly targets).")
+        warnings.append(f"No target for: {', '.join(no_target)} (Hourly Production setup → Hourly targets).")
     on_default = sorted(set(out.loc[out["target_source"] == "default", "loader"].dropna()))
     if on_default:
         warnings.append(f"Using the {SOURCE_LABEL['default']} (no hourly target yet): {', '.join(on_default)}.")
@@ -277,7 +277,7 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
     if names:
         unknown = sorted({x for x in (*out["loader_nrp"], *out["hauler_nrp"]) if isinstance(x, str) and x not in names})
         if unknown:
-            warnings.append(f"NRP not in the operator master: {', '.join(unknown)} (Settings → Operators).")
+            warnings.append(f"NRP not in the operator master: {', '.join(unknown)} (Hourly Production setup → Operators).")
     missing = out[(out[R].fillna(0).sum(axis=1) > 0) & (out["hauler_nrp"].isna()) & out["hauler"].notna()]
     if len(missing):
         warnings.append(f"{len(missing)} line(s) with trips but no hauler operator: operator KPIs will miss them.")

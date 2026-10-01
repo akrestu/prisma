@@ -55,7 +55,7 @@ def test_resolve_fills_load_and_target_and_flags_problems():
     r = ok.rows.iloc[0]
     assert not ok.problems and r["muatan"] == 41 and r["target_per_hour"] == 800 and r["loader_model"] == "CAT6020"
     bad = H.resolve(pd.concat([rows(hauler_model="999X"), rows(r3=75)]), LF, TG)
-    assert any("no load class" in p for p in bad.problems) and any("between 0 and 20" in p for p in bad.problems)
+    assert any("no load per trip" in p for p in bad.problems) and any("between 0 and 20" in p for p in bad.problems)
     empty = H.resolve(rows(loader=None, r1=None, r2=None), LF, TG)       # blank lines are dropped, not errors
     assert empty.rows.empty and not empty.problems
 
@@ -185,7 +185,7 @@ def test_mapped_model_and_material_hint():
     units = pd.concat([UNITS, pd.DataFrame([("WDT001", "Supporting Equipment", "Hauling 23 Ton", "CWE37064R", "UD",
                                              "WBK-BAU")], columns=UNITS.columns)])
     rows = hauler_rows({"hauler": "WDT001", "material": "CG - Coal Getting", "r1": 2})
-    assert any("has no load class" in p for p in H.resolve(rows, LF, TG, units, OPS).problems)
+    assert any("has no load per trip" in p for p in H.resolve(rows, LF, TG, units, OPS).problems)
     ok = H.resolve(rows, LF, TG, units, OPS, {"CWE37064R": "CWE370Q"})
     assert not ok.problems and ok.rows.loc[0, "muatan"] == 22.5 and ok.rows.loc[0, "hauler_model"] == "CWE37064R"
     typo = H.resolve(hauler_rows({"hauler": "WHT026", "material": "OB - FreeDigg", "r1": 1}), LF, TG, units, OPS)

@@ -167,30 +167,30 @@ Upload ulang bulan yang sama akan membuat **versi baru**. Versi lama tetap tersi
 
 **Persiapan per site (sekali, oleh Admin atau Site Manager)**
 
-- **Settings → Operators:** daftar operator per site (NRP, nama, jabatan), bisa diimport dari Excel. NRP menjadi kunci untuk KPI operator nanti.
+- **Hourly Production setup → Operators:** daftar operator per site (NRP, nama, jabatan), bisa diimport dari Excel. NRP menjadi kunci untuk KPI operator nanti.
 
 ### Target: Production Data dan Hourly Production terpisah
 
 Kedua target punya dua basis: **internal (WBK)** dan **client (BAU)**. Basis yang dipakai untuk warna capaian dipilih per site.
 
-**Settings → Production targets** (target Production Data, jarang berubah)
+**Production Data setup → Production targets** (target Production Data, jarang berubah)
 
 - **Productivity defaults:** produktivitas standar per **model** excavator (OB dan Mud dalam BCM/jam, Coal dalam t/jam; Coal kosong = nilai OB) dan per model hauler (OB BCM/jam, Coal t/jam). Berlaku untuk semua site, menjadi acuan dashboard *Loader & hauler productivity*, sekaligus cadangan untuk Hourly Production.
 - **Availability & reliability:** target PA, UoA, MTBS, MTTR, SR, dan Distance per site per bulan (import Target.xlsx atau isi di web).
 - **Production plan:** rencana OB dan coal per site per bulan/hari.
 - **Target basis per site** juga bisa diatur di sini.
 
-**Settings → Hourly targets** (target Hourly Production, per site)
+**Hourly Production setup → Hourly targets** (target Hourly Production, per site)
 
 - **Per model:** target per jam per model excavator site itu (OB, Mud, Coal × internal/client). Kosong = memakai default Production Data.
 - **Unit overrides:** hanya untuk excavator yang berbeda dari modelnya.
 - **In effect:** target yang berlaku untuk setiap excavator beserta sumbernya. Urutannya: override unit → target hourly model → default Production Data (ditandai *default*, dan di TV ditandai `*`).
 - **Excel:** unduh template berisi target site (lengkap dengan default sebagai referensi), edit, lalu upload untuk mengganti.
 
-**Settings → Hourly setup** (muatan per trip)
+**Hourly Production setup → Load factors** (muatan per trip, menggantikan Mst Hourly)
 
 - **Load factors:** muatan per trip untuk setiap Material × model hauler, misalnya OB-FreeDig × 777E = 41 BCM, atau CG × CWE370Q = 22,5 t.
-- **Import from Mst Hourly:** sheet **Link Muatan** mengisi load factor, dan targetnya menjadi override unit OB untuk basis site.
+- **Excel:** unduh workbook **Load Factors** site (`Load_Factors_<site>.xlsx`, satu kolom per model truk di populasi), edit, lalu upload untuk mengganti. File **Mst Hourly** lama tetap diterima (sheet *Link Muatan* dibaca; target di dalamnya tidak diimport, isi di Hourly targets).
 
 **Input setiap jam (Data Officer atau Site Manager): Input & upload → Hourly Production**
 
@@ -368,7 +368,9 @@ eq_dashboard/
     ingest.py            simpan upload, versi, approve/reject/rollback
     dataprod.py          template & export Data_Prod
     population.py        Unit_Population: template, import, versi, diff
-    hourly.py            produksi per jam: slot, Link Muatan, template, resolve
+    hourly.py            produksi per jam: slot, template, resolve (+ pembaca Link Muatan lama)
+    load_factors.py      workbook Load Factors (muatan per trip per material × model truk)
+    hourly_targets.py    workbook target Hourly Production per site
     hourly_tv.py         data layar TV per jam; hourly_render.py = HTML-nya
     filters.py           preset periode, filter di URL
     tv.py, tv_render.py  data & tampilan layar TV

@@ -195,7 +195,7 @@ with t_ops:
                                          loaders=("loader", lambda x: ", ".join(sorted(set(map(str, x))))))
                .assign(tph=lambda x: x["trips"] / x["hours"]).sort_values("tph", ascending=False))
         st.caption("Trips per working hour of each hauler operator this shift: the starting point for operator "
-                   "KPIs. Operators are identified by NRP from Settings → Operators.")
+                   "KPIs. Operators are identified by NRP from Hourly Production setup → Operators.")
         fig = go.Figure(go.Bar(
             x=ops.index, y=ops["tph"], marker_color=COLOR[group],
             customdata=ops[["trips", "volume", "hours", "haulers", "loaders"]].values,

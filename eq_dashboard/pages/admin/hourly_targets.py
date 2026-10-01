@@ -20,7 +20,7 @@ sites = [x for x in sites_for(user) if x != UNMAPPED]
 st.title("Hourly targets")
 st.caption("Targets per production hour for Hourly Production: per excavator model of a site, with overrides for "
            "single excavators. Where none is set, the Production Data default is used and shown as 'default' "
-           "(Settings → Production targets).")
+           "(Production Data setup → Production targets).")
 if not sites:
     st.info("No site access.")
     st.stop()

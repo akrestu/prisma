@@ -49,7 +49,7 @@ with session_scope() as s:
     coord_now = sh.coordinator if sh else ""
     stamp = f"{sh.updated_by} · {sh.updated_at.astimezone(WIB):%d %b %H:%M} WIB" if sh else ""
 if lf.empty:
-    st.warning(f"No load factors for {site} yet. An Admin or Site Manager sets them in **Settings → Hourly setup**.")
+    st.warning(f"No load factors for {site} yet. An Admin or Site Manager sets them in **Hourly Production setup → Load factors**.")
     st.stop()
 
 site_units = units[units["site"] == site] if units is not None else pd.DataFrame(columns=["unit_id", "type"])
@@ -99,7 +99,7 @@ with t_web:
                           help="Shown in the header of the hourly TV screen")
     ver = st.session_state.get("hi_ver", 0)
     if ops.empty:
-        st.caption("⚠ No operators for this site yet: add them in **Settings → Operators** to pick them by NRP.")
+        st.caption("⚠ No operators for this site yet: add them in **Hourly Production setup → Operators** to pick them by NRP.")
     cfg = {
         "loader": st.column_config.SelectboxColumn("Excavator", options=loaders, required=True),
         "loader_nrp": st.column_config.SelectboxColumn("Operator", options=list(op_label.values()),

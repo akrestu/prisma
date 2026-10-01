@@ -75,7 +75,7 @@ OTHER = {
     "upload_history": P("pages/data/upload_history.py", "Upload history", "history"),
     "data_explorer": P("pages/data/explorer.py", "Data explorer", "table_view"),
     "hourly_input": P("pages/data/hourly_input.py", HOURLY_PRODUCTION, "schedule_send"),
-    "hourly_setup": P("pages/admin/hourly_setup.py", "Hourly setup", "tune"),
+    "hourly_setup": P("pages/admin/hourly_setup.py", "Load factors", "scale"),
     "operators": P("pages/admin/operators.py", "Operators", "badge"),
     "unit_population": P("pages/admin/unit_population.py", UNIT_POPULATION, "precision_manufacturing"),
     "delete_data": P("pages/admin/delete_data.py", "Delete data", "delete_forever"),
@@ -116,8 +116,10 @@ else:
         "Input & upload": pick(["home", "unit_population", "upload", "hourly_input", "upload_history"]),
         "Approval": pick(["approval"]),
         "TV": pick(["preview_tv", "display_devices"]),
-        "Settings": pick(["targets_plan", "hourly_targets", "hourly_setup", "operators", "pm_interval", "sites_mapping", "users_roles",
-                          "audit_log", "delete_data"]),
+        # setup per dataset: what Production Data is measured against, what Hourly Production needs to run
+        f"{PRODUCTION_DATA} setup": pick(["targets_plan", "pm_interval"]),
+        f"{HOURLY_PRODUCTION} setup": pick(["hourly_targets", "hourly_setup", "operators"]),
+        "Settings": pick(["sites_mapping", "users_roles", "audit_log", "delete_data"]),
         "Account": pick(["account"]),
     }
     if n:  # something waits for this approver: put it first
