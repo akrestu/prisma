@@ -72,6 +72,14 @@ with t_imp:
 
         with session_scope() as s:
             before = repo.population_for(s, eff)
+        if not user.is_admin:
+            # the population covers every site: a Data Officer changes only the units of their own sites
+            pf.units, ignored = pop.restrict(before, pf.units, sites)
+            if len(ignored):
+                st.warning(f"{len(ignored)} change(s) outside your sites ({', '.join(sites)}) are not applied; "
+                           "those units stay as in the version in force. Ask an Admin to change them.")
+                with st.expander("Show the changes that are not applied"):
+                    st.dataframe(ignored, hide_index=True, width="stretch")
         changes = pop.diff(before, pf.units)
         counts = changes["change"].str.split(" ").str[0].value_counts()
         st.subheader(f"Check · {len(pf.units):,} units")
@@ -105,7 +113,6 @@ with t_imp:
                 audit(s, user.username, "population_import", None,
                       f"#{v.id} effective {eff:%Y-%m-%d}: {len(pf.units)} units, {len(changes)} changes")
                 vid = v.id
-            st.cache_data.clear()
             st.session_state["pop_ver"] = st.session_state.get("pop_ver", 0) + 1   # empty the uploader
             st.session_state["pop_msg"] = (f"Version #{vid} saved: {len(pf.units):,} units effective "
                                            f"{eff:%d %b %Y}. It applies to Production Data imports from that month "

@@ -50,6 +50,5 @@ if user.is_admin:
         if st.button("Roll back to this version"):
             with session_scope() as s:
                 ing.rollback(s, s.get(m.UploadSite, pick), user.id, user.username)
-            st.cache_data.clear()
             st.success("Version restored as PUBLISHED.")
             st.rerun()

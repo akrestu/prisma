@@ -174,9 +174,9 @@ with t_ops:
                           yaxis=dict(autorange="reversed", type="category"), xaxis=dict(type="category"))
         dash.plot(fig, max(320, 24 * len(trips) + 120))
         tot = pd.DataFrame({"Loader": [ld for ld, _ in trips.index], "Hauler": [hv for _, hv in trips.index],
-                            "Model": first["model"].values, "Operator": first["op"].values,
-                            "Hours worked": (trips > 0).sum(axis=1).values, "Trips": trips.sum(axis=1).values,
-                            unit: hl.groupby(["loader", "hauler"])["volume"].sum().reindex(trips.index).values})
+                            "Model": first["model"].to_numpy(), "Operator": first["op"].to_numpy(),
+                            "Hours worked": (trips > 0).sum(axis=1).to_numpy(), "Trips": trips.sum(axis=1).to_numpy(),
+                            unit: hl.groupby(["loader", "hauler"])["volume"].sum().reindex(trips.index).to_numpy()})
         tot["Trips/hour"] = tot["Trips"] / tot["Hours worked"].replace(0, pd.NA)
         st.dataframe(tot, hide_index=True, width="stretch",
                      column_config={"Trips/hour": st.column_config.NumberColumn(format="%.1f"),

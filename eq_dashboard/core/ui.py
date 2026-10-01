@@ -54,3 +54,24 @@ def excel_download(df: pd.DataFrame, filename: str, label: str = "Download Excel
     writing Excel is the slowest step on most pages (≈10 s for 60,000 rows)."""
     st.download_button(label, lambda: excel_bytes(df), file_name=filename, key=key, on_click="ignore",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+def refresh(*what: str) -> None:
+    """Clear only the caches whose inputs just changed, instead of every cache of every user (st.cache_data.clear()
+    made each save slow down all dashboards and TVs). Data tables are cached per upload and an upload never changes
+    after import, and the equipment TV is keyed by the published versions and target values, so imports, approvals
+    and target edits need nothing here.
+      "plan"   daily production plan       "pm"  PM intervals and standby groups
+      "hourly" hourly TV payload           "all" everything (after deleting data)"""
+    if "all" in what:
+        st.cache_data.clear()
+        return
+    from core import dash
+    if "plan" in what:
+        dash.plan_daily.clear()
+    if "pm" in what:
+        dash.pm_intervals.clear()
+        dash.client_standby_codes.clear()
+    if "hourly" in what:
+        from pages.tv.screen import _hourly_payload
+        _hourly_payload.clear()

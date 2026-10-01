@@ -217,7 +217,6 @@ with t_imp:
                     bar.progress(i / len(chosen), text=f"Saved {r.month:%b %Y} ({i} of {len(chosen)})")
                 bar.empty()
                 st.session_state.pop("upload_preview", None)
-                st.cache_data.clear()
                 stepper(3)
                 for mo, up_id, result in saved:
                     st.markdown(f"**{mo:%B %Y}** · upload #{up_id}: "
@@ -247,11 +246,10 @@ def column_config(sheet: str) -> dict:
     return out
 
 
-def differs(a: pd.DataFrame, b: pd.DataFrame) -> bool:
-    if len(a) != len(b):
-        return True
-    norm = lambda d: d.reset_index(drop=True).astype(str).replace({"NaT": "", "nan": "", "None": ""})  # noqa: E731
-    return not norm(a).equals(norm(b))
+def has_edits(grid_key: str) -> bool:
+    """The grid's own record of changes: cheap, unlike comparing ~60,000 rows on every rerun."""
+    e = st.session_state.get(grid_key) or {}
+    return any(e.get(k) for k in ("edited_rows", "added_rows", "deleted_rows"))
 
 
 def typed(df: pd.DataFrame, sheet: str) -> pd.DataFrame:
@@ -293,13 +291,20 @@ with t_edit:
                     with session_scope() as s:
                         tables = repo.export_tables(s, [key])
                     frames = {k: typed(v, k) for k, v in dataprod.export_frames(tables).items()}
-                work = {"key": key, "orig": frames, "edit": dict(frames), "base": dict(frames),
-                        "ver": dict.fromkeys(frames, 0)}
+                work = {"key": key, "edit": dict(frames), "base": dict(frames), "ver": dict.fromkeys(frames, 0),
+                        "dirty": set()}
                 st.session_state["pe_work"] = work
                 st.session_state.pop("pe_last", None)
 
             names = [sh.name for sh in DATA_SHEETS]
-            changed = [n for n in names if differs(work["edit"][n], work["orig"][n])]
+
+            def grid_key(n: str) -> str:
+                return f"pe_grid_{up_id}_{site}_{n}_{work['ver'][n]}"
+
+            last = st.session_state.get("pe_last")
+            if last in work["ver"] and has_edits(grid_key(last)):
+                work["dirty"].add(last)
+            changed = [n for n in names if n in work["dirty"]]
             sheet = st.segmented_control(
                 "Sheet", names, default=EVENTS, key="pe_sheet",
                 format_func=lambda n: f"{n} ({len(work['edit'][n]):,})" + (" •" if n in changed else "")) or EVENTS
@@ -310,9 +315,11 @@ with t_edit:
                 st.session_state["pe_last"] = sheet
             edited = st.data_editor(work["base"][sheet], num_rows="dynamic", hide_index=True, width="stretch",
                                     height=460, column_config=column_config(sheet),
-                                    key=f"pe_grid_{up_id}_{site}_{sheet}_{work['ver'][sheet]}")
+                                    key=grid_key(sheet))
             work["edit"][sheet] = edited
-            changed = [n for n in names if differs(work["edit"][n], work["orig"][n])]
+            if has_edits(grid_key(sheet)):
+                work["dirty"].add(sheet)
+            changed = [n for n in names if n in work["dirty"]]
             st.caption("Click a header to sort; use the search icon above the grid to find a unit or ticket. "
                        "Select rows on the left edge and press Delete to remove them; add rows at the bottom.")
 
@@ -364,7 +371,6 @@ with t_edit:
                         status, up_new = ups[0].status, up.id
                     box.update(label="Saved", state="complete", expanded=False)
                 crit = int((p.dq.loc[p.dq["site"] == site, "severity"] == "critical").sum())
-                st.cache_data.clear()
                 st.session_state.pop("pe_work", None)
                 st.session_state["pe_msg"] = (
                     f"{site} · {month:%B %Y} saved as upload #{up_new} ({status}). "

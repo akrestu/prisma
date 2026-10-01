@@ -7,7 +7,7 @@ from core import dash, metrics
 from core import theme as T
 from core.ui import excel_download, fmt_pct
 
-c = dash.context("pa_ua")
+c = dash.context("pa_ua", title="PA & UoA")
 st.title("PA & UoA")
 
 k = metrics.kpis(c.ev).iloc[0]

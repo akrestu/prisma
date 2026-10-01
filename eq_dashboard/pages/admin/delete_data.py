@@ -7,7 +7,7 @@ import streamlit as st
 from core import filters as F
 from core.config import UNMAPPED, today_wib
 from core.ingest import audit
-from core.ui import fmt_num, require, sites_for
+from core.ui import fmt_num, refresh, require, sites_for
 from core.validate import HOURLY_PRODUCTION, PRODUCTION_DATA, UNIT_POPULATION
 from db import repo
 from db.engine import session_scope
@@ -111,7 +111,7 @@ if go:
             for name, c in result.items():
                 detail = ", ".join(f"{k} {v:,}" for k, v in c.items() if v)
                 audit(s, user.username, "delete_data", None, f"{name} · {where} · {period}: {detail or 'nothing'}")
-        st.cache_data.clear()
+        refresh("all")
         st.session_state["delete_done"] = "Deleted: " + " · ".join(
             f"{name} ({', '.join(f'{fmt_num(v)} {LABELS.get(k, k)}' for k, v in c.items() if v and k in LABELS)})"
             for name, c in result.items())

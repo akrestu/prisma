@@ -7,7 +7,7 @@ from core import dash, metrics
 from core import theme as T
 from core.ui import fmt_num, fmt_pct
 
-c = dash.context("overview")
+c = dash.context("overview", title="Overview")
 st.title("Overview")
 
 k = metrics.kpis(c.ev).iloc[0]

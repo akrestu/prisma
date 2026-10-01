@@ -139,3 +139,42 @@ def test_dataset_pages_render_for_admin(db_session, sample_bytes, monkeypatch, p
     at.session_state["user"] = load_user(s, "adm")
     at.run()
     assert not at.exception, [e.value for e in at.exception]
+
+
+def test_data_officer_changes_only_units_of_own_sites():
+    cols = ["unit_id", "type", "description", "model", "manufacturer", "site"]
+    old = pd.DataFrame([("WHT001", "Hauling", None, "777E", None, "WBK-BAU"),
+                        ("WHT002", "Hauling", None, "777E", None, "WBK-MAS")], columns=cols)
+    new = pd.DataFrame([("WHT001", "Hauling", None, "777F", None, "WBK-BAU"),      # own site: applied
+                        ("WHT002", "Hauling", None, "777F", None, "WBK-MAS"),      # other site: ignored
+                        ("WHT003", "Hauling", None, "777E", None, "WBK-BAU"),      # added in own site
+                        ("WHT004", "Hauling", None, "777E", None, "WBK-MAS")], columns=cols)  # added elsewhere
+    keep, ignored = population.restrict(old, new, ["WBK-BAU"])
+    got = keep.set_index("unit_id")
+    assert sorted(got.index) == ["WHT001", "WHT002", "WHT003"]
+    assert got.loc["WHT001", "model"] == "777F" and got.loc["WHT002", "model"] == "777E"
+    assert sorted(ignored["unit_id"]) == ["WHT002", "WHT004"]
+    # moving a unit out of the user's site touches another site: not applied
+    moved = new.assign(site=["WBK-MAS", "WBK-MAS", "WBK-BAU", "WBK-MAS"]).iloc[:1]
+    keep, ignored = population.restrict(old.iloc[:1], moved, ["WBK-BAU"])
+    assert keep["site"].tolist() == ["WBK-BAU"] and ignored["change"].tolist() == ["moved to WBK-MAS"]
+
+
+def test_saved_shifts_take_new_targets_on_request(db_session):
+    s = db_session
+    s.add(m.Site(code="WBK-BAU", name="BAU"))
+    sh = m.HourlyShift(site="WBK-BAU", date=dt.date(2026, 9, 1), shift="DS", updated_by="t")
+    s.add(sh)
+    s.flush()
+    s.add(m.HourlyRow(shift_id=sh.id, line=1, loader="WEX015", loader_model="CAT6020B", material="OB - FreeDig",
+                      material_group="OB", hauler_model="777E", muatan=41, target_per_hour=800,
+                      target_source="default"))
+    s.commit()
+    s.add(m.HourlyModelTarget(site="WBK-BAU", model="6020B", basis="internal", ob=950))
+    s.commit()
+    assert repo.recalc_hourly_targets(s, "WBK-BAU", dt.date(2026, 9, 1), dt.date(2026, 9, 30)) == \
+        {"shifts": 1, "lines": 1, "changed": 1}
+    s.commit()
+    row = s.scalar(select(m.HourlyRow))
+    assert (row.target_per_hour, row.target_source) == (950, "hourly")
+    assert repo.recalc_hourly_targets(s, "WBK-BAU", dt.date(2026, 9, 1), dt.date(2026, 9, 30))["changed"] == 0

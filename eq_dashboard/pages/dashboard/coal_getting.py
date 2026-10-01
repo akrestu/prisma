@@ -8,7 +8,7 @@ from core import theme as T
 from core.periods import weighted
 from core.ui import excel_download, fmt_num
 
-c = dash.context("coal_getting", unit_filter=False)
+c = dash.context("coal_getting", unit_filter=False, title="Coal getting")
 st.title("Coal getting")
 t = c.coal
 if t.empty:

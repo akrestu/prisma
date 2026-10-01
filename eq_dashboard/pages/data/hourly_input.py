@@ -8,7 +8,7 @@ import streamlit as st
 from core import hourly as H
 from core.config import UNMAPPED, WIB, now_wib
 from core.ingest import audit
-from core.ui import fmt_num, require, sites_for
+from core.ui import fmt_num, refresh, require, sites_for
 from core.validate import StructureError
 from db import repo
 from db.engine import session_scope
@@ -147,7 +147,7 @@ with t_web:
         with st.spinner("Saving the shift…"), session_scope() as s:
             repo.save_hourly(s, site, date, shift, coord, res.rows, user.username, "web")
             audit(s, user.username, "hourly_save", site, f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines")
-        st.cache_data.clear()
+        refresh("hourly")
         st.session_state["hi_ver"] = ver + 1
         st.session_state["hi_msg"] = f"{site} {date:%d %b} {shift} saved ({len(res.rows)} lines)."
         st.rerun()
@@ -201,7 +201,7 @@ with t_xls:
                 repo.save_hourly(s, hf.site, hf.date, hf.shift, hf.coordinator, rf.rows, user.username, "excel")
                 audit(s, user.username, "hourly_upload", hf.site,
                       f"{hf.date:%Y-%m-%d} {hf.shift}: {len(rf.rows)} lines from {f.name}")
-            st.cache_data.clear()
+            refresh("hourly")
             lg = H.to_long(rf.rows.assign(site=hf.site, date=hf.date, shift=hf.shift))
             vol = lg.groupby("material_group")["volume"].sum()
             st.session_state["hi_goto"] = (hf.site, hf.date, hf.shift)

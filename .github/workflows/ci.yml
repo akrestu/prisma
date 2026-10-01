@@ -1,0 +1,45 @@
+# Lint and tests on every push and pull request. Same Python and PostgreSQL as deploy/ (Dockerfile, compose).
+# Sample workbooks (Eq.Event.xlsb, Target.xlsx, …) are not committed, so the tests that need them are skipped here;
+# run the full suite locally before a release.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: eq_dashboard
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: prisma
+          POSTGRES_PASSWORD: prisma
+          POSTGRES_DB: prisma_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U prisma" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://prisma:prisma@localhost:5432/prisma_test
+      TEST_DATABASE_URL: postgresql+psycopg://prisma:prisma@localhost:5432/prisma_test
+      AUTH_COOKIE_KEY: ci-only-cookie-key-not-a-secret-0123456789abcdef
+      STREAMLIT_SERVER_COOKIE_SECRET: ci-only-cookie-secret-not-a-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: eq_dashboard/requirements*.txt
+      - name: Install
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check .
+      - name: Migrations apply to an empty database
+        run: ALEMBIC_TEST=1 alembic upgrade head
+      - name: Tests
+        run: pytest -q

@@ -24,7 +24,7 @@ from core.ui import excel_download, fmt_num
 from db import repo
 from db.engine import session_scope
 
-c = dash.context("loader_fleet", unit_filter=False)
+c = dash.context("loader_fleet", unit_filter=False, title="Loader & hauler productivity")
 st.title("Loader & hauler productivity")
 
 with session_scope() as s:
@@ -112,7 +112,7 @@ dash.summary(f"Loaders move {fmt_num(tot_l['per_hour'].iloc[0], 1)} {unit} per R
              f"{fmt_num(tot_l['dist_v'].iloc[0])} m vertical",
              f"best loader {best.index[0]} at {fmt_num(best.iloc[0], 1)} {unit}/h" if len(best) else "")
 k = st.columns(6)
-k[0].metric(f"{group} volume", f"{fmt_num(tot_l['volume'].iloc[0])} {unit}")
+k[0].metric(f"{group} volume ({unit})", fmt_num(tot_l["volume"].iloc[0]))   # unit in the label: six cards are narrow
 k[1].metric("Trips", fmt_num(tot_l["rit"].iloc[0]))
 dash.kpi(k[2], f"Loader {unit}/h", tot_l["per_hour"].iloc[0], tgt_l, kind="n1",
          help="Volume / loader Ready hours; target = default per model weighted by Ready hours")

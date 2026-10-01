@@ -32,11 +32,9 @@ def raw_frames(sample_bytes):
     return read_workbook(sample_bytes)
 
 
-@pytest.fixture()
-def db_session():
-    """Database test bersih untuk setiap test."""
-    from sqlalchemy.orm import sessionmaker
-
+@pytest.fixture(scope="session")
+def test_engine():
+    """The test database with the current schema, built once per test run."""
     from core.config import database_url
     from db.engine import get_engine
     from db.models import Base
@@ -49,7 +47,22 @@ def db_session():
         pytest.skip(f"test database not available: {e}")
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    s = sessionmaker(bind=engine, expire_on_commit=False)()
+    return engine
+
+
+@pytest.fixture()
+def db_session(test_engine):
+    """An empty test database for every test: one TRUNCATE instead of dropping and creating every table. Pages run
+    with AppTest use their own connections, so the data is committed for real (no rollback-only transaction)."""
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+
+    from db.models import Base
+
+    names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+    with test_engine.begin() as c:
+        c.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+    s = sessionmaker(bind=test_engine, expire_on_commit=False)()
     yield s
     s.rollback()
     s.close()

@@ -95,7 +95,10 @@ def parse_frames(frames: dict[str, pd.DataFrame], alias: dict[str, str] | None =
     if population is not None:
         units = population(month) if callable(population) else population
         source = units.attrs.get("source", "Unit Population") if units is not None else ""
-    if units is None or len(units) == 0:
+    # the published-data fallback knows only sites that already have published data; the file's own unit sheet
+    # (older files) is complete, so it wins over the fallback
+    weak = units is not None and units.attrs.get("fallback") and "Unit Population" in frames
+    if units is None or len(units) == 0 or weak:
         if "Unit Population" not in frames:
             raise StructureError([f"No unit population applies to {month:%B %Y}. Import a Unit Population workbook "
                                   "(Input & upload → Unit Population) with an effective date on or before this month."])

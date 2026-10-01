@@ -163,8 +163,16 @@ class Loaded:
     receipt: pd.DataFrame
 
 
-def context(page: str, unit_filter: bool = True) -> Ctx:
-    """Page guard + filter bar + filtered PUBLISHED data."""
+def context(page: str, unit_filter: bool = True, title: str | None = None) -> Ctx:
+    """Page guard + filter bar + filtered PUBLISHED data. `title` is shown when the page stops early (no data),
+    so an empty page still says where the user is; otherwise the page shows its own title below the filters."""
+
+    def halt(show, msg: str) -> None:
+        if title:
+            st.title(title)
+        show(msg)
+        st.stop()
+
     user = require(page)
     allowed = [x for x in sites_for(user) if x != UNMAPPED or user.is_admin]
     with session_scope() as s:
@@ -175,20 +183,18 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
             msg += " Open **Approval** to approve pending uploads."
         elif user.role == "data_officer":
             msg += " Import a workbook in **Input & upload → Production Data**, then wait for Site Manager approval."
-        st.info(msg)
-        st.stop()
+        halt(st.info, msg)
     _seed_filters(user)
 
     bar = st.container(border=True)
-    r = bar.columns([2.2, 1.6, 2.2, 0.9, 0.9], vertical_alignment="bottom")
+    r = bar.columns([2.2, 1.6, 1.9, 1.2, 0.9], vertical_alignment="bottom")   # wide enough for "Compare"
     avail = sorted(pub["site"].unique())
     _valid("f_site", avail)
     if not st.session_state.get("f_site"):
         st.session_state["f_site"] = [x for x in avail if x != UNMAPPED] or avail
     sel = r[0].multiselect("Site", avail, key="f_site")
     if not sel:
-        st.warning("Select at least one site.")
-        st.stop()
+        halt(st.warning, "Select at least one site.")
 
     mine = pub[pub["site"].isin(sel)]
     months_avail = sorted(mine["month"].unique())
@@ -212,8 +218,20 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
         picked = r[2].date_input("From – to", min_value=first, max_value=anchor, key="f_range", format="DD/MM/YYYY")
         custom = tuple(picked) if isinstance(picked, (list, tuple)) and len(picked) == 2 else None
     d0, d1 = F.preset_range(preset, anchor, first, last_complete, custom, today=today_wib())
+    moved = None
+    if preset in F.CALENDAR and d0 > anchor:
+        # Production Data lags a few days: show the same span ending on the latest data instead of an empty page
+        span, end = d1 - d0, (last_complete or anchor) if preset in ("today", "yesterday") else anchor
+        moved = (d0, d1)
+        d0, d1 = max(end - span, first), end
+    elif preset == "last_month" and d0 == d1 == anchor:
+        # preset_range falls back to the latest day when last month has no data: say so instead of a silent swap
+        prev_end = F.month_start(anchor) - dt.timedelta(days=1)
+        moved = (F.month_start(prev_end), prev_end)
     if preset != "custom":
-        r[2].text_input("From – to", F.range_label(d0, d1), disabled=True, key="f_range_label")
+        # a keyed widget keeps its first value: set it every run so the label follows the dates shown
+        st.session_state["f_range_label"] = F.range_label(d0, d1)
+        r[2].text_input("From – to", disabled=True, key="f_range_label")
     cmp_on = r[3].toggle("Compare", key="f_cmp", help="Show the change against the previous period on the KPI cards")
 
     more = r[4].popover("More", icon=":material/tune:", width="stretch")
@@ -225,12 +243,14 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
     shift = more.segmented_control("Shift", ["DS", "NS"], selection_mode="multi", key="f_shift") or ["DS", "NS"]
     extra = [f"Week {', '.join(w[-1] for w in weeks)}" if weeks else "", shift[0] if len(shift) == 1 else ""]
 
+    if moved:
+        bar.caption(f":material/info: No published data for **{F.PRESETS[preset].lower()}** "
+                    f"({F.range_label(*moved)}) yet: showing the latest data, **{F.range_label(d0, d1)}**.")
     if d0 > anchor or d1 < first:
         _actions(bar, user)
-        st.info(f"No published data for **{F.PRESETS[preset].lower()}** ({F.range_label(d0, d1)}) yet. "
-                f"Data runs from {first:%d %b %Y} to {anchor:%d %b %Y}; pick **Last complete day** or **Month to "
-                "date** to see the latest.")
-        st.stop()
+        halt(st.info, f"No published data for **{F.PRESETS[preset].lower()}** ({F.range_label(d0, d1)}) yet. "
+             f"Data runs from {first:%d %b %Y} to {anchor:%d %b %Y}; pick **Last complete day** or **Month to "
+             "date** to see the latest.")
     d0, d1 = max(d0, first), min(d1, anchor)
 
     def load(a: dt.date, b: dt.date) -> Loaded | None:
@@ -292,8 +312,7 @@ def context(page: str, unit_filter: bool = True) -> Ctx:
 
     cur = load(d0, d1)
     if cur is None:
-        st.info("No event data for this selection.")
-        st.stop()
+        halt(st.info, "No event data for this selection.")
     prev_rng = prev = None
     if cmp_on:
         prev_rng = F.previous_range(preset, d0, d1)

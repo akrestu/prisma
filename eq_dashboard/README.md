@@ -138,7 +138,7 @@ Admin membuat user di **Admin → Users & roles**. Password sementara hanya dita
 
 ### Populasi unit (Unit_Population)
 
-Daftar unit dan site pemiliknya tidak ada di Production Data. Populasi dikelola sebagai file sendiri di **Input & upload → Unit Population**, dan hanya diupload saat ada perubahan unit:
+Daftar unit dan site pemiliknya tidak ada di Production Data. Populasi dikelola sebagai file sendiri di **Input & upload → Unit Population**, dan hanya diupload saat ada perubahan unit. Populasi berlaku untuk semua site: Admin bebas mengubah, sedangkan Data Officer hanya bisa mengubah unit di site miliknya (perubahan pada site lain tidak diterapkan dan ditampilkan sebagai daftar):
 
 1. Unduh template. Template sudah terisi daftar unit yang berlaku hari ini.
 2. Ubah di Excel: tambah unit baru, hapus unit yang keluar, atau ganti site unit yang pindah.
@@ -186,6 +186,7 @@ Kedua target punya dua basis: **internal (WBK)** dan **client (BAU)**. Basis yan
 - **Unit overrides:** hanya untuk excavator yang berbeda dari modelnya.
 - **In effect:** target yang berlaku untuk setiap excavator beserta sumbernya. Urutannya: override unit → target hourly model → default Production Data (ditandai *default*, dan di TV ditandai `*`).
 - **Excel:** unduh template berisi target site (lengkap dengan default sebagai referensi), edit, lalu upload untuk mengganti.
+- **Apply to saved shifts:** shift yang sudah tersimpan tetap memakai target saat disimpan. Setelah mengubah target, pilih rentang tanggal lalu klik *Apply current targets* agar shift itu ikut memakai target baru.
 
 **Hourly Production setup → Load factors** (muatan per trip, menggantikan Mst Hourly)
 
@@ -334,6 +335,8 @@ ruff check .           # linter (aturan di pyproject.toml)
 ```
 
 Sebagian test memakai file contoh `../Eq.Event.xlsb`, `../Target.xlsx`, dan `../Mst Hourly.xlsx`. Test itu otomatis dilewati kalau filenya tidak ada. File data (.xlsb/.xlsx/.pdf) tidak di-commit.
+
+**CI (GitHub Actions):** `.github/workflows/ci.yml` di root repo menjalankan ruff, migrasi Alembic ke database kosong, dan pytest dengan PostgreSQL 18 di setiap push dan pull request. File contoh tidak ada di repo, jadi test yang membutuhkannya dilewati di CI; jalankan suite lengkap secara lokal sebelum rilis.
 
 ---
 

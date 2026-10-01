@@ -8,7 +8,7 @@ from core import hourly as H
 from core import load_factors as LF
 from core.config import UNMAPPED, today_wib
 from core.ingest import audit
-from core.ui import require, sites_for
+from core.ui import refresh, require, sites_for
 from core.validate import StructureError
 from db import models as m
 from db import repo
@@ -42,7 +42,7 @@ def save_load(df: pd.DataFrame, action: str, note: str = "") -> None:
     with st.spinner("Saving load factors…"), session_scope() as s:
         n = repo.replace_site_rows(s, m.LoadFactor, site, df, COLS)
         audit(s, user.username, action, site, f"{n} rows{note}")
-    st.cache_data.clear()
+    refresh("hourly")
     st.session_state["hs_msg"] = f"{n} load factors saved for {site}. New and re-saved shifts use them."
     st.rerun()
 
@@ -52,7 +52,7 @@ t_lf, t_xls = st.tabs([f"Load factors ({len(lf)})" + (f" · {len(missing)} truck
 
 with t_lf:
     st.caption("The columns are the truck models of this site's unit population, so a truck's load is found from "
-               "its model directly. Empty cell = that model does not carry that material.")
+               "its model directly. Empty cell ('None') = that model does not carry that material.")
     grid = LF.wide(lf, pop_models)
     cols = [c for c in grid.columns if c != "material"]
     if missing and len(lf):

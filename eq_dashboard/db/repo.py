@@ -229,7 +229,7 @@ def population_for(s: Session, month) -> pd.DataFrame | None:
     if v is None:
         return _units_from_data_prod(s, last)
     units = population_units(s, v.id)
-    units.attrs["source"] = f"Unit_Population version #{v.id} (effective {v.effective_from:%d %b %Y})"
+    units.attrs["source"] = f"Unit Population version #{v.id} (effective {v.effective_from:%d %b %Y})"
     return units
 
 
@@ -335,6 +335,27 @@ def last_hourly_shift(s: Session, sites: list[str]) -> tuple[str, object, str] |
     return tuple(row) if row else None
 
 
+def recalc_hourly_targets(s: Session, site: str, d0, d1) -> dict[str, int]:
+    """Apply the current Hourly Production targets to the saved shifts of a site in [d0, d1] (a shift keeps the
+    target it was saved with until this runs). Returns shifts, lines and lines whose target changed."""
+    from sqlalchemy import update
+
+    from core.prod_target import hourly_target
+    r, h = m.HourlyRow, m.HourlyShift
+    rows = s.execute(select(r.id, r.loader, r.loader_model, r.material, r.target_per_hour, r.target_source, r.shift_id)
+                     .join(h, h.id == r.shift_id).where(h.site == site, h.date >= d0, h.date <= d1)).all()
+    basis, over = site_basis(s, site), loader_targets(s, site)
+    models, defaults = hourly_model_targets(s, site), model_targets(s)
+    changed = 0
+    for row in rows:
+        value, source = hourly_target(row.loader, row.loader_model, row.material, basis, over, models, defaults)
+        same = (value == row.target_per_hour or (value is None and row.target_per_hour is None))             and source == row.target_source
+        if not same:
+            s.execute(update(r).where(r.id == row.id).values(target_per_hour=value, target_source=source))
+            changed += 1
+    return {"shifts": len({row.shift_id for row in rows}), "lines": len(rows), "changed": changed}
+
+
 def hourly_range(s: Session, sites: list[str], d0, d1) -> pd.DataFrame:
     """All hourly rows of the sites between two production dates, with their shift header."""
     r, h = m.HourlyRow, m.HourlyShift
@@ -366,6 +387,8 @@ def _units_from_data_prod(s: Session, last) -> pd.DataFrame | None:
     if units.empty:
         return None
     units.attrs["source"] = "units of the latest published Production Data (no Unit Population version yet)"
+    # only sites that already have published data are in it: a file's own unit sheet is preferred (core.parse)
+    units.attrs["fallback"] = True
     return units
 
 

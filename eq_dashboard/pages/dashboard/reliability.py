@@ -6,7 +6,7 @@ from core import dash, metrics
 from core import theme as T
 from core.ui import excel_download, fmt_num
 
-c = dash.context("reliability")
+c = dash.context("reliability", title="Reliability")
 st.title("Reliability")
 
 rel = metrics.reliability(c.ev, c.st).iloc[0]

@@ -9,7 +9,7 @@ from core import hourly_targets as HT
 from core import prod_target as PT
 from core.config import UNMAPPED, today_wib
 from core.ingest import audit
-from core.ui import require, sites_for
+from core.ui import refresh, require, sites_for
 from core.validate import StructureError
 from db import models as m
 from db import repo
@@ -51,7 +51,7 @@ if new_basis != basis:
     with session_scope() as s:
         s.get(m.Site, site).target_basis = new_basis
         audit(s, user.username, "target_basis", site, f"{basis} -> {new_basis}")
-    st.cache_data.clear()
+    refresh("hourly")
     st.session_state["ht_msg"] = f"{site} now uses the {PT.BASIS_LABEL[new_basis].lower()}."
     st.rerun()
 
@@ -60,13 +60,14 @@ def save(models_df=None, overrides_df=None, action="hourly_targets", note="") ->
     with st.spinner("Saving targets…"), session_scope() as s:
         n = repo.save_hourly_targets(s, site, models_df, overrides_df)
         audit(s, user.username, action, site, ", ".join(f"{k} {v}" for k, v in n.items()) + note)
-    st.cache_data.clear()
+    refresh("hourly")
     st.session_state["ht_msg"] = (f"Hourly targets of {site} saved: "
                                   + ", ".join(f"{v} {k}" for k, v in n.items()) + ". New and re-saved shifts use them.")
     st.rerun()
 
 
-t_eff, t_mod, t_unit, t_xls = st.tabs(["In effect", "Per model", f"Unit overrides ({len(over)})", "Excel"])
+t_eff, t_mod, t_unit, t_xls, t_apply = st.tabs(["In effect", "Per model", f"Unit overrides ({len(over)})", "Excel",
+                                                "Apply to saved shifts"])
 
 # ------------------------------------------------------------------ in effect
 with t_eff:
@@ -97,11 +98,12 @@ with t_mod:
     grid = PT.wide(models, HT.MODEL_VALUES)
     extra = [mo for mo in loader_models if PT.match(mo, grid["model"]) is None]
     if extra:
-        grid = pd.concat([grid, pd.DataFrame({"model": extra})], ignore_index=True)
+        grid = PT.numeric(pd.concat([grid, pd.DataFrame({"model": extra})], ignore_index=True))
     for bsis in PT.BASES:
-        grid[f"Default OB · {bsis}"] = [PT.model_target(mo, "OB", defaults, bsis) for mo in grid["model"]]
+        grid[f"Default OB · {bsis}"] = pd.to_numeric([PT.model_target(mo, "OB", defaults, bsis)
+                                                      for mo in grid["model"]], errors="coerce")
     st.caption("One row per excavator model of the site (a model name also covers longer unit models, e.g. "
-               "'SK520' covers SK520XDLC-10). Empty = use the Production Data default (grey, read-only).")
+               "'SK520' covers SK520XDLC-10). Empty ('None') = use the Production Data default (grey, read-only).")
     num = lambda lbl: st.column_config.NumberColumn(lbl, min_value=0, format="%.0f")  # noqa: E731
     ed = st.data_editor(grid, num_rows="dynamic", hide_index=True, width="stretch", key=f"ht_models_{site}",
                         disabled=[f"Default OB · {b_}" for b_ in PT.BASES],
@@ -169,3 +171,21 @@ with t_xls:
         if not tf.problems and st.button(f"Replace the hourly targets of {site}", type="primary", key="ht_xsave"):
             st.session_state["ht_ver"] = st.session_state.get("ht_ver", 0) + 1
             save(tf.models, tf.overrides, "hourly_targets_upload", f" from {f.name}")
+
+# ------------------------------------------------------------------ apply to saved shifts
+with t_apply:
+    st.markdown(f"A saved shift keeps the target it was saved with. After changing targets, apply them to the "
+                f"shifts of **{site}** already saved in a date range (hourly input, dashboard and TV then use them).")
+    today = today_wib()
+    rng = st.date_input("Production dates", (today.replace(day=1), today), key=f"ht_apply_{site}",
+                        format="DD/MM/YYYY")
+    if isinstance(rng, (list, tuple)) and len(rng) == 2 and st.button("Apply current targets", type="primary",
+                                                                      key="ht_apply_go"):
+        with st.spinner("Recalculating targets of the saved shifts…"), session_scope() as s:
+            n = repo.recalc_hourly_targets(s, site, rng[0], rng[1])
+            audit(s, user.username, "hourly_targets_apply", site,
+                  f"{rng[0]:%Y-%m-%d}..{rng[1]:%Y-%m-%d}: {n['changed']} of {n['lines']} lines in {n['shifts']} shifts")
+        refresh("hourly")
+        st.session_state["ht_msg"] = (f"{n['shifts']} shift(s) of {site} checked: {n['changed']} of {n['lines']} "
+                                      "line(s) got a new target.")
+        st.rerun()

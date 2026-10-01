@@ -8,7 +8,7 @@ from core import dash
 from core import theme as T
 from core.ui import excel_download, fmt_num
 
-c = dash.context("fuel")
+c = dash.context("fuel", title="Fuel")
 st.title("Fuel")
 f = c.fuel
 if f.empty:

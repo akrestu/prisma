@@ -65,6 +65,35 @@ def diff(old: pd.DataFrame | None, new: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index()[["change", *COLS]] if len(out) else pd.DataFrame(columns=["change", *COLS])
 
 
+def restrict(old: pd.DataFrame | None, new: pd.DataFrame, allowed: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Keep only the changes a user may make: units whose current site and new site are both in `allowed`
+    (added units: new site allowed; removed units: current site allowed). Every other unit stays as it is in `old`.
+    Returns (population to save, ignored changes [change, unit_id, site])."""
+    if old is None or old.empty:
+        keep = new[new["site"].isin(allowed)]
+        ignored = new[~new["site"].isin(allowed)].assign(change="added in another site")
+        return keep[COLS].reset_index(drop=True), ignored[["change", "unit_id", "site"]].reset_index(drop=True)
+    o, n = old.set_index("unit_id")[COLS[1:]], new.set_index("unit_id")[COLS[1:]]
+    ok = set(allowed)
+    out, ignored = [], []
+    for u in sorted(set(o.index) | set(n.index)):
+        before = o.loc[u] if u in o.index else None
+        after = n.loc[u] if u in n.index else None
+        mine = all(r is None or r["site"] in ok for r in (before, after))
+        if mine:
+            if after is not None:
+                out.append((u, *after.tolist()))
+            continue
+        if before is not None:                      # not this user's to change: keep the version in force
+            out.append((u, *before.tolist()))
+        same = before is not None and after is not None and before.astype(str).equals(after.astype(str))
+        if not same:
+            what = ("added" if before is None else "removed" if after is None else
+                    f"moved to {after['site']}" if before["site"] != after["site"] else "changed")
+            ignored.append((what, u, (after if after is not None else before)["site"]))
+    return (pd.DataFrame(out, columns=COLS), pd.DataFrame(ignored, columns=["change", "unit_id", "site"]))
+
+
 def build_template(sites: list[str], units: pd.DataFrame | None = None, effective: dt.date | None = None) -> bytes:
     """Unit Population workbook in the template style (README, yellow headers with notes, Site drop-down)."""
     from core import dataprod  # shares the styling helpers

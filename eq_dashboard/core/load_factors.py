@@ -33,7 +33,7 @@ def wide(lf: pd.DataFrame, models: list[str]) -> pd.DataFrame:
     extra = [mo for mo in sorted(lf["hauler_model"].unique()) if mo not in models] if len(lf) else []
     cols = list(models) + extra
     if lf.empty:
-        return pd.DataFrame(columns=["material", *cols])
+        return pd.DataFrame(columns=["material", *cols]).astype(dict.fromkeys(cols, float))
     g = lf.pivot_table(index="material", columns="hauler_model", values="muatan", aggfunc="first").reindex(columns=cols)
     return g.reset_index().rename_axis(columns=None)
 

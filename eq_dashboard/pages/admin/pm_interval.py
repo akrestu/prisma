@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 
 from core.config import DEFAULT_CLIENT_STANDBY
 from core.ingest import audit
-from core.ui import require
+from core.ui import refresh, require
 from db import models as m
 from db import repo
 from db.engine import session_scope
@@ -34,7 +34,7 @@ with tab_pm:
                 s.add(m.PMInterval(model=r.model, interval_hm=float(r.interval_hm),
                                    tolerance_pct=float(r.tolerance_pct) if pd.notna(r.tolerance_pct) else 10.0))
             audit(s, user.username, "edit_pm_interval", None, f"{len(keep)} models")
-        st.cache_data.clear()
+        refresh("pm")
         st.success(f"{len(keep)} PM intervals saved.")
 
 with tab_sb:
@@ -56,5 +56,5 @@ with tab_sb:
             for r in ed.itertuples():
                 s.add(m.StandbyGroup(reason_code=int(r.reason_code), grp=r.grp))
             audit(s, user.username, "edit_standby_group", None, f"{(ed['grp'] == 'client').sum()} client codes")
-        st.cache_data.clear()
+        refresh("pm")
         st.success("Standby groups saved.")

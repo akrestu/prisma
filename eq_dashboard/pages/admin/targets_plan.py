@@ -14,7 +14,7 @@ from core.ingest import audit
 from core.targets import METRICS, import_targets
 from core.targets import build_template as targets_template
 from core.targets import file_name as targets_file
-from core.ui import require, sites_for
+from core.ui import refresh, require, sites_for
 from db import models as m
 from db import repo
 from db.engine import session_scope
@@ -39,7 +39,7 @@ def defaults_grid(table: pd.DataFrame, values: dict[str, str], pop_models: list[
     """Wide grid of a defaults table plus an empty row for every population model not covered yet."""
     g = PT.wide(table, values)
     extra = [mo for mo in pop_models if PT.match(mo, g["model"]) is None]
-    return pd.concat([g, pd.DataFrame({"model": extra})], ignore_index=True) if extra else g
+    return PT.numeric(pd.concat([g, pd.DataFrame({"model": extra})], ignore_index=True)) if extra else g
 
 
 with tab_d:
@@ -55,12 +55,17 @@ with tab_d:
     st.caption("Standard productivity per equipment model, the same for every site: the yardstick of the "
                "Production Data dashboards (Loader & hauler productivity) and the fallback of Hourly Production "
                "where a site has no hourly target. It changes rarely. A model name also covers longer unit models "
-               "('SK520' covers SK520XDLC-10). Models of the unit population without a value are listed empty.")
+               "('SK520' covers SK520XDLC-10). Models of the unit population without a value are listed empty ('None' in a cell = no value).")
     num = lambda lbl: st.column_config.NumberColumn(lbl, min_value=0, format="%.0f")  # noqa: E731
+
+    can_edit = user.is_admin       # company-wide values: a Site Manager sees them but cannot change other sites'
+    if not can_edit:
+        st.info("The defaults apply to every site, so only an Admin can change them.")
 
     def editor(table, values, pop_models, key):
         g = defaults_grid(table, values, pop_models)
-        return st.data_editor(g, num_rows="dynamic", hide_index=True, width="stretch", key=key,
+        return st.data_editor(g, num_rows="dynamic" if can_edit else "fixed", hide_index=True, width="stretch",
+                              key=key, disabled=not can_edit,
                               column_config={"model": st.column_config.TextColumn("Model", required=True),
                                              **{c: num(c) for c in g.columns if c != "model"}})
 
@@ -68,16 +73,16 @@ with tab_d:
         with st.spinner("Saving defaults…"), session_scope() as s:
             n = repo.save_default_targets(s, **kw)
             audit(s, user.username, "default_targets", None, ", ".join(f"{k} {v}" for k, v in n.items()))
-        st.cache_data.clear()
+        refresh("plan")
         st.success("Saved: " + ", ".join(f"{v} {k} rows" for k, v in n.items()) + ".")
 
     st.markdown("**Excavators** · OB and mud in BCM per hour, coal in ton per hour (empty coal = the OB value)")
     ed_l = editor(ld_t, LOADER_VALUES, pop_loaders, "pd_loaders")
-    if st.button("Save excavator defaults", type="primary", key="pd_loaders_save"):
+    if can_edit and st.button("Save excavator defaults", type="primary", key="pd_loaders_save"):
         save_defaults(loaders=PT.long(ed_l, LOADER_VALUES))
     st.markdown("**Haulers** · OB in BCM per hour, coal in ton per hour")
     ed_h = editor(hl_t, HAULER_VALUES, pop_haulers, "pd_haulers")
-    if st.button("Save hauler defaults", type="primary", key="pd_haulers_save"):
+    if can_edit and st.button("Save hauler defaults", type="primary", key="pd_haulers_save"):
         save_defaults(haulers=PT.long(ed_h, HAULER_VALUES))
 
     st.markdown("**Target basis per site** · which value counts for achievement on dashboards and TVs")
@@ -93,7 +98,7 @@ with tab_d:
                 s.get(m.Site, r.code).target_basis = r.target_basis
             audit(s, user.username, "target_basis", None,
                   ", ".join(f"{r.code} {r.target_basis}" for r in ed_b.itertuples()))
-        st.cache_data.clear()
+        refresh("plan")
         st.success("Target basis saved.")
 
 
@@ -106,7 +111,7 @@ with tab_t:
                 with st.spinner("Importing targets…"), session_scope() as s:
                     n = import_targets(s, f.getvalue(), dest)
                     audit(s, user.username, "import_target", ",".join(dest), f"{f.name}: {n} rows")
-                st.cache_data.clear()
+                refresh("plan")
                 st.success(f"{n} target rows saved (existing rows overwritten).")
             except ValueError as e:
                 st.error(str(e))
@@ -149,7 +154,7 @@ with tab_t:
             s.execute(stmt.on_conflict_do_update(index_elements=["site", "year", "month"],
                                                  set_={c: stmt.excluded[c] for c in (*METRICS, *EXTRA)}))
             audit(s, user.username, "edit_target", site, str(year))
-        st.cache_data.clear()
+        refresh("plan")
         st.success("Targets saved.")
 
 with tab_p:
@@ -196,5 +201,5 @@ with tab_p:
                                            ob_bcm=None if pd.isna(r.ob_bcm) else r.ob_bcm,
                                            coal_ton=None if pd.isna(r.coal_ton) else r.coal_ton))
                 audit(s, user.username, "edit_plan", site_p, f"{year_p}-{month_p:02d}")
-            st.cache_data.clear()
+            refresh("plan")
             st.success("Plan saved.")

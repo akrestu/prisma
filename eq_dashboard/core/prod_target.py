@@ -106,10 +106,18 @@ def wide(table: pd.DataFrame, values: dict[str, str]) -> pd.DataFrame:
     """Long (model, basis, value columns) → one row per model with '<label> · <basis>' columns, for editing."""
     cols = [f"{lbl} · {b}" for b in BASES for lbl in values.values()]
     if table is None or table.empty:
-        return pd.DataFrame(columns=["model", *cols])
+        return numeric(pd.DataFrame(columns=["model", *cols]))
     out = table.pivot_table(index="model", columns="basis", values=list(values), aggfunc="first")
     out.columns = [f"{values[v]} · {b}" for v, b in out.columns]
-    return out.reindex(columns=cols).reset_index().sort_values("model").reset_index(drop=True)
+    return numeric(out.reindex(columns=cols).reset_index().sort_values("model").reset_index(drop=True))
+
+
+def numeric(grid: pd.DataFrame) -> pd.DataFrame:
+    """Every column but `model` as float, so empty cells show blank in a grid instead of 'None'."""
+    for c in grid.columns:
+        if c != "model":
+            grid[c] = pd.to_numeric(grid[c], errors="coerce").astype(float)
+    return grid
 
 
 def long(grid: pd.DataFrame, values: dict[str, str]) -> pd.DataFrame:

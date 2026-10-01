@@ -11,7 +11,7 @@ from core.periods import weighted
 from core.ui import excel_download, fmt_num
 from core.validate import HOUR_SLOTS
 
-c = dash.context("production_ob", unit_filter=False)
+c = dash.context("production_ob", unit_filter=False, title="OB production")
 st.title("OB production")
 ob = c.rit[c.rit["material_group"] == "OB"] if len(c.rit) else c.rit
 if ob.empty:

@@ -6,7 +6,7 @@ from core import dash, metrics
 from core import theme as T
 from core.ui import excel_download, fmt_num
 
-c = dash.context("time_distribution")
+c = dash.context("time_distribution", title="Time distribution")
 st.title("Time distribution")
 
 b = metrics.time_buckets(c.ev).iloc[0]

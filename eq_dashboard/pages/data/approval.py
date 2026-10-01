@@ -44,8 +44,6 @@ def _confirm(action: str, row, comment: str) -> None:
         except ValueError as e:
             st.error(str(e))
             return
-        if action == "approve":
-            st.cache_data.clear()
         st.toast(f"{row['site']} {row['month']:%Y-%m} " + ("PUBLISHED" if action == "approve" else "rejected"))
         st.rerun()
     if b.button("Cancel", width="stretch"):
@@ -70,7 +68,6 @@ def _approve_all(rows) -> None:
             except ValueError as e:
                 failed.append(str(e))
             bar.progress(i / len(rows), text=f"Published {i} of {len(rows)}")
-        st.cache_data.clear()
         st.toast(f"{done} version(s) PUBLISHED" + (f", {len(failed)} skipped" if failed else ""))
         st.rerun()
     if b.button("Cancel", width="stretch", key="all_cancel"):

@@ -124,7 +124,9 @@ else:
     }
     if n:  # something waits for this approver: put it first
         sections = {"Approval": sections.pop("Approval"), **sections}
-    nav = st.navigation({k: v for k, v in sections.items() if v})
+    # expanded: every section stays visible (by default Streamlit folds all but ~10 links into "View N more",
+    # which hid Input & upload, Approval and the setup pages)
+    nav = st.navigation({k: v for k, v in sections.items() if v}, expanded=True)
 
 brand.sidebar_logo()
 st.html(T.css_vars())
