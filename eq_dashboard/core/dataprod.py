@@ -162,9 +162,13 @@ def _readme(wb: Workbook, title: str, lines: list[str], sheets: tuple[Sheet, ...
         ws.column_dimensions[letter].width = w
 
 
-def _meta(wb: Workbook, kind: str, extra: dict[str, str]) -> None:
+def _meta(wb: Workbook, kind: str, extra: dict[str, str], version: int | None = None) -> None:
+    """Hidden key/value sheet. `version` is the layout version of the workbook kind (Production Data: its
+    TEMPLATE_VERSION, read by core.validate; other workbooks: 1 unless given)."""
     ws = wb.create_sheet(META_SHEET)
-    rows = {"dataset": DATASET, "template_version": str(TEMPLATE_VERSION), "kind": kind,
+    if version is None:
+        version = TEMPLATE_VERSION if extra.get("dataset", DATASET) == DATASET else 1
+    rows = {"dataset": DATASET, "template_version": str(version), "kind": kind,
             "generated_at": now_wib().strftime("%Y-%m-%d %H:%M WIB"), "app": "PRISMA", **extra}
     for k, v in rows.items():
         ws.append([k, v])
@@ -206,7 +210,8 @@ def build_template(sites: list[str]) -> bytes:
     """Blank Production Data workbook. Units and their sites come from the separate Unit Population workbook."""
     wb = Workbook()
     _readme(wb, f"PRISMA · {DATASET} template", [
-        "Production & Reliability Information System for Mining Analytics — monthly production data workbook.", "", *RULES])
+        "Production & Reliability Information System for Mining Analytics — production data workbook: one month or "
+        "a whole year.", "", *RULES])
     lists = _lists(wb, sites)
     for sh in DATA_SHEETS:
         _sheet(wb, sh, None, lists)

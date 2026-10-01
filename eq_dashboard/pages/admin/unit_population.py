@@ -6,7 +6,7 @@ from core import population as pop
 from core.config import UNMAPPED, today_wib
 from core.ingest import audit
 from core.io import sha256
-from core.ui import excel_download, fmt_num, require, sites_for
+from core.ui import fmt_num, require, sites_for
 from core.validate import StructureError, file_stem
 from db import repo
 from db.engine import session_scope
@@ -125,7 +125,10 @@ with t_now:
             view = current[current.astype(str).apply(lambda col: col.str.lower().str.contains(q, regex=False))
                            .any(axis=1)]
         st.dataframe(view, hide_index=True, width="stretch", height=480)
-        excel_download(current, f"{file_stem(pop.DATASET)}_current.xlsx", key="pop_dl_cur")
+        # template layout, so the file can be edited and imported back as the next version
+        st.download_button("Download as template (.xlsx)", lambda: pop.build_template(sites, current, today_wib()),
+                           file_name=pop.file_name(today_wib()), on_click="ignore", key="pop_dl_cur",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ------------------------------------------------------------------ versions
 with t_hist:
@@ -143,4 +146,8 @@ with t_hist:
                             f"{versions.loc[versions['id'] == i, 'effective_from'].iloc[0]:%d %b %Y}")
         with session_scope() as s:
             units_v = repo.population_units(s, int(pick))
-        excel_download(units_v, f"{file_stem(pop.DATASET)}_v{pick}.xlsx", key="pop_dl_v")
+        eff_v = pd.Timestamp(versions.loc[versions["id"] == pick, "effective_from"].iloc[0]).date()
+        st.download_button(f"Download version #{pick} as template (.xlsx)",
+                           lambda: pop.build_template(sites, units_v, eff_v),
+                           file_name=f"{file_stem(pop.DATASET)}_{eff_v:%Y-%m-%d}_v{pick}.xlsx", on_click="ignore",
+                           key="pop_dl_v", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

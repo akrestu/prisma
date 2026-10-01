@@ -42,7 +42,7 @@ def save(df: pd.DataFrame, how: str) -> None:
         st.error(f"NRP listed more than once: {', '.join(sorted(dup['nrp'].unique()))}.")
         return
     df["active"] = df["active"].fillna(True).astype(bool) if "active" in df else True
-    with session_scope() as s:
+    with st.spinner("Saving operators…"), session_scope() as s:
         n = repo.replace_site_rows(s, m.Operator, site, df, ["nrp", "name", "position", "active"])
         audit(s, user.username, "operators_" + how, site, f"{n} operators")
     st.session_state["op_msg"] = f"{n} operators saved for {site}."
@@ -66,11 +66,17 @@ with t_edit:
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 with t_imp:
-    st.markdown("An Excel sheet with the columns **NRP**, **Name** and optionally **Position** and **Active**. "
-                "It replaces the operator list of the site.")
+    st.markdown("An Excel sheet with the columns **NRP**, **Name** and optionally **Position** and **Active** "
+                "(the *Download list* file of the first tab has exactly this layout). It replaces the operator list "
+                "of the site.")
     f = st.file_uploader("Operators workbook (.xlsx)", type=["xlsx"], key="op_file", max_upload_size=5)
     if f is not None:
-        raw = next(iter(read_workbook(f.getvalue()).values()))
+        try:
+            with st.spinner(f"Reading {f.name}…"):
+                raw = next(iter(read_workbook(f.getvalue()).values()))
+        except Exception as e:  # unreadable file
+            st.error(f"The workbook could not be opened ({type(e).__name__}). Save it again as .xlsx and retry.")
+            st.stop()
         df = raw.iloc[1:].copy()
         df.columns = [str(c).strip().lower() for c in raw.iloc[0]]
         if not {"nrp", "name"} <= set(df.columns):

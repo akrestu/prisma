@@ -12,6 +12,8 @@ from core import prod_target as PT
 from core.config import UNMAPPED, today_wib
 from core.ingest import audit
 from core.targets import METRICS, import_targets
+from core.targets import build_template as targets_template
+from core.targets import file_name as targets_file
 from core.ui import require, sites_for
 from db import models as m
 from db import repo
@@ -96,12 +98,12 @@ with tab_d:
 
 
 with tab_t:
-    with st.expander("Import Target.xlsx"):
-        f = st.file_uploader("Target file (.xlsx)", type=["xlsx"], key="tgt_file")
+    with st.expander("Excel: import a targets workbook (Target.xlsx or the downloaded template)"):
+        f = st.file_uploader("Targets file (.xlsx)", type=["xlsx"], key="tgt_file")
         dest = st.multiselect("Apply to sites (for files without a Site column)", sites, default=sites)
         if f and st.button("Import", type="primary"):
             try:
-                with session_scope() as s:
+                with st.spinner("Importing targets…"), session_scope() as s:
                     n = import_targets(s, f.getvalue(), dest)
                     audit(s, user.username, "import_target", ",".join(dest), f"{f.name}: {n} rows")
                 st.cache_data.clear()
@@ -115,6 +117,10 @@ with tab_t:
     with session_scope() as s:
         cur = repo.frame(s, select(m.Target.month, *[getattr(m.Target, c) for c in (*METRICS, *EXTRA)])
                          .where(m.Target.site == site, m.Target.year == year))
+    st.download_button(f"Download {targets_file(site, int(year))}", lambda: targets_template(site, int(year), cur),
+                       file_name=targets_file(site, int(year)), on_click="ignore", key="tgt_dl",
+                       help="The 12 months of this site and year with the current values: edit and import it back",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     grid = pd.DataFrame({"month": range(1, 13)}).merge(cur, on="month", how="left")
     for c in ("pa", "uoa", "sched_down", "pm_accuracy"):
         grid[c] = grid[c] * 100
