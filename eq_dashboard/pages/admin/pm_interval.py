@@ -20,7 +20,11 @@ with tab_pm:
     with session_scope() as s:
         cur = repo.frame(s, select(m.PMInterval.model, m.PMInterval.interval_hm, m.PMInterval.tolerance_pct))
         models = sorted(x for x in s.scalars(select(m.FactEvent.model).distinct()) if x)
-    grid = pd.DataFrame({"model": models}).merge(cur, on="model", how="outer").sort_values("model")
+    # same key dtype on both sides: with no Production Data yet both frames are empty and pandas
+    # infers different dtypes for "model", which makes the merge raise
+    cur["model"] = cur["model"].astype("str")
+    grid = pd.DataFrame({"model": pd.Series(models, dtype="str")}).merge(cur, on="model", how="outer")
+    grid = grid.sort_values("model")
     ed = st.data_editor(grid, hide_index=True, width="stretch", num_rows="dynamic", key="pm_grid",
                         column_config={"model": st.column_config.TextColumn("Model", required=True),
                                        "interval_hm": st.column_config.NumberColumn("Interval (HM)", min_value=1),

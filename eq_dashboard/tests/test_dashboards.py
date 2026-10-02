@@ -49,6 +49,17 @@ def test_page_runs_for_admin(world, page):
     assert not any("do not have access" in e.value for e in at.error)
 
 
+@pytest.mark.parametrize("page", DASHBOARDS + ADMIN_PAGES)
+def test_page_runs_on_fresh_install(db_session, monkeypatch, page):
+    """A new server has no data yet: every page must still open (pm_interval used to crash on empty frames)."""
+    from core.config import database_url
+    security.create_user(db_session, "adm", "Adm", ADMIN, "Tambang-2026x", all_sites=True)
+    db_session.commit()
+    monkeypatch.setenv("DATABASE_URL", database_url(test=True))
+    at = run(page, load_user(db_session, "adm"))
+    assert not at.exception, [e.value for e in at.exception]
+
+
 def test_viewer_sees_dashboards_not_admin(world):
     vw = load_user(world, "vw")
     assert not run("overview", vw).exception
