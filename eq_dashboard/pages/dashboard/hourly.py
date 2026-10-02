@@ -118,7 +118,7 @@ with t_fleet:
                                         operator=("operator", lambda x: ", ".join(dict.fromkeys(x.dropna()))),
                                         haulers=("hauler", "nunique"), line=("line", "min")).sort_values("line")
         per = per.reindex(info.index)
-        ratio = per.div(info["target"].replace(0, pd.NA), axis=0).astype(float).clip(upper=1.5)
+        ratio = per.div(info["target"].replace(0, float("nan")), axis=0).astype(float).clip(upper=1.5)
         hover = [[f"{ld} · {info.loc[ld, 'model'] or ''}<br>{info.loc[ld, 'operator'] or 'no operator'}"
                   f"<br>{H.SLOTS[shift][k - 1]}: {per.loc[ld, k]:,.0f} {unit} of {info.loc[ld, 'target'] or 0:,.0f}"
                   f"<br>{info.loc[ld, 'haulers']} haulers" for k in per.columns] for ld in per.index]
@@ -158,7 +158,7 @@ with t_ops:
                                                     op=("hauler_operator", "first")).sort_values("line")
         trips = trips.reindex(first.index)
         # colour: trips vs the hauler's own best hour this shift, so a slow or stopped hour stands out
-        best = trips.max(axis=1).replace(0, pd.NA)
+        best = trips.max(axis=1).replace(0, float("nan"))
         ratio = trips.div(best, axis=0).astype(float)
         ylab = [f"{ld} · {hv}" for ld, hv in trips.index]
         hover = [[f"<b>{hv}</b> {first.loc[(ld, hv), 'model'] or ''} → {ld}<br>{first.loc[(ld, hv), 'op'] or ''}"
@@ -177,7 +177,7 @@ with t_ops:
                             "Model": first["model"].to_numpy(), "Operator": first["op"].to_numpy(),
                             "Hours worked": (trips > 0).sum(axis=1).to_numpy(), "Trips": trips.sum(axis=1).to_numpy(),
                             unit: hl.groupby(["loader", "hauler"])["volume"].sum().reindex(trips.index).to_numpy()})
-        tot["Trips/hour"] = tot["Trips"] / tot["Hours worked"].replace(0, pd.NA)
+        tot["Trips/hour"] = tot["Trips"] / tot["Hours worked"].replace(0, float("nan"))
         st.dataframe(tot, hide_index=True, width="stretch",
                      column_config={"Trips/hour": st.column_config.NumberColumn(format="%.1f"),
                                     unit: st.column_config.NumberColumn(format="%,.0f")})

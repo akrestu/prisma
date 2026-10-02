@@ -266,6 +266,37 @@ def test_hourly_dashboard_interactive_tabs(world):
     assert len(at.get("plotly_chart")) >= 4                     # pace, heatmap, fleet totals, operators (+ month)
 
 
+def test_hourly_dashboard_hauler_without_trips_and_zero_target(world):
+    """Start of a shift: a hauler copied from the previous shift has no trips yet, and a loader has target 0.
+    Both used to divide by pd.NA, which crashed the Fleets and Haulers & operators tabs."""
+    import datetime as dt
+
+    import pandas as pd
+
+    from core import hourly as H
+    from db import repo
+    lf = pd.DataFrame([("OB - FreeDig", "OB", "777E", 41.0)], columns=["material", "material_group", "hauler_model",
+                                                                         "muatan"])
+    tg = pd.DataFrame([("WEX019", "CAT6020", "OB", 800.0), ("WEX020", "CAT6020", "OB", 0.0)],
+                      columns=["unit_id", "model", "material_group", "target_per_hour"])
+    rows = pd.DataFrame([
+        {"loader": "WEX019", "hauler_model": "777E", "hauler": None, "material": "OB - FreeDig",
+         "hauler_operator": "Budi", "r1": 8, "r2": 14},
+        {"loader": "WEX019", "hauler_model": "777E", "hauler": "WHT099", "material": "OB - FreeDig",
+         "hauler_operator": "Andi", "r1": 0, "r2": 0},
+        {"loader": "WEX020", "hauler_model": "777E", "hauler": None, "material": "OB - FreeDig",
+         "hauler_operator": "Cici", "r1": 5, "r2": 0}])
+    res = H.resolve(rows, lf, tg)
+    repo.save_hourly(world, "WBK-BAU", dt.date(2026, 9, 20), "DS", "PJA", res.rows, "t")
+    world.commit()
+    at = run_path("pages/dashboard/hourly.py", load_user(world, "adm"))
+    at.date_input(key="hp_date").set_value(dt.date(2026, 9, 20))
+    at.segmented_control(key="hp_shift").set_value("DS")
+    at.selectbox(key="hp_site").set_value("WBK-BAU")
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+
+
 def test_tv_preview_hourly_past_shift(world):
     import datetime as dt
     at = run_path("pages/tv/preview.py", load_user(world, "adm"))
