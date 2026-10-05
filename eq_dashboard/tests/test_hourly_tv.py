@@ -153,7 +153,7 @@ def test_long_remark_spreads_right_instead_of_growing_down(db_session):
     from core.hourly_render import MAX_COLS
     _seed(db_session)
     s = db_session
-    sh, rows = repo.hourly_shift(s, "WBK-BAU", dt.date(2026, 9, 26), "DS")
+    _, rows = repo.hourly_shift(s, "WBK-BAU", dt.date(2026, 9, 26), "DS")
     ld = rows["loader"].iloc[0]
     repo.add_hourly_remark(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", 2, 2, ld, None, "x" * 80, "x")
     repo.add_hourly_remark(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", 3, 3, ld, None, "Refueling truck", "x")
