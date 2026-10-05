@@ -237,3 +237,36 @@ def test_old_long_links_are_refused_and_guessing_is_limited(db_session, monkeypa
         assert not display.blocked("1.2.3.4")
         display.record_failure("1.2.3.4")
     assert display.blocked("1.2.3.4") and not display.blocked("5.6.7.8")
+
+
+def test_keyed_hash_upgrades_old_rows_and_throttle_uses_proxy_ip(db_session, monkeypatch):
+    s = db_session
+    s.add(m.Site(code="WBK-MAS", name="MAS"))
+    s.flush()
+    monkeypatch.delenv("TV_CODE_KEY", raising=False)
+    dev, token = display.create_device(s, "Old TV", "WBK-MAS", None)
+    old = dev.token_hash
+    monkeypatch.setenv("TV_CODE_KEY", "k" * 40)
+    assert display.validate(s, token) is dev and dev.token_hash != old   # old plain hash upgraded on use
+    assert display.validate(s, token) is dev
+    assert display.client_ip({"X-Forwarded-For": "6.6.6.6, 10.0.0.9"}, "172.17.0.1") == "10.0.0.9"
+    assert display.client_ip({}, "172.17.0.1") == "172.17.0.1"
+
+
+def test_failure_table_is_pruned(monkeypatch):
+    monkeypatch.setattr(display, "_fails", {})
+    monkeypatch.setattr(display, "MAX_CLIENTS", 5)
+    for i in range(20):
+        display.record_failure(f"10.0.0.{i}")
+    assert len(display._fails) <= 6
+
+
+def test_excel_export_keeps_formulas_as_text():
+    import io
+
+    import openpyxl
+    import pandas as pd
+
+    from core.ui import excel_bytes
+    ws = openpyxl.load_workbook(io.BytesIO(excel_bytes(pd.DataFrame({"remark": ["=HYPERLINK(\"x\")", "ok", 5]})))).active
+    assert ws["A2"].value == "'=HYPERLINK(\"x\")" and ws["A3"].value == "ok" and ws["A4"].value == 5

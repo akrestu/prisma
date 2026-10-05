@@ -1,6 +1,8 @@
 """Load factors per site: load per trip by material × hauler model, which turns Hourly Production trips into volume
 (BCM for OB, ton for coal). Edited in the grid or with the Load Factors workbook (a Mst Hourly file still works).
 Targets per hour live in Hourly targets."""
+import logging
+
 import pandas as pd
 import streamlit as st
 
@@ -99,6 +101,7 @@ with t_xls:
                 st.error(p)
             st.stop()
         except Exception as e:  # unreadable file
+            logging.getLogger(__name__).warning("workbook could not be opened", exc_info=True)
             st.error(f"The workbook could not be opened ({type(e).__name__}). Save it again as .xlsx and retry.")
             st.stop()
         if lfile.site and lfile.site != site:

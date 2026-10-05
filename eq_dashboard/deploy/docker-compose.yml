@@ -29,6 +29,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://eq_app:${POSTGRES_PASSWORD}@db:5432/eq_dashboard
       AUTH_COOKIE_KEY: ${AUTH_COOKIE_KEY}
+      TV_CODE_KEY: ${TV_CODE_KEY:-}
       STREAMLIT_SERVER_COOKIE_SECRET: ${STREAMLIT_SERVER_COOKIE_SECRET}
   caddy:
     logging: *logging

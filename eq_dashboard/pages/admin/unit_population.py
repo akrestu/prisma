@@ -1,4 +1,6 @@
 """Unit Population: versioned master list of units and their site (Unit Population workbook, effective date)."""
+import logging
+
 import pandas as pd
 import streamlit as st
 
@@ -65,6 +67,7 @@ with t_imp:
                 st.error(p_)
             st.stop()
         except Exception as e:  # unreadable file
+            logging.getLogger(__name__).warning("workbook could not be opened", exc_info=True)
             st.error(f"The workbook could not be opened ({type(e).__name__}). Save it again as .xlsx and retry.")
             st.stop()
 

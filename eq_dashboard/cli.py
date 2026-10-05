@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import secrets
 import subprocess
 import sys
@@ -74,7 +75,7 @@ def cmd_status(_):
 def _ask_password(prompt="Password"):
     while True:
         pw = getpass.getpass(f"{prompt}: ")
-        if pw != getpass.getpass("Ulangi: "):
+        if pw != getpass.getpass("Repeat: "):
             print("Passwords do not match, try again.")
             continue
         problem = security.password_problem(pw)
@@ -87,7 +88,7 @@ def _ask_password(prompt="Password"):
 def cmd_create_admin(a):
     username = a.username or input("Username admin: ").strip()
     name = a.name or input("Full name: ").strip()
-    pw = a.password or _ask_password()
+    pw = a.password or os.environ.get("PRISMA_ADMIN_PASSWORD") or _ask_password()
     with session_scope() as s:
         security.create_user(s, username, name, "admin", pw, all_sites=True, must_change_password=False)
         ing.audit(s, "cli", "create_user", None, f"{username} (admin)")
@@ -133,7 +134,7 @@ def main():
     x = sub.add_parser("create-admin")
     x.add_argument("--username")
     x.add_argument("--name")
-    x.add_argument("--password", help="automation only; by default it is asked without echo")
+    x.add_argument("--password", help="avoid: visible in the process list; prefer PRISMA_ADMIN_PASSWORD or the hidden prompt")
     x.set_defaults(fn=cmd_create_admin)
     x = sub.add_parser("create-user")
     x.add_argument("username")

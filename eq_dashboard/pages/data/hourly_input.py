@@ -2,6 +2,8 @@
 
 Flash data: saved immediately without approval and shown on the hourly production TV screen within a minute.
 """
+import logging
+
 import pandas as pd
 import streamlit as st
 
@@ -231,6 +233,7 @@ with t_xls:
                 st.error(p)
             st.stop()
         except Exception as e:  # unreadable / corrupt file
+            logging.getLogger(__name__).warning("workbook could not be opened", exc_info=True)
             st.error(f"The workbook could not be opened ({type(e).__name__}). Save it again in Excel as .xlsx and "
                      "retry.")
             st.stop()

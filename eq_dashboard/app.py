@@ -18,10 +18,10 @@ if "display" in st.query_params:   # the old long links: replaced by short codes
 
 if "tv" in st.query_params:
     # Kiosk TV mode: no login, code locked to one site, TV screen only.
-    from auth.display import blocked, record_failure, validate
+    from auth.display import blocked, client_ip, record_failure, validate
     from pages.tv.screen import show, show_hourly
 
-    client = st.context.ip_address
+    client = client_ip(st.context.headers, st.context.ip_address)
     if blocked(client):
         st.error("Too many wrong TV codes. Wait 10 minutes and check the code with your Admin.")
         st.stop()

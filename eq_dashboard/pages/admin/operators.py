@@ -1,6 +1,8 @@
 """Operator master per site: NRP, name, position. Hourly Production input picks operators by NRP, so operator KPIs stay
 correct whatever spelling a name has."""
 
+import logging
+
 import pandas as pd
 import streamlit as st
 
@@ -75,6 +77,7 @@ with t_imp:
             with st.spinner(f"Reading {f.name}…"):
                 raw = next(iter(read_workbook(f.getvalue()).values()))
         except Exception as e:  # unreadable file
+            logging.getLogger(__name__).warning("workbook could not be opened", exc_info=True)
             st.error(f"The workbook could not be opened ({type(e).__name__}). Save it again as .xlsx and retry.")
             st.stop()
         df = raw.iloc[1:].copy()

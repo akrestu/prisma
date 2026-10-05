@@ -1,6 +1,8 @@
 """Hourly Production targets per site: per excavator model (internal and client), unit overrides, the target in
 effect for every excavator with its source, and the Excel template. Separate from the Production Data defaults,
 which are only the fallback here."""
+import logging
+
 import pandas as pd
 import streamlit as st
 
@@ -155,6 +157,7 @@ with t_xls:
                 st.error(p_)
             st.stop()
         except Exception as e:  # unreadable file
+            logging.getLogger(__name__).warning("workbook could not be opened", exc_info=True)
             st.error(f"The workbook could not be opened ({type(e).__name__}). Save it again as .xlsx and retry.")
             st.stop()
         if tf.site != site:

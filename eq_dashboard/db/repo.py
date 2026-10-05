@@ -395,14 +395,14 @@ def recalc_hourly_targets(s: Session, site: str, d0, d1) -> dict[str, int]:
                      .join(h, h.id == r.shift_id).where(h.site == site, h.date >= d0, h.date <= d1)).all()
     basis, over = site_basis(s, site), loader_targets(s, site)
     models, defaults = hourly_model_targets(s, site), model_targets(s)
-    changed = 0
+    updates = []
     for row in rows:
         value, source = hourly_target(row.loader, row.loader_model, row.material, basis, over, models, defaults)
-        same = (value == row.target_per_hour or (value is None and row.target_per_hour is None))             and source == row.target_source
-        if not same:
-            s.execute(update(r).where(r.id == row.id).values(target_per_hour=value, target_source=source))
-            changed += 1
-    return {"shifts": len({row.shift_id for row in rows}), "lines": len(rows), "changed": changed}
+        if value != row.target_per_hour or source != row.target_source:
+            updates.append({"id": row.id, "target_per_hour": value, "target_source": source})
+    if updates:
+        s.execute(update(r), updates)   # one bulk UPDATE by primary key
+    return {"shifts": len({row.shift_id for row in rows}), "lines": len(rows), "changed": len(updates)}
 
 
 def hourly_range(s: Session, sites: list[str], d0, d1) -> pd.DataFrame:

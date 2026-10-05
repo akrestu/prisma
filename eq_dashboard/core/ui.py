@@ -42,10 +42,22 @@ def fmt_pct(v, d: int = 1) -> str:
     return "—" if v is None or pd.isna(v) else f"{v * 100:.{d}f}%"
 
 
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _defuse(v):
+    """Text starting with a formula character would run as a formula in Excel: keep it as text."""
+    return "'" + v if isinstance(v, str) and v.startswith(_FORMULA_START) else v
+
+
 def excel_bytes(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
+    safe = df.copy()
+    for c in safe.columns[safe.dtypes == object]:
+        safe[c] = safe[c].map(_defuse)
+    safe.columns = [_defuse(c) for c in safe.columns]
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        df.to_excel(w, index=False)
+        safe.to_excel(w, index=False)
     return buf.getvalue()
 
 

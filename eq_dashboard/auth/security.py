@@ -62,8 +62,9 @@ def sync_failed_attempts(s: Session, creds: dict) -> list[str]:
     """Tulis balik hitungan gagal login dari credentials ke DB; kunci akun yang mencapai batas.
     Mengembalikan username yang baru terkunci."""
     locked = []
+    users = {u.username: u for u in s.scalars(select(m.User).where(m.User.username.in_(list(creds["usernames"]))))}
     for username, info in creds["usernames"].items():
-        u = s.scalar(select(m.User).where(m.User.username == username))
+        u = users.get(username)
         n = int(info.get("failed_login_attempts", 0))
         if u is None or n == u.failed_logins:
             continue
@@ -101,6 +102,8 @@ def create_user(s: Session, username: str, full_name: str, role: str, password: 
 
 def set_password(s: Session, user_id: int, new_pw: str, must_change: bool = False) -> None:
     u = s.get(m.User, user_id)
+    if u is None:
+        raise ValueError(f"User {user_id} not found.")
     problem = password_problem(new_pw, u.username)
     if problem:
         raise ValueError(problem)
