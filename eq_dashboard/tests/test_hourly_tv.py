@@ -62,7 +62,7 @@ def test_render_has_both_tables_and_current_hour(db_session):
     d = hourly_tv.build(db_session, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
     html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
     assert "Overburden" in html and "Coal" in html and "Running fleet" in html and "11-12" in html
-    assert "class='now'" in html and "DANIEL PURBA" in html and "<script" not in html.lower()
+    assert "class='h now'" in html and "DANIEL PURBA" in html and "<script" not in html.lower()
 
 
 def test_empty_shift_renders(db_session):
@@ -122,10 +122,12 @@ def test_remarks_show_in_their_hour_and_in_the_list(db_session):
     assert r["m4"] == "302" and r["m2"] == "402" and r["m1"] == ""
     assert d.events["hours"].tolist() == ["07-08", "09-10"]
     html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
-    assert "<i class='rc delay'>RAIN<sup>+1</sup></i>" not in html and "class='rk'" in html and "Events this shift" in html
+    assert "class='rk'" in html and "Events this shift" not in html     # option A: remarks under their hour
     assert "<i class='rc delay'>RAIN</i>" in html and "<i class='rc down'>BD-H</i>" in html
-    assert " mk down" in html and "class='fl'" in html and ">NOW<" not in html   # 09-10 is past
+    assert " mk down" in html and ">NOW<" not in html                   # 09-10 is past
     assert "<b>Rain</b>" in html and "WHT026" in html and "— ban" in html
+    # the 07-08 remark spreads to the hour before the next one (09-10): two columns, then 09-10 to the end
+    assert "<td colspan='2' class='sp down'>" in html and "<td colspan='9' class='sp delay'>" in html
     assert "<th class='l'>Remark</th>" not in html              # the narrow column is gone
 
 
@@ -143,5 +145,4 @@ def test_every_remark_is_shown_in_full(db_session):
     d = hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 14, 40, tzinfo=WIB))
     html = render(d, now=dt.datetime(2026, 9, 26, 14, 40, tzinfo=WIB))
     assert all(t.strip() in html for t in notes)                    # nothing dropped or cut
-    assert html.count("class='fl'") == 3 and "30 event(s)" in html  # one block per excavator
-    assert "classList.add('run')" in html and "target met" in html   # scrolls when it overflows; legend stays
+    assert html.count("<tr class='rk'>") == 3 and "target met" in html  # one remark row per excavator
