@@ -1,5 +1,7 @@
 """TV devices: create Display links, set the period per TV, revoke or regenerate tokens, see which TVs are online."""
 import datetime as dt
+import os
+from urllib.parse import urlsplit
 
 import streamlit as st
 from sqlalchemy import select
@@ -18,13 +20,29 @@ st.title("TV devices")
 st.caption("Each TV uses a secret link locked to one site that only shows the TV screen (read-only). "
            "The link is shown once when created, so store it on the TV / mini-PC.")
 
-base = st.text_input("App address", value=st.session_state.get("tv_base", "http://localhost:8501"),
-                     help="In production use the HTTPS domain, e.g. https://dashboard.company.com")
-st.session_state["tv_base"] = base.rstrip("/")
+
+def default_base() -> str:
+    """PUBLIC_URL if set, else the address this page was opened with (scheme + host, as the browser sees it), so a
+    link made on https://prisma.pt-wbk.id points there and not to the container's localhost."""
+    env = os.environ.get("PUBLIC_URL", "").strip()
+    if env:
+        return env.rstrip("/")
+    u = urlsplit(st.context.url or "")
+    return f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else "http://localhost:8501"
+
+
+if "tv_base" not in st.session_state:
+    st.session_state["tv_base"] = default_base()
+base = st.text_input("App address", key="tv_base",
+                     help="Filled from the address you opened this page with (or PUBLIC_URL). Change it only if "
+                          "the TVs reach the app by another address.")
+if "localhost" in base or "127.0.0.1" in base:
+    st.warning("This address only works on this computer. A TV elsewhere needs the public address, e.g. "
+               "https://prisma.pt-wbk.id.")
 
 
 def link(token: str) -> str:
-    return f"{st.session_state['tv_base']}/?display={token}"
+    return f"{st.session_state['tv_base'].strip().rstrip('/')}/?display={token}"
 
 
 new = st.session_state.pop("new_display_link", None)
