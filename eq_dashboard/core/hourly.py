@@ -91,6 +91,42 @@ def clean_remarks(df: pd.DataFrame, shift: str, loaders: list[str] | None = None
     return out.sort_values(["slot", "loader"]).reset_index(drop=True), problems
 
 
+def group_remarks(df: pd.DataFrame) -> pd.DataFrame:
+    """Per-hour remarks → events: the same loader, hauler, code and text in consecutive hours become one event
+    (slot_from..slot_to). `ids` keeps the stored rows of each event (to delete it as a whole)."""
+    cols = ["slot_from", "slot_to", "loader", "hauler", "code", "remark", "ids"]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=cols)
+    d = df.assign(id=df["id"] if "id" in df else range(len(df)))
+    key = ["loader", "hauler", "code", "remark"]
+    d = d.assign(**{k: d[k].astype(object).where(d[k].notna(), None) for k in key})
+    d = d.assign(_k=["|".join(map(str, t)) for t in d[key].itertuples(index=False)]).sort_values(["_k", "slot"])
+    out = []
+    for _, g in d.groupby("_k", sort=False):
+        k = tuple(g.iloc[0][key])
+        slots = [int(x) for x in g["slot"]]
+        ids = g["id"].tolist()
+        start = prev = slots[0]
+        bag = [ids[0]]
+        for s_, i in zip(slots[1:], ids[1:], strict=True):
+            if s_ <= prev + 1:
+                prev, bag = max(prev, s_), [*bag, i]
+                continue
+            out.append((start, prev, *k, bag))
+            start = prev = s_
+            bag = [i]
+        out.append((start, prev, *k, bag))
+    res = pd.DataFrame(out, columns=cols)
+    for c in ("loader", "hauler", "code", "remark"):
+        res[c] = res[c].astype(object).where(res[c].notna(), None)
+    return res.sort_values(["slot_from", "loader"]).reset_index(drop=True)
+
+
+def span_label(shift: str, a: int, b: int) -> str:
+    """'09-10' for one hour, '09-10 – 11-12' for several."""
+    return SLOTS[shift][a - 1] if a == b else f"{SLOTS[shift][a - 1]} – {SLOTS[shift][b - 1]}"
+
+
 def remark_label(code) -> str | None:
     """'302' → '302 - Rain'; other 3-digit codes stay as they are."""
     if code is None or pd.isna(code):

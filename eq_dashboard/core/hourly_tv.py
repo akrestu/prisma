@@ -40,6 +40,7 @@ class HourlyTv:
     fleets: dict = field(default_factory=dict)      # {"OB"/"CG": DataFrame}
     totals: dict = field(default_factory=dict)      # {"OB"/"CG": {"slots": [...], "running": [...], "total": x}}
     official_until: dt.date | None = None
+    events: pd.DataFrame = field(default_factory=pd.DataFrame)   # remarks of the shift, consecutive hours merged
 
     @property
     def empty(self) -> bool:
@@ -152,15 +153,21 @@ def build(s: Session, site: str, now: dt.datetime, date: dt.date | None = None, 
 
     # ---- fleet tables for the shift on screen
     remarks = repo.hourly_remarks(s, site, date, shift)
+    ev = H.group_remarks(remarks)
+    if len(ev):
+        grp = cur.drop_duplicates("loader").set_index("loader")["material_group"] if len(cur) else pd.Series()
+        ev["group"] = ev["loader"].map(grp)
+        ev["hours"] = [H.span_label(shift, a, b) for a, b in zip(ev["slot_from"], ev["slot_to"], strict=True)]
+        ev["what"] = ev["code"].map(H.remark_label)
+    tv.events = ev
     for g in GROUPS:
         rows = cur[cur["material_group"] == g] if len(cur) else cur
-        tv.fleets[g], tv.totals[g] = _fleet_table(rows, lc[lc["material_group"] == g] if len(lc) else lc,
-                                                  remarks, H.SLOTS[shift])
+        tv.fleets[g], tv.totals[g] = _fleet_table(rows, lc[lc["material_group"] == g] if len(lc) else lc, remarks)
     return tv
 
 
-def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame, remarks: pd.DataFrame | None = None,
-                 slots: list[str] | None = None) -> tuple[pd.DataFrame, dict]:
+def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame,
+                 remarks: pd.DataFrame | None = None) -> tuple[pd.DataFrame, dict]:
     """One row per loader (fleet) with volume per hour, plus shift totals. `target_slots` is the hourly target of
     the fleets that worked in each hour (the yardstick of the hourly bars and the burn-up line)."""
     empty = {"slots": [0.0] * 12, "running": [0] * 12, "target_slots": [0.0] * 12, "total": 0.0, "haulers": 0,
@@ -186,19 +193,11 @@ def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame, remarks: pd.DataFrame |
     rm = remarks[remarks["loader"].isin(out["loader"])] if remarks is not None and len(remarks) else pd.DataFrame()
     for k in range(1, 13):
         out[f"m{k}"] = ""
-    out["remark"] = ""
     if len(rm):
-        labels = slots or [str(k) for k in range(1, 13)]
         for ld, g in rm.groupby("loader", sort=False):
             i = out.index[out["loader"] == ld][0]
             for k, gk in g.groupby("slot"):
                 out.loc[i, f"m{int(k)}"] = " ".join(dict.fromkeys(str(c) for c in gk["code"].dropna())) or "•"
-            out.loc[i, "remark"] = " · ".join(
-                f"{labels[int(r.slot) - 1]} "
-                + " ".join(x for x in (H.remark_label(r.code),
-                                       r.remark if isinstance(r.remark, str) and r.remark else None,
-                                       f"({r.hauler})" if isinstance(r.hauler, str) and r.hauler else None) if x)
-                for r in g.sort_values("slot").itertuples())
     tgt = out["target"].fillna(0)
     totals = {"slots": [float(out[c].sum()) for c in cols],
               "running": [int((out[c] > 0).sum()) for c in cols],

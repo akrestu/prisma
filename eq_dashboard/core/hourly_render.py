@@ -76,7 +76,13 @@ CSS = """
 .ft td.now{box-shadow:inset 0 0 0 .12cqw %(NOW)s}.ft th.now{color:%(NOW)s;font-weight:700}
 .ft td.fu,.ft tr.rf td{color:%(DIM)s}.ft td.tot{font-weight:700}
 .ft td.ach{padding-right:.5cqw}.ft td.ach .bar{margin:0;height:.3cqw}
-.ft td.rm{text-align:left;color:%(MUTED)s;white-space:normal;line-height:1.2;font-size:.72cqw}
+.ev{display:flex;flex-direction:column;gap:.15cqw}
+.ev h3{margin:0 0 .15cqw;font-size:1cqw;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:%(MUTED)s}
+.ev h3 span{font-size:.82cqw;font-weight:400;letter-spacing:0;text-transform:none;color:%(DIM)s;margin-left:.8cqw}
+.ev ul{list-style:none;margin:0;padding:0;columns:2;column-gap:2cqw}
+.ev li{display:grid;grid-template-columns:7.5cqw 4.6cqw 1fr;gap:.6cqw;font-size:.85cqw;padding:.2cqw 0;
+ border-bottom:.05cqw solid %(LINE)s;break-inside:avoid;align-items:baseline}
+.ev li .t{color:%(MUTED)s}.ev li .u{font-weight:600}.ev li .w b{font-weight:600}.ev li .w span{color:%(MUTED)s}
 .ft td.h i.rc{display:block;font-style:normal;font-size:.62cqw;line-height:1;color:%(TEXT)s;opacity:.8;font-weight:600;letter-spacing:.02em}
 .ft td.hl{color:%(MUTED)s;font-size:.72cqw;white-space:normal;line-height:1.25;overflow:visible}.ft td.hl b{color:%(TEXT)s;font-weight:600}
 .kpi td.m span{color:%(DIM)s}
@@ -224,11 +230,11 @@ def _board(g: str, d: HourlyTv) -> str:
     labels = SLOTS[d.shift]
     cols = ('<col style="width:1.6%"><col style="width:4.6%"><col style="width:5%">'
             '<col style="width:13%"><col style="width:7.5%"><col style="width:9.5%"><col style="width:3%">'
-            + '<col style="width:3.2%">' * 12 + '<col style="width:4%"><col style="width:3.4%"><col>')
+            + '<col style="width:3.6%">' * 12 + '<col style="width:4.4%"><col>')
     th = ("<tr><th class='l'>#</th><th class='l'>Loader</th><th class='l'>Model</th>"
           "<th class='l'>Haulers</th><th class='l'>Material</th><th class='l'>PIT → disposal</th><th>Target</th>"
           + "".join(f"<th class='{'now' if i == now else ''}'>{lab}</th>" for i, lab in enumerate(labels, 1))
-          + "<th>Total</th><th>Ach</th><th class='l'>Remark</th></tr>")
+          + "<th>Total</th><th>Ach</th></tr>")
     rows = ""
     for i, r in enumerate(df.itertuples(index=False), 1):
         cells, hours = "", 0
@@ -256,23 +262,43 @@ def _board(g: str, d: HourlyTv) -> str:
                  f"<td class='l hl'><b>{r.haulers}</b> · {escape(r.hauler_ids or '')}</td>"
                  f"<td class='l mu'>{escape(str(r.material or ''))}</td>"
                  f"<td class='l mu'>{escape(route)}</td><td class='tg'>{_n(r.target)}{'*' if r.on_default else ''}</td>{cells}"
-                 f"<td class='tot'>{_n(r.total)}</td><td class='ach'>{_bar(ach)}</td>"
-                 f"<td class='rm'>{escape(r.remark or '')}</td></tr>")
+                 f"<td class='tot'>{_n(r.total)}</td><td class='ach'>{_bar(ach)}</td></tr>")
     if df.empty:
-        rows = (f"<tr><td class='l' colspan='22'><div class='none'>No {TITLE[g].lower()} input for this shift yet."
+        rows = (f"<tr><td class='l' colspan='21'><div class='none'>No {TITLE[g].lower()} input for this shift yet."
                 "</div></td></tr>")
     else:
         hide = lambda k: bool(now and k > now)  # noqa: E731
         s_cells = "".join("<td></td>" if hide(k) else f"<td>{_n(v)}</td>" for k, v in enumerate(tot["slots"], 1))
         r_cells = "".join("<td></td>" if hide(k) else f"<td>{v}</td>" for k, v in enumerate(tot["running"], 1))
         rows += (f"<tr class='tt'><td class='l' colspan='7'>Total {UNIT[g]}</td>{s_cells}"
-                 f"<td class='tot'>{_n(tot['total'])}</td><td></td><td></td></tr>"
-                 f"<tr class='rf'><td class='l' colspan='7'>Running fleet</td>{r_cells}<td></td><td></td><td></td>"
-                 "</tr>")
+                 f"<td class='tot'>{_n(tot['total'])}</td><td></td></tr>"
+                 f"<tr class='rf'><td class='l' colspan='7'>Running fleet</td>{r_cells}<td></td><td></td></tr>")
     sub = (f"{UNIT[g]} per hour · {len(df)} fleets · {tot.get('haulers', 0)} haulers · "
            f"{_n(tot.get('trips'))} trips")
     return (f'<div class="brd" style="--c:{LINE_COLOR[g]}"><div class="bt"><h3>{TITLE[g]}</h3><span>{sub}</span>'
             f'</div><table class="ft"><colgroup>{cols}</colgroup>{th}{rows}</table></div>')
+
+
+EVENTS_MAX = 10
+
+
+def _events(d: HourlyTv) -> str:
+    """'Events this shift': what happened, in hour order, in the space under the boards (latest ones if many)."""
+    ev = d.events
+    if ev is None or ev.empty:
+        return ""
+    shown = ev.tail(EVENTS_MAX)
+    more = len(ev) - len(shown)
+    items = ""
+    for r in shown.itertuples():
+        code = escape(r.what or "")
+        note = escape(r.remark) if isinstance(r.remark, str) and r.remark else ""
+        truck = f" · {escape(r.hauler)}" if isinstance(r.hauler, str) and r.hauler else ""
+        items += (f"<li><span class='t'>{escape(r.hours)}</span><span class='u'>{escape(str(r.loader))}</span>"
+                  f"<span class='w'><b>{code}</b>{truck}" + (f" <span>— {note}</span>" if note else "")
+                  + "</span></li>")
+    sub = f"{len(ev)} event(s)" + (f" · {more} earlier not shown" if more else "")
+    return f'<div class="ev"><h3>Events this shift<span>{sub}</span></h3><ul>{items}</ul></div>'
 
 
 def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None) -> str:
@@ -292,7 +318,7 @@ def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None) -> 
             + f'</div><div class="r"><span>Shift boss <b>{escape(d.coordinator or "—")}</b></span><span>{upd}</span>'
               f'<span class="app">{brand.NAME}<small>{escape(brand.FULL_NAME)}</small></span><span class="clk">{now:%H:%M}</span></div></div>')
     top = f'<div class="top">{_hero("OB", d)}{_hero("CG", d)}{_kpi(d)}</div>'
-    boards = _board("OB", d) + _board("CG", d)
+    boards = _board("OB", d) + _board("CG", d) + _events(d)
     foot = (f'<div class="fo"><span><i style="background:rgba(79,193,166,.6)"></i>target met</span>'
             f'<span><i style="background:rgba(240,138,60,.7)"></i>below target</span>'
             f'<span><i style="box-shadow:inset 0 0 0 .12cqw {NOW}"></i>current hour</span>'

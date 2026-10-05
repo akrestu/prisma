@@ -258,3 +258,30 @@ def test_save_hourly_keeps_remarks_per_hour(db_session):
     repo.save_hourly(s, "WBK-BAU", d, "DS", "", r, "op1", remarks=rm.iloc[:0])
     s.commit()
     assert repo.hourly_remarks(s, "WBK-BAU", d, "DS").empty
+
+
+def test_group_remarks_merges_consecutive_hours():
+    d = pd.DataFrame({"id": [1, 2, 3, 4, 5], "slot": [3, 4, 5, 7, 4], "loader": ["A", "A", "A", "A", "B"],
+                      "hauler": [None] * 5, "code": ["302"] * 4 + ["401"], "remark": [None] * 5})
+    g = H.group_remarks(d)
+    assert g[["slot_from", "slot_to", "loader", "code"]].values.tolist() == [[3, 5, "A", "302"], [4, 4, "B", "401"],
+                                                                            [7, 7, "A", "302"]]
+    assert g.loc[0, "ids"] == [1, 2, 3]
+    assert H.span_label("DS", 3, 5) == "08-09 – 10-11" and H.span_label("NS", 1, 1) == "18-19"
+    assert H.group_remarks(d.iloc[:0]).empty
+
+
+def test_add_and_delete_remark_without_saving_the_grid(db_session):
+    s = db_session
+    d = dt.date(2026, 9, 27)
+    n = repo.add_hourly_remark(s, "WBK-BAU", d, "NS", 4, 2, "WEX019", "401", " hose bocor ", "sb1")
+    s.commit()
+    assert n == 3                                               # 19-20 … 21-22, given in either order
+    got = repo.hourly_remarks(s, "WBK-BAU", d, "NS")
+    assert got["slot"].tolist() == [2, 3, 4] and set(got["remark"]) == {"hose bocor"}
+    sh, rows = repo.hourly_shift(s, "WBK-BAU", d, "NS")
+    assert sh is not None and rows.empty                        # the shift exists, no trip lines needed
+    ev = H.group_remarks(got)
+    repo.delete_hourly_remarks(s, ev.loc[0, "ids"])
+    s.commit()
+    assert repo.hourly_remarks(s, "WBK-BAU", d, "NS").empty

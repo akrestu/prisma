@@ -266,10 +266,34 @@ HOURLY_REMARK_COLS = ["slot", "loader", "hauler", "code", "remark"]
 
 
 def hourly_remarks(s: Session, site: str, date, shift: str) -> pd.DataFrame:
-    """Remarks per hour of one shift (slot 1..12, loader, hauler, code, remark), in hour order."""
+    """Remarks per hour of one shift (id, slot 1..12, loader, hauler, code, remark), in hour order."""
     r, sh = m.HourlyRemark, m.HourlyShift
-    return frame(s, select(*[getattr(r, c) for c in HOURLY_REMARK_COLS]).join(sh, sh.id == r.shift_id)
+    return frame(s, select(r.id, *[getattr(r, c) for c in HOURLY_REMARK_COLS]).join(sh, sh.id == r.shift_id)
                  .where(sh.site == site, sh.date == date, sh.shift == shift).order_by(r.slot, r.loader, r.id))
+
+
+def add_hourly_remark(s: Session, site: str, date, shift: str, slot_from: int, slot_to: int, loader: str,
+                      code: str | None, remark: str | None, username: str, hauler: str | None = None) -> int:
+    """One remark for one or more consecutive hours, saved at once (no need to save the trip grid). Creates the
+    shift when nothing was entered for it yet. Returns the number of hours written."""
+    sh = s.scalar(select(m.HourlyShift).where(m.HourlyShift.site == site, m.HourlyShift.date == date,
+                                              m.HourlyShift.shift == shift))
+    if sh is None:
+        sh = m.HourlyShift(site=site, date=date, shift=shift, coordinator="", source="web", updated_by=username)
+        s.add(sh)
+        s.flush()
+    a, b = sorted((int(slot_from), int(slot_to)))
+    for k in range(a, b + 1):
+        s.add(m.HourlyRemark(shift_id=sh.id, slot=k, loader=loader, hauler=hauler or None, code=code or None,
+                             remark=(remark or "").strip() or None))
+    sh.updated_by, sh.updated_at = username, func.now()
+    return b - a + 1
+
+
+def delete_hourly_remarks(s: Session, ids: list[int]) -> None:
+    from sqlalchemy import delete
+    if ids:
+        s.execute(delete(m.HourlyRemark).where(m.HourlyRemark.id.in_([int(i) for i in ids])))
 
 
 def load_factors(s: Session, site: str) -> pd.DataFrame:

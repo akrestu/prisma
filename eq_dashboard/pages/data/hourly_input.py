@@ -62,7 +62,6 @@ code_label = {k: f"{k} - {v}" for k, v in H.REMARKS.items()}
 slots = H.SLOTS[shift]
 GRID = ["loader", "loader_nrp", "material", "hauler", "hauler_model", "hauler_nrp", "pit", "disposal", "distance_m",
         *H.R]
-RGRID = ["hour", "loader", "hauler", "code", "remark"]
 unit_model = dict(zip(site_units["unit_id"], site_units["model"], strict=True)) if len(site_units) else {}
 
 
@@ -80,18 +79,70 @@ def from_grid(g: pd.DataFrame) -> pd.DataFrame:
     return g.assign(remark_code=None, remark=None)     # remarks are entered per hour in their own table
 
 
-def remarks_grid(df: pd.DataFrame) -> pd.DataFrame:
-    """Stored remarks (slot 1..12) → the editor (hour label, code label)."""
-    if df.empty:
-        return pd.DataFrame(columns=RGRID)
-    return pd.DataFrame({"hour": [slots[int(k) - 1] for k in df["slot"]], "loader": df["loader"],
-                         "hauler": df["hauler"], "code": df["code"].map(H.remark_label), "remark": df["remark"]})
-
-
 t_web, t_xls = st.tabs(["Web input", "Excel template"])
+
+# ------------------------------------------------------------------ remarks per hour
+@st.fragment
+def remark_box() -> None:
+    """Quick remarks: hour (now by default), excavator, code, note → saved at once, apart from the trip grid (its
+    unsaved edits are kept: the grid holds them in the session)."""
+    with session_scope() as s:
+        rm = repo.hourly_remarks(s, site, date, shift)
+    fleet = sorted(set(rows["loader"].dropna())) if len(rows) else []
+    fleet = fleet or (sorted(set(prev["loader"].dropna())) if prev is not None and len(prev) else []) or loaders
+    live = (date, shift) == (p_date, p_shift)
+    with st.container(border=True):
+        st.markdown("**Remarks per hour** · only when something happened (rain, breakdown, waiting…). "
+                    "Saved at once and shown in that hour on the TV.")
+        with st.form(f"hi_rm_{site}_{date}_{shift}", clear_on_submit=True, border=False):
+            c = st.columns([1, 1.2, 2.2, 2.6, 0.9], vertical_alignment="bottom")
+            hour = c[0].selectbox("Hour", slots, index=(p_slot - 1) if live else 0)
+            last = st.session_state.get("hi_rm_loader")
+            loader = c[1].selectbox("Excavator", fleet, index=fleet.index(last) if last in fleet else 0)
+            code = c[2].selectbox("Remark code", list(code_label.values()), index=None, placeholder="Pick a code")
+            note = c[3].text_input("Note (optional)", placeholder="e.g. hujan deras, front basah")
+            add = c[4].form_submit_button("Add", type="primary", width="stretch", icon=":material/add:")
+            with st.expander("More: several hours, one truck"):
+                d1, d2 = st.columns(2)
+                until = d1.selectbox("Until hour", ["(same hour)", *slots], key=None)
+                hauler = d2.selectbox("Hauler ID", haulers, index=None, placeholder="whole fleet")
+        if add:
+            if code is None and not note.strip():
+                st.error("Pick a remark code or write a note.")
+            else:
+                a = slots.index(hour) + 1
+                b = a if until == "(same hour)" else slots.index(until) + 1
+                with session_scope() as s:
+                    n = repo.add_hourly_remark(s, site, date, shift, a, b, loader, (code or "")[:3] or None, note,
+                                               user.username, hauler)
+                    audit(s, user.username, "hourly_remark", site,
+                          f"{date:%Y-%m-%d} {shift} {H.span_label(shift, min(a, b), max(a, b))} {loader} "
+                          f"{(code or '')[:3]} {note.strip()}".strip())
+                st.session_state["hi_rm_loader"] = loader
+                refresh("hourly")
+                st.toast(f"Remark added ({n} hour{'s' if n > 1 else ''}).")
+                st.rerun()
+        ev = H.group_remarks(rm)
+        if ev.empty:
+            st.caption("No remarks for this shift yet.")
+        for r in ev.itertuples():
+            a, b = st.columns([12, 1], vertical_alignment="center")
+            note = f" — {r.remark}" if isinstance(r.remark, str) and r.remark else ""
+            truck = f" · {r.hauler}" if isinstance(r.hauler, str) and r.hauler else ""
+            a.markdown(f"`{H.span_label(shift, r.slot_from, r.slot_to)}` **{r.loader}**{truck} · "
+                       f"{H.remark_label(r.code) or ''}{note}")
+            if b.button("", key=f"hi_rm_del_{r.ids[0]}", icon=":material/delete:", help="Delete this remark"):
+                with session_scope() as s:
+                    repo.delete_hourly_remarks(s, r.ids)
+                    audit(s, user.username, "hourly_remark_delete", site,
+                          f"{date:%Y-%m-%d} {shift} {H.span_label(shift, r.slot_from, r.slot_to)} {r.loader}")
+                refresh("hourly")
+                st.rerun()
+
 
 # ------------------------------------------------------------------ web grid
 with t_web:
+    remark_box()
     base = rows if sh is not None else (prev if prev is not None and len(prev) else pd.DataFrame(columns=GRID))
     if sh is None and prev is not None and len(prev):
         st.caption("New shift: lines copied from the previous shift (no trips). Change or delete what differs.")
@@ -131,25 +182,8 @@ with t_web:
     st.caption("One row per hauler. When a hauler's operator changes during the shift, add a second row for the "
                "same hauler with the new operator.")
 
-    st.markdown("**Remarks per hour**")
-    st.caption("Only when something happened: pick the hour, the excavator (and the truck if it is about one truck), "
-               "a remark code and/or a text. The code shows in that hour on the TV.")
-    fleet = sorted(set(grid["loader"].dropna())) or loaders
-    rcfg = {
-        "hour": st.column_config.SelectboxColumn("Hour", options=slots, required=True, width="small"),
-        "loader": st.column_config.SelectboxColumn("Excavator", options=fleet, required=True),
-        "hauler": st.column_config.SelectboxColumn("Hauler ID (optional)", options=haulers),
-        "code": st.column_config.SelectboxColumn("Remark code", options=list(code_label.values()), width="medium"),
-        "remark": st.column_config.TextColumn("Remark", width="large"),
-    }
-    rkey = f"hi_rm_{site}_{date}_{shift}_{ver}"
-    rgrid = st.data_editor(remarks_grid(remarks), num_rows="dynamic", hide_index=True, width="stretch",
-                           column_config=rcfg, key=rkey, height=min(320, 38 * (len(remarks) + 3) + 40))
-    rclean, rproblems = H.clean_remarks(rgrid, shift, fleet)
-    res.problems.extend(rproblems)
     edits = st.session_state.get(gkey) or {}
-    redits = st.session_state.get(rkey) or {}
-    dirty = any(e.get(k) for e in (edits, redits) for k in ("edited_rows", "added_rows", "deleted_rows")) \
+    dirty = any(edits.get(k) for k in ("edited_rows", "added_rows", "deleted_rows")) \
         or coord != coord_now or (sh is None and len(base) > 0)   # lines copied from the previous shift: not saved yet
     if dirty:
         st.warning("Unsaved changes. Changing the site, date or shift discards them: press **Save shift** first.")
@@ -169,9 +203,8 @@ with t_web:
         k[4].metric("Haulers", res.rows["hauler"].nunique())
     if st.button("Save shift", type="primary", key="hi_save", disabled=bool(res.problems)) and not res.problems:
         with st.spinner("Saving the shift…"), session_scope() as s:
-            repo.save_hourly(s, site, date, shift, coord, res.rows, user.username, "web", remarks=rclean)
-            audit(s, user.username, "hourly_save", site,
-                  f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines, {len(rclean)} remarks")
+            repo.save_hourly(s, site, date, shift, coord, res.rows, user.username, "web")
+            audit(s, user.username, "hourly_save", site, f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines")
         refresh("hourly")
         st.session_state["hi_ver"] = ver + 1
         st.session_state["hi_msg"] = f"{site} {date:%d %b} {shift} saved ({len(res.rows)} lines)."
