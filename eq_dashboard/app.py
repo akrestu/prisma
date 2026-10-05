@@ -1,4 +1,4 @@
-"""App entrypoint: login → role-based navigation. `?display=<token>` opens the TV screen (kiosk)."""
+"""App entrypoint: login → role-based navigation. `?tv=<code>` opens the TV screen (kiosk)."""
 import streamlit as st
 
 from core import brand
@@ -12,16 +12,25 @@ from auth.authenticator import authenticate  # noqa: E402
 from db import repo  # noqa: E402
 from db.engine import session_scope  # noqa: E402
 
-if "display" in st.query_params:
-    # Kiosk TV mode: no login, token locked to one site, TV screen only.
-    from auth.display import validate
+if "display" in st.query_params:   # the old long links: replaced by short codes
+    st.error("This TV link is no longer used. Ask your Admin for the new short TV link (…/?tv=XXXX-XXXX).")
+    st.stop()
+
+if "tv" in st.query_params:
+    # Kiosk TV mode: no login, code locked to one site, TV screen only.
+    from auth.display import blocked, record_failure, validate
     from pages.tv.screen import show, show_hourly
 
+    client = st.context.ip_address
+    if blocked(client):
+        st.error("Too many wrong TV codes. Wait 10 minutes and check the code with your Admin.")
+        st.stop()
     with session_scope() as s:
-        dev = validate(s, st.query_params.get("display"))
+        dev = validate(s, st.query_params.get("tv"))
         site = dev.site_code if dev else None
     if site is None:
-        st.error("This TV link is invalid or has been revoked. Contact your Admin.")
+        record_failure(client)
+        st.error("This TV code is invalid or has been revoked. Check the code or contact your Admin.")
         st.stop()
 
     @st.fragment(run_every="1m")
@@ -29,7 +38,7 @@ if "display" in st.query_params:
         # token, screen and period are re-read on every refresh: revocation or changes apply within a minute.
         # The equipment screen is cached per published version, so refreshing it every minute costs nothing.
         with session_scope() as s:
-            d = validate(s, st.query_params.get("display"))
+            d = validate(s, st.query_params.get("tv"))
             period, screen = (d.period, d.screen) if d else (None, None)
             h_date, h_shift = (d.hourly_date, d.hourly_shift) if d else (None, None)
             review = (d.review_from, d.review_to) if d else None

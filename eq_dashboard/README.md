@@ -238,8 +238,8 @@ Data per jam langsung tampil tanpa approval. Angka resmi bulanan tetap berasal d
 3. Di mini-PC atau TV, jalankan browser dalam mode kiosk:
 
    ```bash
-   msedge --kiosk "https://dashboard.perusahaan.co.id/?display=TOKEN" --edge-kiosk-type=fullscreen
-   # atau: chrome --kiosk "https://…/?display=TOKEN"
+   msedge --kiosk "https://prisma.pt-wbk.id/?tv=K7M2-QX9P" --edge-kiosk-type=fullscreen
+   # atau: chrome --kiosk "https://…/?tv=KODE" (kode 8 karakter dari Admin → TV devices)
    ```
 
 4. Aktifkan auto-start saat PC menyala, lalu matikan *sleep* dan screensaver.
@@ -361,7 +361,7 @@ Sebagian test memakai file contoh `../Eq.Event.xlsb`, `../Target.xlsx`, dan `../
 
 ```
 eq_dashboard/
-  app.py                 entrypoint: login → menu per role; ?display=<token> → layar TV
+  app.py                 entrypoint: login → menu per role; ?tv=<kode> → layar TV
   cli.py                 perintah administrasi
   auth/                  login (streamlit-authenticator + bcrypt), role & akses site, token TV
   core/                  logika tanpa UI

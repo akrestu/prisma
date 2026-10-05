@@ -17,6 +17,40 @@ from auth.security import now
 from db import models as m
 
 LAST_SEEN_EVERY = dt.timedelta(minutes=1)
+# short codes typed on a TV remote: no 0/O, 1/I/L. 8 of 31 symbols ≈ 8.5e11 codes, plus the failure limit below
+ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+CODE_LEN = 8
+FAIL_LIMIT, FAIL_WINDOW = 20, dt.timedelta(minutes=10)
+_fails: dict[str, list[dt.datetime]] = {}
+
+
+def new_code() -> str:
+    return "".join(secrets.choice(ALPHABET) for _ in range(CODE_LEN))
+
+
+def normalize(code: str | None) -> str | None:
+    """'k7m2-qx9p' / 'K7M2 QX9P' → 'K7M2QX9P'; None when it cannot be a TV code (old long links included)."""
+    if not code:
+        return None
+    c = "".join(ch for ch in str(code).upper() if ch.isalnum())
+    return c if len(c) == CODE_LEN and all(ch in ALPHABET for ch in c) else None
+
+
+def pretty(code: str) -> str:
+    """'K7M2QX9P' → 'K7M2-QX9P' (easier to read and type)."""
+    return f"{code[:4]}-{code[4:]}"
+
+
+def blocked(client: str | None) -> bool:
+    """True after FAIL_LIMIT wrong codes from one client within FAIL_WINDOW: guessing codes is not worth it."""
+    t = now()
+    recent = [x for x in _fails.get(client or "?", []) if t - x < FAIL_WINDOW]
+    _fails[client or "?"] = recent
+    return len(recent) >= FAIL_LIMIT
+
+
+def record_failure(client: str | None) -> None:
+    _fails.setdefault(client or "?", []).append(now())
 
 
 def _hash(token: str) -> str:
@@ -47,12 +81,12 @@ def token_of(dev: m.DisplayDevice) -> str | None:
         token = f.decrypt(dev.token_enc.encode()).decode()
     except InvalidToken:
         return None
-    return token if _hash(token) == dev.token_hash else None
+    return token if _hash(token) == dev.token_hash and normalize(token) == token else None
 
 
 def create_device(s: Session, name: str, site: str, created_by: int | None) -> tuple[m.DisplayDevice, str]:
-    """Buat perangkat; token asli hanya dikembalikan sekali ini."""
-    token = secrets.token_urlsafe(32)
+    """Buat perangkat dengan kode pendek baru (dikembalikan; disimpan sebagai hash + terenkripsi)."""
+    token = _unique_code(s)
     dev = m.DisplayDevice(name=name, site_code=site, token_hash=_hash(token), token_enc=_seal(token),
                           created_by=created_by)
     s.add(dev)
@@ -60,15 +94,24 @@ def create_device(s: Session, name: str, site: str, created_by: int | None) -> t
     return dev, token
 
 
+def _unique_code(s: Session) -> str:
+    while True:   # a clash is practically impossible, but the hash column is unique
+        code = new_code()
+        if s.scalar(select(m.DisplayDevice.id).where(m.DisplayDevice.token_hash == _hash(code))) is None:
+            return code
+
+
 def regenerate(s: Session, dev: m.DisplayDevice) -> str:
-    token = secrets.token_urlsafe(32)
+    token = _unique_code(s)
     dev.token_hash, dev.token_enc, dev.active = _hash(token), _seal(token), True
     return token
 
 
 def validate(s: Session, token: str | None) -> m.DisplayDevice | None:
-    """Kembalikan perangkat aktif untuk token ini, dan catat last_seen (paling sering tiap menit)."""
-    if not token or len(token) < 20:
+    """Kembalikan perangkat aktif untuk kode ini, dan catat last_seen (paling sering tiap menit). Old long tokens
+    are no longer accepted: every TV uses a short code."""
+    token = normalize(token)
+    if token is None:
         return None
     dev = s.scalar(select(m.DisplayDevice).where(m.DisplayDevice.token_hash == _hash(token),
                                                   m.DisplayDevice.active))

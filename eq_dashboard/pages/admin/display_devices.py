@@ -18,7 +18,8 @@ from pages.tv.screen import SCREENS
 user = require("display_devices")
 st.title("TV devices")
 st.caption("Each TV uses a secret link locked to one site that only shows the TV screen (read-only). "
-           "Copy a TV's link with its **Copy link** button and open it on the TV / mini-PC.")
+           "Each TV has a short link (…/?tv=XXXX-XXXX) to type in the TV browser, or copy it with **Copy link**. "
+           "Letters and digits that look alike (0/O, 1/I/L) are not used; capitals and the dash are optional.")
 
 
 def _origin(url: str | None) -> str | None:
@@ -53,16 +54,17 @@ elif "localhost" in base or "127.0.0.1" in base:
 
 
 def link(token: str) -> str:
-    """Full TV link. Never a relative '/?display=…': without a valid address the caller gets an error instead."""
+    """Full, short TV link 'https://prisma.pt-wbk.id/?tv=K7M2-QX9P' (easy to type on a TV). Never a relative link:
+    without a valid address the caller gets an error instead."""
     origin = _origin(st.session_state.get("tv_base")) or default_base()
     if not origin:
         raise ValueError("no app address")
-    return f"{origin}/?display={token}"
+    return f"{origin}/?tv={display.pretty(token)}"
 
 
 new = st.session_state.pop("new_display_link", None)
 if new:
-    st.success(f"Link for **{new[0]}**. You can copy it again later from the TV's row.")
+    st.success(f"Link for **{new[0]}**. Type it in the TV's browser, or copy it; it stays in the TV's row.")
     st.code(new[1], language=None)
     copy_button(new[1])
     st.caption(f'TV setup: start Chrome/Edge with `--kiosk "{new[1]}"`, enable auto-start, disable sleep & screensaver.')
@@ -111,12 +113,13 @@ for did, name, site, period, active, seen, screen, h_date, h_shift, r_from, r_to
         tv_link = link(token) if token and active and _origin(base) else None
         with a:
             if tv_link:
-                l1, l2 = st.columns([1, 2.2], vertical_alignment="center")
+                l1, l2 = st.columns([1, 2.6], vertical_alignment="center")
                 with l1:
                     copy_button(tv_link)
-                l2.caption(f"…/?display={token[:6]}…{token[-4:]}")
+                l2.markdown(f"`{tv_link}`")
             elif active:
-                st.caption("Link not stored (made before links could be copied): press **Regenerate link** once.")
+                st.caption(":orange[Old long link, no longer accepted by the TV]: press **Regenerate link** to get "
+                           "its short code, then open it on the TV.")
         new_screen = q.selectbox("Screen", list(SCREENS), index=list(SCREENS).index(screen) if screen in SCREENS
                                  else 0, format_func=SCREENS.get, key=f"scr{did}", label_visibility="collapsed")
         if new_screen != screen:

@@ -132,9 +132,12 @@ def test_display_token_lifecycle(db_session):
     dev, token = display.create_device(s, "Control TV", "WBK-MAS", None)
     s.commit()
     assert dev.period == "daily"
-    assert token not in dev.token_hash and len(token) >= 40
+    assert token not in dev.token_hash and len(token) == 8 and display.normalize(token) == token
     assert display.validate(s, token).site_code == "WBK-MAS"
+    typed = display.pretty(token).lower()                        # 'k7m2-qx9p': case and dash do not matter
+    assert display.validate(s, typed).site_code == "WBK-MAS"
     assert display.validate(s, "wrong" * 10) is None and display.validate(s, None) is None
+    assert display.validate(s, "O0I1L" + token[5:]) is None       # look-alike symbols are never in a code
     new = display.regenerate(s, dev)
     s.commit()
     assert display.validate(s, token) is None and display.validate(s, new) is not None
@@ -147,7 +150,7 @@ def _kiosk(monkeypatch, token):
     from core.config import database_url
     monkeypatch.setenv("DATABASE_URL", database_url(test=True))
     at = AppTest.from_file(str(APP_DIR / "app.py"), default_timeout=180)
-    at.query_params["display"] = token
+    at.query_params["tv"] = display.pretty(token)
     at.run()
     return at
 
@@ -224,3 +227,13 @@ def test_tv_link_can_be_copied_again_but_db_alone_reveals_nothing(db_session, mo
     dev.token_enc = None                                      # TVs made before links were stored
     assert display.token_of(dev) is None
     assert display.validate(s, new) is not None               # the TV itself keeps working either way
+
+
+def test_old_long_links_are_refused_and_guessing_is_limited(db_session, monkeypatch):
+    long = "x" * 43
+    assert display.validate(db_session, long) is None
+    monkeypatch.setattr(display, "_fails", {})
+    for _ in range(display.FAIL_LIMIT):
+        assert not display.blocked("1.2.3.4")
+        display.record_failure("1.2.3.4")
+    assert display.blocked("1.2.3.4") and not display.blocked("5.6.7.8")

@@ -355,15 +355,15 @@ def test_tv_links_are_always_full_addresses(world, monkeypatch):
     monkeypatch.delenv("PUBLIC_URL", raising=False)
     at = run_path("pages/admin/display_devices.py", load_user(world, "adm"))
     assert not at.exception, [e.value for e in at.exception]
-    at.text_input(key="tv_base").set_value("").run()           # no address known: refuse, never '/?display=…'
+    at.text_input(key="tv_base").set_value("").run()           # no address known: refuse, never '/?tv=…'
     assert any("full app address" in e.value for e in at.error)
     assert at.button(key=f"regen{dev.id}").disabled
     at.text_input(key="tv_base").set_value("https://prisma.pt-wbk.id/tv_devices").run()
     at.button(key=f"regen{dev.id}").click().run()
     shown = [c.value for c in at.code]
-    assert shown and shown[0].startswith("https://prisma.pt-wbk.id/?display="), shown
+    assert shown and shown[0].startswith("https://prisma.pt-wbk.id/?tv=") and len(shown[0]) == len("https://prisma.pt-wbk.id/?tv=XXXX-XXXX"), shown
     at.run()                                                   # the TV's own row: a copy button with its link
-    assert any("Copy link" in h.proto.body and "prisma.pt-wbk.id/?display=" in h.proto.body
+    assert any("Copy link" in h.proto.body and "prisma.pt-wbk.id/?tv=" in h.proto.body
                for h in at.get("html")), "no copy button"
 
 
