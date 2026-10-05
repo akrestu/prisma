@@ -6,7 +6,7 @@ from core import population as pop
 from core.config import UNMAPPED, today_wib
 from core.ingest import audit
 from core.io import sha256
-from core.ui import fmt_num, require, sites_for
+from core.ui import excel_download, fmt_num, require, sites_for
 from core.validate import StructureError, file_stem
 from db import repo
 from db.engine import session_scope
@@ -27,6 +27,8 @@ if msg:
 with session_scope() as s:
     versions = repo.population_versions(s)
     current = repo.population_for(s, today_wib())
+    all_units = repo.population_all_units(s) if len(versions) > 1 else pd.DataFrame()
+moves = pop.movements(all_units, versions)
 cur_label = current.attrs.get("source", "") if current is not None else ""
 
 k = st.columns(4)
@@ -38,7 +40,9 @@ k[3].metric("Sites", fmt_num(current.loc[current["site"] != UNMAPPED, "site"].nu
 if cur_label:
     st.caption(f"In force today: {cur_label}.")
 
-t_imp, t_now, t_hist = st.tabs(["Import", "Current units", "Versions"])
+n_moved = int((moves["change"] == "moved").sum())
+t_imp, t_now, t_move, t_hist = st.tabs(["Import", "Current units",
+                                        f"Unit movements ({n_moved})" if n_moved else "Unit movements", "Versions"])
 
 # ------------------------------------------------------------------ import
 with t_imp:
@@ -127,6 +131,9 @@ with t_now:
         st.info(f"No population version yet. Import a {pop.DATASET} workbook first.")
     else:
         q = st.text_input("Search", key="pop_q", placeholder="unit, type, model, site…").strip().lower()
+        if len(versions) and "Population version" in cur_label:
+            first = pd.Timestamp(versions["effective_from"].min()).date()
+            current = current.assign(site_since=pop.site_since(moves, current, first))
         view = current
         if q:
             view = current[current.astype(str).apply(lambda col: col.str.lower().str.contains(q, regex=False))
@@ -136,6 +143,44 @@ with t_now:
         st.download_button("Download as template (.xlsx)", lambda: pop.build_template(sites, current, today_wib()),
                            file_name=pop.file_name(today_wib()), on_click="ignore", key="pop_dl_cur",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# ------------------------------------------------------------------ movements
+with t_move:
+    st.caption("Built from the versions: a unit that is in a different site, new, or gone in the next version. "
+               "The date is the effective date of the version that shows the change.")
+    if len(versions) < 2:
+        st.info("Movements appear once there are at least two versions (e.g. one per year, or one whenever units "
+                "move).")
+    elif moves.empty:
+        st.info("No unit changed site, arrived or left between the versions.")
+    else:
+        f1, f2, f3 = st.columns([2, 2, 2])
+        q = f1.text_input("Unit", key="mv_q", placeholder="e.g. WEX021").strip().upper()
+        kinds = f2.multiselect("Change", ["moved", "arrived", "left"], default=["moved", "arrived", "left"],
+                               key="mv_kind")
+        dmin, dmax = pd.Timestamp(moves["date"].min()).date(), pd.Timestamp(moves["date"].max()).date()
+        rng = f3.date_input("Effective between", (dmin, dmax), key="mv_rng", format="DD/MM/YYYY")
+        view = moves[moves["change"].isin(kinds)]
+        if q:
+            view = view[view["unit_id"].str.upper().str.contains(q, regex=False)]
+        if isinstance(rng, (list, tuple)) and len(rng) == 2:
+            view = view[(view["date"] >= rng[0]) & (view["date"] <= rng[1])]
+        c = view["change"].value_counts()
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Moved site", int(c.get("moved", 0)))
+        m2.metric("Arrived", int(c.get("arrived", 0)))
+        m3.metric("Left", int(c.get("left", 0)))
+        show = view.assign(route=[f"{a or '—'} → {b or '—'}" for a, b in zip(view["from_site"], view["to_site"],
+                                                                           strict=True)])
+        st.dataframe(show[["date", "unit_id", "change", "route", "type", "model", "version_id"]], hide_index=True,
+                     width="stretch", height=420,
+                     column_config={"date": st.column_config.DateColumn("Effective from", format="DD MMM YYYY"),
+                                    "unit_id": "Unit", "change": "Change", "route": "Site", "type": "Type",
+                                    "model": "Model", "version_id": "Version"})
+        if q and len(view):
+            st.caption(f"History of {q}: " + " · ".join(
+                f"{r.date:%d %b %Y} {r.change} {r.route}" for r in show.sort_values("date").itertuples()))
+        excel_download(show.drop(columns=["route"]), f"unit_movements_{today_wib():%Y-%m-%d}.xlsx", key="mv_dl")
 
 # ------------------------------------------------------------------ versions
 with t_hist:

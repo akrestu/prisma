@@ -94,6 +94,42 @@ def restrict(old: pd.DataFrame | None, new: pd.DataFrame, allowed: list[str]) ->
     return (pd.DataFrame(out, columns=COLS), pd.DataFrame(ignored, columns=["change", "unit_id", "site"]))
 
 
+def movements(units: pd.DataFrame, versions: pd.DataFrame) -> pd.DataFrame:
+    """History of every unit across versions: arrived, left, or moved site, with the date it applies from.
+
+    `units`: unit_id, site, type, model, version_id (all versions). `versions`: id, effective_from. Versions are
+    replayed in effective order; of two versions on the same date the newer upload wins (as for population_for).
+    The first version is the starting point, so it produces no rows."""
+    cols = ["date", "unit_id", "change", "from_site", "to_site", "type", "model", "version_id"]
+    if versions.empty or units.empty:
+        return pd.DataFrame(columns=cols)
+    order = (versions.sort_values(["effective_from", "id"]).drop_duplicates("effective_from", keep="last"))
+    rows, prev = [], None
+    for v in order.itertuples():
+        cur = units[units["version_id"] == v.id].drop_duplicates("unit_id").set_index("unit_id")
+        if prev is not None:
+            both = cur.index.intersection(prev.index)
+            moved = both[(cur.loc[both, "site"] != prev.loc[both, "site"]).to_numpy()]
+            rows += [(v.effective_from, u, "arrived", None, cur.loc[u, "site"], cur.loc[u, "type"], cur.loc[u, "model"],
+                      v.id) for u in cur.index.difference(prev.index)]
+            rows += [(v.effective_from, u, "left", prev.loc[u, "site"], None, prev.loc[u, "type"], prev.loc[u, "model"],
+                      v.id) for u in prev.index.difference(cur.index)]
+            rows += [(v.effective_from, u, "moved", prev.loc[u, "site"], cur.loc[u, "site"], cur.loc[u, "type"],
+                      cur.loc[u, "model"], v.id) for u in moved]
+        prev = cur
+    out = pd.DataFrame(rows, columns=cols)
+    for c in ("from_site", "to_site"):
+        out[c] = out[c].astype(object).where(out[c].notna(), None)
+    return out.sort_values(["date", "unit_id"], ascending=[False, True]).reset_index(drop=True)
+
+
+def site_since(moves: pd.DataFrame, current: pd.DataFrame, first: dt.date | None) -> pd.Series:
+    """Per current unit: the date its present site applies from (last move or arrival, else the first version)."""
+    last = (moves[moves["change"].isin(["moved", "arrived"])].sort_values("date")
+            .drop_duplicates("unit_id", keep="last").set_index("unit_id")["date"])
+    return current["unit_id"].map(last).fillna(first) if first else current["unit_id"].map(last)
+
+
 def build_template(sites: list[str], units: pd.DataFrame | None = None, effective: dt.date | None = None) -> bytes:
     """Unit Population workbook in the template style (README, yellow headers with notes, Site drop-down)."""
     from core import dataprod  # shares the styling helpers

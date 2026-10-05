@@ -86,3 +86,27 @@ def test_ingest_uses_population_version(db_session, sample_bytes, parsed):
     from db import models as m
     ev_site = s.query(m.FactEvent.site).filter(m.FactEvent.unit_id == "WEX019").distinct().all()
     assert ev_site == [("WBK-BAU",)]                                # master wins over the file's own sheet
+
+
+def test_movements_between_versions():
+    import datetime as dt
+
+    from core.population import movements, site_since
+    D = dt.date
+    versions = pd.DataFrame({"id": [1, 2, 3, 4], "effective_from": [D(2023, 1, 1), D(2023, 3, 1), D(2023, 3, 1),
+                                                                     D(2023, 7, 1)]})
+    rows = [(1, "WEX021", "WBK-MAS"), (1, "WHT001", "WBK-BAU"), (1, "WDT099", "WBK-BAU"),
+            (2, "WEX021", "WBK-MAS"),                                       # replaced by #3 on the same date
+            (3, "WEX021", "WBK-BAU"), (3, "WHT001", "WBK-BAU"), (3, "WDT100", "WBK-MAS"),
+            (4, "WEX021", "WBK-MAS"), (4, "WHT001", "WBK-BAU"), (4, "WDT100", "WBK-MAS")]
+    units = pd.DataFrame(rows, columns=["version_id", "unit_id", "site"]).assign(type="Loading", model="X")
+    mv = movements(units, versions)
+    got = {(r.date, r.unit_id, r.change, r.from_site, r.to_site) for r in mv.itertuples()}
+    assert got == {(D(2023, 3, 1), "WEX021", "moved", "WBK-MAS", "WBK-BAU"),
+                   (D(2023, 3, 1), "WDT099", "left", "WBK-BAU", None),
+                   (D(2023, 3, 1), "WDT100", "arrived", None, "WBK-MAS"),
+                   (D(2023, 7, 1), "WEX021", "moved", "WBK-BAU", "WBK-MAS")}
+    cur = units[units["version_id"] == 4]
+    since = dict(zip(cur["unit_id"], site_since(mv, cur, D(2023, 1, 1)), strict=True))
+    assert since == {"WEX021": D(2023, 7, 1), "WHT001": D(2023, 1, 1), "WDT100": D(2023, 3, 1)}
+    assert movements(units.iloc[:0], versions).empty

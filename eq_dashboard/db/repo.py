@@ -219,6 +219,12 @@ def population_units(s: Session, version_id: int) -> pd.DataFrame:
                  .where(u.version_id == version_id).order_by(u.site, u.type, u.unit_id))
 
 
+def population_all_units(s: Session) -> pd.DataFrame:
+    """Units of every version (unit_id, site, type, model, version_id): the input for the movement history."""
+    u = m.PopulationUnit
+    return frame(s, select(u.version_id, u.unit_id, u.site, u.type, u.model))
+
+
 def population_for(s: Session, month) -> pd.DataFrame | None:
     """Units of the newest version effective on or before the last day of `month` (None if there is none)."""
     import calendar

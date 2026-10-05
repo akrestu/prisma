@@ -9,6 +9,7 @@ from auth.access import ADMIN, SITE_MANAGER, VIEWER, load_user
 from core import ingest as ing
 from core.targets import import_targets
 from db import models as m
+from db import repo
 
 from .conftest import APP_DIR, TARGET
 
@@ -321,3 +322,19 @@ def test_tv_devices_hourly_report_controls(world):
     world.expire_all()
     got = world.get(m.DisplayDevice, dev.id)
     assert got.hourly_date == dt.date(2026, 9, 20) and got.hourly_shift == "DS"
+
+
+def test_unit_population_page_shows_movements(world, parsed):
+    import datetime as dt
+    u = parsed.units
+    unit = u.loc[u["site"] == "WBK-MAS", "unit_id"].iloc[0]
+    moved = u.copy()
+    moved.loc[moved["unit_id"] == unit, "site"] = "WBK-BAU"
+    repo.save_population(world, u, dt.date(2026, 8, 1), "a.xlsx", "a" * 64, None)
+    repo.save_population(world, moved, dt.date(2026, 9, 1), "b.xlsx", "b" * 64, None)
+    world.commit()
+    at = run_path("pages/admin/unit_population.py", load_user(world, "adm"))
+    assert not at.exception, [e.value for e in at.exception]
+    assert any(t.label == "Unit movements (1)" for t in at.tabs), [t.label for t in at.tabs]
+    at.text_input(key="mv_q").input(unit).run()
+    assert any(f"History of {unit}" in c.value and "→ WBK-BAU" in c.value for c in at.caption), [c.value for c in at.caption]
