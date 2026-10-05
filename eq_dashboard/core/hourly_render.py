@@ -76,13 +76,15 @@ CSS = """
 .ft td.now{box-shadow:inset 0 0 0 .12cqw %(NOW)s}.ft th.now{color:%(NOW)s;font-weight:700}
 .ft td.fu,.ft tr.rf td{color:%(DIM)s}.ft td.tot{font-weight:700}
 .ft td.ach{padding-right:.5cqw}.ft td.ach .bar{margin:0;height:.3cqw}
-.ev{display:flex;flex-direction:column;gap:.15cqw}
+.ev{display:flex;flex-direction:column;gap:.15cqw;flex:1 1 auto;min-height:0;overflow:hidden}
 .ev h3{margin:0 0 .15cqw;font-size:1cqw;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:%(MUTED)s}
 .ev h3 span{font-size:.82cqw;font-weight:400;letter-spacing:0;text-transform:none;color:%(DIM)s;margin-left:.8cqw}
-.ev ul{list-style:none;margin:0;padding:0;columns:2;column-gap:2cqw}
-.ev li{display:grid;grid-template-columns:7.5cqw 4.6cqw 1fr;gap:.6cqw;font-size:.95cqw;padding:.28cqw 0 .28cqw .55cqw;
- border-bottom:.05cqw solid %(LINE)s;border-left:.3cqw solid var(--k);break-inside:avoid;align-items:baseline;
- margin-bottom:.12cqw}
+.ev ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;column-gap:2cqw;
+ grid-auto-rows:%(EVROW)scqw;min-height:0;overflow:hidden}
+.ev li{display:grid;grid-template-columns:5.6cqw 4.8cqw minmax(0,1fr);gap:.6cqw;font-size:.95cqw;
+ padding:0 0 0 .55cqw;border-bottom:.05cqw solid %(LINE)s;border-left:.3cqw solid var(--k);align-items:center;
+ margin-bottom:.12cqw;white-space:nowrap;overflow:hidden}
+.ev li>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ev li.on{background:color-mix(in srgb,var(--k) 12%%,%(BG)s)}
 .ev li .on{font-size:.62cqw;font-weight:700;letter-spacing:.06em;color:%(BG)s;background:%(NOW)s;padding:.02cqw .25cqw;
  border-radius:.15cqw;margin-left:.4cqw;vertical-align:.1cqw}
@@ -109,7 +111,7 @@ CSS = """
 .hv.dense .ft td{font-size:.68cqw;padding:.04cqw .25cqw}.hv.dense .ft th{font-size:.62cqw}
 .hv.dense .top{height:15.5cqw}.hv.dense .hero .big{font-size:2.6cqw}
 """ % {"BG": T.BG, "TEXT": T.TEXT, "MUTED": T.MUTED, "DIM": T.DIM, "LINE": T.LINE, "NOW": NOW, "F": FONT,
-       "MISSBG": "rgba(240,138,60,.36)", "OKBG": "rgba(79,193,166,.30)"}
+       "EVROW": 1.95, "MISSBG": "rgba(240,138,60,.36)", "OKBG": "rgba(79,193,166,.30)"}
 
 
 def _n(v, d=0) -> str:
@@ -303,15 +305,40 @@ def _board(g: str, d: HourlyTv) -> str:
             f'</div><table class="ft"><colgroup>{cols}</colgroup>{th}{rows}</table></div>')
 
 
-EVENTS_MAX = 10
+EV_ROW = 1.95          # cqw, one event line (see .ev ul grid-auto-rows)
+SCREEN_H = 56.25       # cqw: a 16:9 screen is 56.25 % as high as it is wide
+
+
+def event_capacity(d: HourlyTv) -> int:
+    """How many events fit under the boards (two per row) without pushing the legend off a 16:9 screen.
+
+    An estimate in cqw of what is above: header, the top block, both boards (a line, its remark row, totals). The
+    list is also clipped by CSS, so a small miss costs part of a row, never the legend."""
+    lines = sum(len(d.fleets.get(g, pd.DataFrame())) for g in GROUPS)
+    dense = lines > 16
+    used = 1.8 + 3.5 + 2.6 + (15.5 if dense else 17.5) + 1.2 + 1.5        # padding, gaps, header, top, legend, title
+    for g in GROUPS:
+        df = d.fleets.get(g, pd.DataFrame())
+        if df.empty:
+            used += 3.6
+            continue
+        tagged = sum(any(getattr(r, f"m{k}", "") for k in range(1, 13)) for r in df.itertuples())
+        used += 1.5 + 1.15 + len(df) * (1.45 if dense else 1.95) + tagged * 1.2 + 2.7
+    rows = int((SCREEN_H - used) // EV_ROW)
+    return max(0, rows) * 2
 
 
 def _events(d: HourlyTv) -> str:
-    """'Events this shift': what happened, in hour order, in the space under the boards (latest ones if many)."""
+    """'Events this shift': what happened, in the space left under the boards. When it does not all fit, the latest
+    events are shown and the header says how many earlier ones are hidden."""
     ev = d.events
     if ev is None or ev.empty:
         return ""
-    shown = ev.tail(EVENTS_MAX)
+    cap = event_capacity(d)
+    if cap <= 0:
+        return (f'<div class="ev"><h3>Events this shift<span>{len(ev)} event(s) · no room on this screen: '
+                'see Hourly input</span></h3></div>')
+    shown = ev.tail(cap)
     more = len(ev) - len(shown)
     items = ""
     for r in shown.itertuples():

@@ -127,3 +127,21 @@ def test_remarks_show_in_their_hour_and_in_the_list(db_session):
     assert " mk down" in html and "<li class='delay'>" in html and ">NOW<" not in html   # 09-10 is past
     assert "<b>Rain</b>" in html and "WHT026" in html and "— ban" in html
     assert "<th class='l'>Remark</th>" not in html              # the narrow column is gone
+
+
+def test_many_events_never_push_the_legend_off(db_session):
+    from core.hourly_render import event_capacity
+    _seed(db_session)
+    s = db_session
+    sh, rows = repo.hourly_shift(s, "WBK-BAU", dt.date(2026, 9, 26), "DS")
+    keep = rows["loader"].drop_duplicates().tolist()[:3]
+    repo.save_hourly(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", sh.coordinator, rows[rows["loader"].isin(keep)], "x")
+    for i in range(30):
+        repo.add_hourly_remark(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", 1 + i % 12, 1 + i % 12, keep[i % 3], None,
+                               f"catatan panjang nomor {i} " * 4, "x")
+    s.commit()
+    d = hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 14, 40, tzinfo=WIB))
+    cap = event_capacity(d)
+    html = render(d, now=dt.datetime(2026, 9, 26, 14, 40, tzinfo=WIB))
+    assert 0 < cap < len(d.events) and html.count("<li class=") == cap
+    assert f"{len(d.events) - cap} earlier not shown" in html and "target met" in html
