@@ -80,19 +80,25 @@ CSS = """
 .ev h3{margin:0 0 .15cqw;font-size:1cqw;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:%(MUTED)s}
 .ev h3 span{font-size:.82cqw;font-weight:400;letter-spacing:0;text-transform:none;color:%(DIM)s;margin-left:.8cqw}
 .ev ul{list-style:none;margin:0;padding:0;columns:2;column-gap:2cqw}
-.ev li{display:grid;grid-template-columns:7.5cqw 4.6cqw 1fr;gap:.6cqw;font-size:.85cqw;padding:.2cqw 0;
- border-bottom:.05cqw solid %(LINE)s;break-inside:avoid;align-items:baseline}
+.ev li{display:grid;grid-template-columns:7.5cqw 4.6cqw 1fr;gap:.6cqw;font-size:.95cqw;padding:.28cqw 0 .28cqw .55cqw;
+ border-bottom:.05cqw solid %(LINE)s;border-left:.3cqw solid var(--k);break-inside:avoid;align-items:baseline;
+ margin-bottom:.12cqw}
+.ev li.on{background:color-mix(in srgb,var(--k) 12%%,%(BG)s)}
+.ev li .on{font-size:.62cqw;font-weight:700;letter-spacing:.06em;color:%(BG)s;background:%(NOW)s;padding:.02cqw .25cqw;
+ border-radius:.15cqw;margin-left:.4cqw;vertical-align:.1cqw}
 .ev li .t{color:%(MUTED)s}.ev li .u{font-weight:600}.ev li .w b{font-weight:600}.ev li .w span{color:%(MUTED)s}
 .ev li .w .rc{margin-right:.4cqw}
-.rc{display:inline-block;font-style:normal;font-weight:700;font-size:.6cqw;line-height:1.1;letter-spacing:.05em;
- color:var(--k);border:.08cqw solid var(--k);background:rgba(0,0,0,.45);padding:.02cqw .2cqw;border-radius:.6cqw;
- vertical-align:.08cqw;text-transform:uppercase}
-.rc.down{--k:#FF6B6B}.rc.delay{--k:#7FB3E0}.rc.maint{--k:#C08BE0}.rc.info,.rc.note{--k:%(MUTED)s}
+.rc{display:inline-block;font-style:normal;font-weight:700;font-size:.72cqw;line-height:1.15;letter-spacing:.04em;
+ color:var(--k);border:.09cqw solid var(--k);background:color-mix(in srgb,var(--k) 22%%,%(BG)s);
+ padding:.03cqw .28cqw;border-radius:.6cqw;vertical-align:.06cqw;text-transform:uppercase}
+.rc.down,.mk.down,.ev li.down{--k:#FF6B6B}.rc.delay,.mk.delay,.ev li.delay{--k:#7FB3E0}
+.rc.maint,.mk.maint,.ev li.maint{--k:#C08BE0}.rc.info,.rc.note,.mk.info,.mk.note,.ev li.info,.ev li.note{--k:%(MUTED)s}
+.ft td.mk{box-shadow:inset 0 -.26cqw 0 var(--k)}.ft td.mk.now{box-shadow:inset 0 0 0 .12cqw %(NOW)s,inset 0 -.38cqw 0 var(--k)}
 .ft tr.hk td{border-bottom:none}
 .ft tr.rk td{text-align:center;padding:0 .1cqw .14cqw;overflow:visible}
 .ft tr.rk td.rkl{text-align:right;font-size:.6cqw;color:%(DIM)s;padding-right:.4cqw}
 .ft tr.rk .rc sup{font-size:.85em;margin-left:.15cqw;vertical-align:0;letter-spacing:0;opacity:.85}
-.ev li .w .rc{font-size:.66cqw}.ev li .w .cd{color:%(DIM)s;margin-right:.3cqw}
+.ev li .w .rc{font-size:.76cqw}.ev li .w .cd{color:%(DIM)s;margin-right:.3cqw}
 .ft td.hl{color:%(MUTED)s;font-size:.72cqw;white-space:normal;line-height:1.25;overflow:visible}.ft td.hl b{color:%(TEXT)s;font-weight:600}
 .kpi td.m span{color:%(DIM)s}
 .ft tr.tt td{font-weight:700;border-top:.1cqw solid %(MUTED)s;border-bottom:none}
@@ -260,6 +266,9 @@ def _board(g: str, d: HourlyTv) -> str:
                     cls.append("lo")
             if k == now:
                 cls.append("now")
+            first = (getattr(r, f"m{k}", "") or "").split()[:1]
+            if first:
+                cls += ["mk", remark_category(first[0])]
             hours += 1
             cells += f"<td class='{' '.join(cls)}'>{_n(v)}</td>"
         for k in range(1, 13):
@@ -313,7 +322,13 @@ def _events(d: HourlyTv) -> str:
         code = escape(REMARKS.get(str(r.code), "") if has else "")
         note = escape(r.remark) if isinstance(r.remark, str) and r.remark else ""
         truck = f" · {escape(r.hauler)}" if isinstance(r.hauler, str) and r.hauler else ""
-        items += (f"<li><span class='t'>{escape(r.hours)}</span><span class='u'>{escape(str(r.loader))}</span>"
+        on = d.live and d.slot and r.slot_from <= d.slot <= r.slot_to
+        cat = remark_category(r.code if has else None)
+        sl = SLOTS[d.shift]   # '09-10' for one hour, '09–12' for 09-10 … 11-12 (fits one line)
+        hrs = sl[r.slot_from - 1] if r.slot_from == r.slot_to else f"{sl[r.slot_from - 1][:2]}–{sl[r.slot_to - 1][-2:]}"
+        items += (f"<li class='{cat}{' on' if on else ''}'><span class='t'>{hrs}"
+                  + ("<i class='on'>NOW</i>" if on else "") + "</span>"
+                  f"<span class='u'>{escape(str(r.loader))}</span>"
                   f"<span class='w'>{badge}<b>{code}</b>{truck}" + (f" <span>— {note}</span>" if note else "")
                   + "</span></li>")
     sub = f"{len(ev)} event(s)" + (f" · {more} earlier not shown" if more else "")
