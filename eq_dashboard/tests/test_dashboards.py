@@ -241,6 +241,30 @@ def test_hourly_pages_by_role(world):
         assert any("do not have access" in e.value for e in run_path(p, vw).error)
 
 
+def test_quick_remark_is_saved_at_once_and_can_be_deleted(world):
+    world.add_all([m.LoadFactor(site="WBK-BAU", material="OB - FreeDig", material_group="OB", hauler_model="777E",
+                                muatan=41), m.LoaderTarget(site="WBK-BAU", unit_id="WEX019", model="CAT6020",
+                                                           material_group="OB", target_per_hour=800)])
+    world.commit()
+    sm = load_user(world, "sm")
+    at = run_path("pages/data/hourly_input.py", sm)
+    assert not at.exception, [e.value for e in at.exception]
+    box = {w.label: w for w in at.selectbox}
+    date, shift = at.date_input(key="hi_date").value, at.session_state["hi_shift"] or "DS"
+    box["Hour"].set_value(box["Hour"].options[2])
+    box["Excavator"].set_value("WEX019")
+    box["Remark code"].set_value("302 - Rain")
+    next(t for t in at.text_input if t.label == "Note (optional)").set_value("hujan deras")
+    next(b for b in at.button if b.label == "Add").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    got = repo.hourly_remarks(world, "WBK-BAU", date, shift)
+    assert got[["slot", "loader", "code", "remark"]].values.tolist() == [[3, "WEX019", "302", "hujan deras"]]
+    assert any("302 - Rain" in x.value and "hujan deras" in x.value for x in at.markdown)
+    at.button(key=f"hi_rm_del_{int(got['id'].iloc[0])}").click().run()
+    world.expire_all()
+    assert repo.hourly_remarks(world, "WBK-BAU", date, shift).empty
+
+
 def test_hourly_dashboard_interactive_tabs(world):
     import datetime as dt
 
@@ -322,6 +346,22 @@ def test_tv_devices_hourly_report_controls(world):
     world.expire_all()
     got = world.get(m.DisplayDevice, dev.id)
     assert got.hourly_date == dt.date(2026, 9, 20) and got.hourly_shift == "DS"
+
+
+def test_tv_links_are_always_full_addresses(world, monkeypatch):
+    from auth import display
+    dev, _ = display.create_device(world, "BAU eq", "WBK-BAU", None)
+    world.commit()
+    monkeypatch.delenv("PUBLIC_URL", raising=False)
+    at = run_path("pages/admin/display_devices.py", load_user(world, "adm"))
+    assert not at.exception, [e.value for e in at.exception]
+    at.text_input(key="tv_base").set_value("").run()           # no address known: refuse, never '/?display=…'
+    assert any("full app address" in e.value for e in at.error)
+    assert at.button(key=f"regen{dev.id}").disabled
+    at.text_input(key="tv_base").set_value("https://prisma.pt-wbk.id/tv_devices").run()
+    at.button(key=f"regen{dev.id}").click().run()
+    shown = [c.value for c in at.code]
+    assert shown and shown[0].startswith("https://prisma.pt-wbk.id/?display="), shown
 
 
 def test_unit_population_page_shows_movements(world, parsed):

@@ -21,28 +21,43 @@ st.caption("Each TV uses a secret link locked to one site that only shows the TV
            "The link is shown once when created, so store it on the TV / mini-PC.")
 
 
-def default_base() -> str:
-    """PUBLIC_URL if set, else the address this page was opened with (scheme + host, as the browser sees it), so a
-    link made on https://prisma.pt-wbk.id points there and not to the container's localhost."""
-    env = os.environ.get("PUBLIC_URL", "").strip()
-    if env:
-        return env.rstrip("/")
-    u = urlsplit(st.context.url or "")
-    return f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else "http://localhost:8501"
+def _origin(url: str | None) -> str | None:
+    """'https://prisma.pt-wbk.id/tv_devices?x=1' → 'https://prisma.pt-wbk.id'; None if it is not a full http(s) URL."""
+    u = urlsplit((url or "").strip())
+    return f"{u.scheme}://{u.netloc}" if u.scheme in ("http", "https") and u.netloc else None
 
 
-if "tv_base" not in st.session_state:
-    st.session_state["tv_base"] = default_base()
-base = st.text_input("App address", key="tv_base",
-                     help="Filled from the address you opened this page with (or PUBLIC_URL). Change it only if "
-                          "the TVs reach the app by another address.")
-if "localhost" in base or "127.0.0.1" in base:
+def default_base() -> str | None:
+    """Where TVs reach the app: PUBLIC_URL, else the address of this page as the browser sees it, else the request
+    headers (behind Coolify/Traefik: X-Forwarded-Proto + Host). None when none of them is a full address."""
+    found = _origin(os.environ.get("PUBLIC_URL")) or _origin(st.context.url)
+    if found:
+        return found
+    h = {k.lower(): v for k, v in (st.context.headers or {}).items()}
+    host = h.get("x-forwarded-host") or h.get("host")
+    proto = (h.get("x-forwarded-proto") or "https").split(",")[0].strip()
+    return _origin(f"{proto}://{host}") if host else None
+
+
+if not _origin(st.session_state.get("tv_base")):
+    st.session_state["tv_base"] = default_base() or ""
+base = st.text_input("App address", key="tv_base", placeholder="https://prisma.pt-wbk.id",
+                     help="Filled from PUBLIC_URL or the address you opened this page with. Change it only if the "
+                          "TVs reach the app by another address.")
+if not _origin(base):
+    st.error("Enter the full app address, starting with https:// (e.g. https://prisma.pt-wbk.id). TV links cannot "
+             "be created without it.")
+elif "localhost" in base or "127.0.0.1" in base:
     st.warning("This address only works on this computer. A TV elsewhere needs the public address, e.g. "
                "https://prisma.pt-wbk.id.")
 
 
 def link(token: str) -> str:
-    return f"{st.session_state['tv_base'].strip().rstrip('/')}/?display={token}"
+    """Full TV link. Never a relative '/?display=…': without a valid address the caller gets an error instead."""
+    origin = _origin(st.session_state.get("tv_base")) or default_base()
+    if not origin:
+        raise ValueError("no app address")
+    return f"{origin}/?display={token}"
 
 
 new = st.session_state.pop("new_display_link", None)
@@ -63,6 +78,8 @@ with st.form("new_device", clear_on_submit=True):
     if st.form_submit_button("Create TV link", type="primary"):
         if not name.strip():
             st.error("Enter a TV name.")
+        elif not _origin(base):
+            st.error("Enter the app address above first (https://…).")
         else:
             with session_scope() as s:
                 dev, token = display.create_device(s, name.strip(), site, user.id)
@@ -156,7 +173,8 @@ for did, name, site, period, active, seen, screen, h_date, h_shift, r_from, r_to
                 audit(s, user.username, "display_period", site, f"{name}: {period} → {new_period}")
             st.toast(f"{name}: {PERIOD_LABEL[new_period]} (applied on the TV within a minute)")
             st.rerun()
-        if b.button("Regenerate link", key=f"regen{did}"):
+        if b.button("Regenerate link", key=f"regen{did}", disabled=not _origin(base),
+                    help=None if _origin(base) else "Enter the app address above first"):
             with session_scope() as s:
                 token = display.regenerate(s, s.get(m.DisplayDevice, did))
                 audit(s, user.username, "display_regenerate", site, name)
