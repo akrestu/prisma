@@ -145,4 +145,22 @@ def test_every_remark_is_shown_in_full(db_session):
     d = hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 14, 40, tzinfo=WIB))
     html = render(d, now=dt.datetime(2026, 9, 26, 14, 40, tzinfo=WIB))
     assert all(t.strip() in html for t in notes)                    # nothing dropped or cut
-    assert html.count("<tr class='rk'>") == 3 and "target met" in html  # one remark row per excavator
+    assert html.count("remarks ↑") == 3 and "target met" in html     # one remark block per excavator
+    assert html.count("<tr class='rk'>") > 3                          # long remarks next to each other: lanes
+
+
+def test_long_remark_spreads_right_instead_of_growing_down(db_session):
+    from core.hourly_render import MAX_COLS
+    _seed(db_session)
+    s = db_session
+    sh, rows = repo.hourly_shift(s, "WBK-BAU", dt.date(2026, 9, 26), "DS")
+    ld = rows["loader"].iloc[0]
+    repo.add_hourly_remark(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", 2, 2, ld, None, "x" * 80, "x")
+    repo.add_hourly_remark(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", 3, 3, ld, None, "Refueling truck", "x")
+    s.commit()
+    d = hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
+    html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
+    block = html[html.index("remarks ↑"):]
+    block = block[:block.index("<tr class='tt'>")] if "<tr class='tt'>" in block else block
+    # 07-08 wants 5 columns, so the 08-09 remark moves to a second lane; both still start under their own hour
+    assert block.count("<tr class='rk'>") == 1 and "colspan='11'" in block and MAX_COLS == 5

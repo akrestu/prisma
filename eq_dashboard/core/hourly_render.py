@@ -315,32 +315,58 @@ def _remark_text(d: HourlyTv, r) -> str:
             + (f" {'— ' if desc or truck else ''}{escape(note)}" if note else "") + "</span>")
 
 
+CHARS_PER_COL = 18    # remark characters that fit in one hour column over 2 lines at the remark font size
+MAX_COLS = 5          # a remark may take up to this many hour columns, so it wraps in about 2 lines
+
+
+def _remark_len(r) -> int:
+    has = isinstance(r.code, str) and r.code
+    return (len(REMARKS.get(str(r.code), str(r.code))) + 7 if has else 6) \
+        + (len(r.remark) if isinstance(r.remark, str) else 0) + (len(r.hauler) + 3 if isinstance(r.hauler, str) else 0)
+
+
 def _remark_row(d: HourlyTv, loader: str) -> str:
-    """Option A: each remark in full, right under the hour it starts in, spreading to the right up to the hour
-    before the next remark of the same excavator (hours still to come included). Empty for an excavator without
-    remarks. Remarks starting in the same hour are stacked, the most serious first."""
+    """Option A: each remark in full, starting right under its hour. It may spread over a few hour columns to the
+    right (as many as its text needs for about two lines, at most MAX_COLS) so long notes stay short instead of
+    becoming tall narrow strips. A remark that would run into another goes to the next lane (row) below, like a
+    schedule chart; in every lane a remark then fills the free columns up to the next one. Remarks starting in the
+    same hour are stacked in one cell, the most serious first. Empty for an excavator without remarks."""
     ev = d.events
     if ev is None or ev.empty:
         return ""
     e = ev[ev["loader"] == loader]
     if e.empty:
         return ""
-    starts = sorted({int(x) for x in e["slot_from"]})
-    cells, k = "", 1
-    while k <= 12:
-        if k not in starts:
-            cells += "<td class='emp'></td>"
-            k += 1
-            continue
-        nxt = next((x for x in starts if x > k), 13)
+    groups = []                                   # (start, wanted columns, cells' html, category)
+    for k in sorted({int(x) for x in e["slot_from"]}):
         here = e[e["slot_from"] == k].assign(
             sev=lambda x: [SEVERITY.index(remark_category(c if isinstance(c, str) and c else None)) for c in x["code"]])
         here = here.sort_values(["sev", "slot_to"])
+        want = max(1, min(MAX_COLS, 13 - k, -(-max(_remark_len(r) for r in here.itertuples()) // CHARS_PER_COL)))
         cat = remark_category(here["code"].iloc[0] if isinstance(here["code"].iloc[0], str) else None)
-        cells += (f"<td colspan='{nxt - k}' class='sp {cat}'>"
-                  + "".join(_remark_text(d, r) for r in here.itertuples()) + "</td>")
-        k = nxt
-    return f"<tr class='rk'><td class='l rkl' colspan='7'>remarks ↑</td>{cells}<td></td><td></td></tr>"
+        groups.append((k, want, "".join(_remark_text(d, r) for r in here.itertuples()), cat))
+    lanes: list[list[tuple]] = []                 # first lane where the wanted columns are still free
+    for g in groups:
+        k, want = g[0], g[1]
+        for lane in lanes:
+            if all(k + want - 1 < a or k > a + w - 1 for a, w, *_ in lane):
+                lane.append(g)
+                break
+        else:
+            lanes.append([g])
+    rows = ""
+    for n, lane in enumerate(lanes):
+        lane.sort()
+        cells, col = "", 1
+        for idx, (k, _want, body, cat) in enumerate(lane):
+            cells += "<td class='emp'></td>" * (k - col)
+            end = lane[idx + 1][0] if idx + 1 < len(lane) else 13      # fill the free columns up to the next one
+            cells += f"<td colspan='{end - k}' class='sp {cat}'>{body}</td>"
+            col = end
+        cells += "<td class='emp'></td>" * (13 - col)
+        label = "remarks ↑" if n == 0 else ""
+        rows += f"<tr class='rk'><td class='l rkl' colspan='7'>{label}</td>{cells}<td></td><td></td></tr>"
+    return rows
 
 
 def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None) -> str:
