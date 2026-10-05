@@ -207,3 +207,20 @@ def test_kiosk_hourly_fixed_report_date(published, monkeypatch):
     assert not at.exception, [e.value for e in at.exception]
     html = " ".join(str(h.proto.body) for h in at.get("html"))
     assert "20 Sep 2026" in html and "shift <b>NS</b>" in html and 'class="hr"' not in html   # no live hour badge
+
+
+def test_tv_link_can_be_copied_again_but_db_alone_reveals_nothing(db_session, monkeypatch):
+    monkeypatch.setenv("AUTH_COOKIE_KEY", "k" * 48)
+    s = db_session
+    s.add(m.Site(code="WBK-BAU", name="BAU"))
+    s.flush()
+    dev, token = display.create_device(s, "BAU TV", "WBK-BAU", None)
+    s.commit()
+    assert display.token_of(dev) == token and token not in (dev.token_enc or "")
+    new = display.regenerate(s, dev)
+    assert display.token_of(dev) == new != token
+    monkeypatch.setenv("AUTH_COOKIE_KEY", "z" * 48)            # another secret: nothing to copy, nothing leaks
+    assert display.token_of(dev) is None
+    dev.token_enc = None                                      # TVs made before links were stored
+    assert display.token_of(dev) is None
+    assert display.validate(s, new) is not None               # the TV itself keeps working either way

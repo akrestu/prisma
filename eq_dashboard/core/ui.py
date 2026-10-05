@@ -75,3 +75,26 @@ def refresh(*what: str) -> None:
     if "hourly" in what:
         from pages.tv.screen import _hourly_payload
         _hourly_payload.clear()
+
+
+def copy_button(text: str, label: str = "Copy link") -> None:
+    """One-click copy to the clipboard, with feedback. st.html strips inline handlers (onclick), so a small script
+    right after the button binds it; there is a fallback for browsers without the Clipboard API (plain http)."""
+    import html
+    import json
+    st.html(
+        f"<button class='cpy' type='button' data-v=\"{html.escape(json.dumps(text), quote=True)}\">"
+        f"{html.escape(label)}</button>"
+        "<script>(function(){const b=document.currentScript.previousElementSibling;if(!b)return;"
+        "b.addEventListener('click',function(){const t=JSON.parse(b.dataset.v),l=b.textContent;"
+        "const ok=()=>{b.textContent='Copied ✓';setTimeout(()=>{b.textContent=l},1600)};"
+        "const old=()=>{const a=document.createElement('textarea');a.value=t;a.style.position='fixed';"
+        "a.style.opacity='0';document.body.appendChild(a);a.select();"
+        "const done=document.execCommand('copy');a.remove();"
+        "if(done){ok()}else{window.prompt('Copy this link (Ctrl+C):',t)}};"
+        "if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(ok,old)}else{old()}"
+        "})})()</script>"
+        "<style>.cpy{font:inherit;font-size:.85rem;padding:.25rem .7rem;border-radius:.4rem;cursor:pointer;"
+        "border:1px solid rgba(128,128,128,.45);background:transparent;color:inherit}"
+        ".cpy:hover{border-color:currentColor}</style>",
+        unsafe_allow_javascript=True, width="content")

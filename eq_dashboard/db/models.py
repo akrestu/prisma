@@ -66,6 +66,7 @@ class DisplayDevice(Base):
     name: Mapped[str] = mapped_column(String(120))
     site_code: Mapped[str] = mapped_column(ForeignKey("sites.code"))
     token_hash: Mapped[str] = mapped_column(String(128), unique=True)
+    token_enc: Mapped[str | None] = mapped_column(Text)   # same token, encrypted with the app secret (copy link)
     period: Mapped[str] = mapped_column(String(10), default="daily", server_default="daily")  # hourly..yearly
     screen: Mapped[str] = mapped_column(String(12), default="equipment", server_default="equipment")  # | hourly
     hourly_date: Mapped[dt.date | None] = mapped_column(Date)       # None = live (the shift running now)

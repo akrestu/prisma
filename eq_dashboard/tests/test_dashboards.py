@@ -362,6 +362,9 @@ def test_tv_links_are_always_full_addresses(world, monkeypatch):
     at.button(key=f"regen{dev.id}").click().run()
     shown = [c.value for c in at.code]
     assert shown and shown[0].startswith("https://prisma.pt-wbk.id/?display="), shown
+    at.run()                                                   # the TV's own row: a copy button with its link
+    assert any("Copy link" in h.proto.body and "prisma.pt-wbk.id/?display=" in h.proto.body
+               for h in at.get("html")), "no copy button"
 
 
 def test_unit_population_page_shows_movements(world, parsed):

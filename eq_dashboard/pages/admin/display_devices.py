@@ -10,7 +10,7 @@ from auth import display
 from core.config import UNMAPPED, WIB, today_wib
 from core.ingest import audit
 from core.periods import PERIOD_LABEL, PERIODS
-from core.ui import require, sites_for
+from core.ui import copy_button, require, sites_for
 from db import models as m
 from db.engine import session_scope
 from pages.tv.screen import SCREENS
@@ -18,7 +18,7 @@ from pages.tv.screen import SCREENS
 user = require("display_devices")
 st.title("TV devices")
 st.caption("Each TV uses a secret link locked to one site that only shows the TV screen (read-only). "
-           "The link is shown once when created, so store it on the TV / mini-PC.")
+           "Copy a TV's link with its **Copy link** button and open it on the TV / mini-PC.")
 
 
 def _origin(url: str | None) -> str | None:
@@ -62,8 +62,9 @@ def link(token: str) -> str:
 
 new = st.session_state.pop("new_display_link", None)
 if new:
-    st.success(f"Link for **{new[0]}** (copy it now, it will not be shown again):")
+    st.success(f"Link for **{new[0]}**. You can copy it again later from the TV's row.")
     st.code(new[1], language=None)
+    copy_button(new[1])
     st.caption(f'TV setup: start Chrome/Edge with `--kiosk "{new[1]}"`, enable auto-start, disable sleep & screensaver.')
 
 with st.form("new_device", clear_on_submit=True):
@@ -90,7 +91,7 @@ with st.form("new_device", clear_on_submit=True):
 
 with session_scope() as s:
     rows = [(d.id, d.name, d.site_code, d.period, d.active, d.last_seen, d.screen, d.hourly_date, d.hourly_shift,
-             d.review_from, d.review_to)
+             d.review_from, d.review_to, display.token_of(d))
             for d in s.scalars(select(m.DisplayDevice).order_by(m.DisplayDevice.site_code, m.DisplayDevice.name))]
 if not rows:
     st.info("No TV devices yet.")
@@ -98,7 +99,7 @@ if not rows:
 
 now = dt.datetime.now(dt.UTC)
 st.subheader("TVs")
-for did, name, site, period, active, seen, screen, h_date, h_shift, r_from, r_to in rows:
+for did, name, site, period, active, seen, screen, h_date, h_shift, r_from, r_to, token in rows:
     online = active and seen is not None and now - seen < dt.timedelta(minutes=10)
     state = ":yellow-badge[online]" if online else (":gray-badge[offline]" if active else ":orange-badge[revoked]")
     seen_txt = seen.astimezone(WIB).strftime("%d %b %H:%M") if seen else "never"
@@ -107,6 +108,15 @@ for did, name, site, period, active, seen, screen, h_date, h_shift, r_from, r_to
         review_txt = (f" :orange-badge[review {r_from:%d %b} – {r_to:%d %b %Y}]"
                       if screen != "hourly" and r_from and r_to else "")
         a.markdown(f"**{name}** · {site} {state}{review_txt}  \nlast seen: {seen_txt} WIB")
+        tv_link = link(token) if token and active and _origin(base) else None
+        with a:
+            if tv_link:
+                l1, l2 = st.columns([1, 2.2], vertical_alignment="center")
+                with l1:
+                    copy_button(tv_link)
+                l2.caption(f"…/?display={token[:6]}…{token[-4:]}")
+            elif active:
+                st.caption("Link not stored (made before links could be copied): press **Regenerate link** once.")
         new_screen = q.selectbox("Screen", list(SCREENS), index=list(SCREENS).index(screen) if screen in SCREENS
                                  else 0, format_func=SCREENS.get, key=f"scr{did}", label_visibility="collapsed")
         if new_screen != screen:
