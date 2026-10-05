@@ -76,31 +76,30 @@ CSS = """
 .ft td.now{box-shadow:inset 0 0 0 .12cqw %(NOW)s}.ft th.now{color:%(NOW)s;font-weight:700}
 .ft td.fu,.ft tr.rf td{color:%(DIM)s}.ft td.tot{font-weight:700}
 .ft td.ach{padding-right:.5cqw}.ft td.ach .bar{margin:0;height:.3cqw}
-.ev{display:flex;flex-direction:column;gap:.15cqw;flex:1 1 auto;min-height:0;overflow:hidden}
-.ev h3{margin:0 0 .15cqw;font-size:1cqw;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:%(MUTED)s}
+.ev{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden}
+.ev h3{margin:0 0 .25cqw;font-size:1cqw;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:%(MUTED)s}
 .ev h3 span{font-size:.82cqw;font-weight:400;letter-spacing:0;text-transform:none;color:%(DIM)s;margin-left:.8cqw}
-.ev ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;column-gap:2cqw;
- grid-auto-rows:%(EVROW)scqw;min-height:0;overflow:hidden}
-.ev li{display:grid;grid-template-columns:5.6cqw 4.8cqw minmax(0,1fr);gap:.6cqw;font-size:.95cqw;
- padding:0 0 0 .55cqw;border-bottom:.05cqw solid %(LINE)s;border-left:.3cqw solid var(--k);align-items:center;
- margin-bottom:.12cqw;white-space:nowrap;overflow:hidden}
-.ev li>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ev li.on{background:color-mix(in srgb,var(--k) 12%%,%(BG)s)}
-.ev li .on{font-size:.62cqw;font-weight:700;letter-spacing:.06em;color:%(BG)s;background:%(NOW)s;padding:.02cqw .25cqw;
- border-radius:.15cqw;margin-left:.4cqw;vertical-align:.1cqw}
-.ev li .t{color:%(MUTED)s}.ev li .u{font-weight:600}.ev li .w b{font-weight:600}.ev li .w span{color:%(MUTED)s}
-.ev li .w .rc{margin-right:.4cqw}
+.ev .vp{flex:1 1 auto;min-height:0;overflow:hidden}
+.ev .sc.run{animation:evs var(--dur) linear infinite}
+@keyframes evs{0%%,6%%{transform:translateY(0)}94%%,100%%{transform:translateY(-50%%)}}
+.ev .fl{display:grid;grid-template-columns:5.4cqw minmax(0,1fr);gap:.8cqw;padding:.32cqw 0 .32cqw .55cqw;
+ border-left:.3cqw solid var(--c);border-bottom:.05cqw solid %(LINE)s;font-size:.92cqw;line-height:1.55}
+.ev .fl .u{font-weight:700}
+.ev .it{margin-right:1.3cqw}.ev .it .hd{white-space:nowrap}.ev .it .t{color:%(MUTED)s;font-weight:600;margin-right:.35cqw}
+.ev .it b{font-weight:600}.ev .it .n{color:%(MUTED)s}.ev .it .rc{margin-right:.35cqw;font-size:.72cqw}
+.ev .it.on{background:color-mix(in srgb,%(NOW)s 18%%,%(BG)s);border-radius:.2cqw;padding:0 .25cqw}
+.ev .it .now{font-size:.6cqw;font-weight:700;letter-spacing:.06em;color:%(BG)s;background:%(NOW)s;padding:.02cqw .25cqw;
+ border-radius:.15cqw;margin-right:.35cqw;vertical-align:.1cqw}
 .rc{display:inline-block;font-style:normal;font-weight:700;font-size:.72cqw;line-height:1.15;letter-spacing:.04em;
  color:var(--k);border:.09cqw solid var(--k);background:color-mix(in srgb,var(--k) 22%%,%(BG)s);
  padding:.03cqw .28cqw;border-radius:.6cqw;vertical-align:.06cqw;text-transform:uppercase}
-.rc.down,.mk.down,.ev li.down{--k:#FF6B6B}.rc.delay,.mk.delay,.ev li.delay{--k:#7FB3E0}
-.rc.maint,.mk.maint,.ev li.maint{--k:#C08BE0}.rc.info,.rc.note,.mk.info,.mk.note,.ev li.info,.ev li.note{--k:%(MUTED)s}
+.rc.down,.mk.down{--k:#FF6B6B}.rc.delay,.mk.delay{--k:#7FB3E0}
+.rc.maint,.mk.maint{--k:#C08BE0}.rc.info,.rc.note,.mk.info,.mk.note{--k:%(MUTED)s}
 .ft td.mk{box-shadow:inset 0 -.26cqw 0 var(--k)}.ft td.mk.now{box-shadow:inset 0 0 0 .12cqw %(NOW)s,inset 0 -.38cqw 0 var(--k)}
 .ft tr.hk td{border-bottom:none}
 .ft tr.rk td{text-align:center;padding:0 .1cqw .14cqw;overflow:visible}
 .ft tr.rk td.rkl{text-align:right;font-size:.6cqw;color:%(DIM)s;padding-right:.4cqw}
 .ft tr.rk .rc sup{font-size:.85em;margin-left:.15cqw;vertical-align:0;letter-spacing:0;opacity:.85}
-.ev li .w .rc{font-size:.76cqw}.ev li .w .cd{color:%(DIM)s;margin-right:.3cqw}
 .ft td.hl{color:%(MUTED)s;font-size:.72cqw;white-space:normal;line-height:1.25;overflow:visible}.ft td.hl b{color:%(TEXT)s;font-weight:600}
 .kpi td.m span{color:%(DIM)s}
 .ft tr.tt td{font-weight:700;border-top:.1cqw solid %(MUTED)s;border-bottom:none}
@@ -111,7 +110,7 @@ CSS = """
 .hv.dense .ft td{font-size:.68cqw;padding:.04cqw .25cqw}.hv.dense .ft th{font-size:.62cqw}
 .hv.dense .top{height:15.5cqw}.hv.dense .hero .big{font-size:2.6cqw}
 """ % {"BG": T.BG, "TEXT": T.TEXT, "MUTED": T.MUTED, "DIM": T.DIM, "LINE": T.LINE, "NOW": NOW, "F": FONT,
-       "EVROW": 1.95, "MISSBG": "rgba(240,138,60,.36)", "OKBG": "rgba(79,193,166,.30)"}
+       "MISSBG": "rgba(240,138,60,.36)", "OKBG": "rgba(79,193,166,.30)"}
 
 
 def _n(v, d=0) -> str:
@@ -305,62 +304,51 @@ def _board(g: str, d: HourlyTv) -> str:
             f'</div><table class="ft"><colgroup>{cols}</colgroup>{th}{rows}</table></div>')
 
 
-EV_ROW = 1.95          # cqw, one event line (see .ev ul grid-auto-rows)
-SCREEN_H = 56.25       # cqw: a 16:9 screen is 56.25 % as high as it is wide
-
-
-def event_capacity(d: HourlyTv) -> int:
-    """How many events fit under the boards (two per row) without pushing the legend off a 16:9 screen.
-
-    An estimate in cqw of what is above: header, the top block, both boards (a line, its remark row, totals). The
-    list is also clipped by CSS, so a small miss costs part of a row, never the legend."""
-    lines = sum(len(d.fleets.get(g, pd.DataFrame())) for g in GROUPS)
-    dense = lines > 16
-    used = 1.8 + 3.5 + 2.6 + (15.5 if dense else 17.5) + 1.2 + 1.5        # padding, gaps, header, top, legend, title
-    for g in GROUPS:
-        df = d.fleets.get(g, pd.DataFrame())
-        if df.empty:
-            used += 3.6
-            continue
-        tagged = sum(any(getattr(r, f"m{k}", "") for k in range(1, 13)) for r in df.itertuples())
-        used += 1.5 + 1.15 + len(df) * (1.45 if dense else 1.95) + tagged * 1.2 + 2.7
-    rows = int((SCREEN_H - used) // EV_ROW)
-    return max(0, rows) * 2
+def _event_item(d: HourlyTv, r) -> str:
+    """One remark inline: hour(s), tag, description, truck, note."""
+    has = isinstance(r.code, str) and r.code
+    sl = SLOTS[d.shift]   # '09-10' for one hour, '09–12' for 09-10 … 11-12
+    hrs = sl[r.slot_from - 1] if r.slot_from == r.slot_to else f"{sl[r.slot_from - 1][:2]}–{sl[r.slot_to - 1][-2:]}"
+    on = bool(d.live and d.slot and r.slot_from <= d.slot <= r.slot_to)
+    tag = remark_tag(r.code if has else None)
+    desc = REMARKS.get(str(r.code), str(r.code)) if has else ""
+    truck = r.hauler if isinstance(r.hauler, str) and r.hauler else ""
+    note = r.remark if isinstance(r.remark, str) and r.remark else ""
+    return (f"<span class='it{' on' if on else ''}'><span class='hd'><span class='t'>{hrs}</span>"
+            + ("<i class='now'>NOW</i>" if on else "")
+            + f"<i class='rc {remark_category(r.code if has else None)}'>{escape(tag)}</i></span>"
+            + (f"<b>{escape(desc)}</b>" if desc else "") + (f" · {escape(truck)}" if truck else "")
+            + (f" <span class='n'>{'— ' if desc or truck else ''}{escape(note)}</span>" if note else "") + "</span>")
 
 
 def _events(d: HourlyTv) -> str:
-    """'Events this shift': what happened, in the space left under the boards. When it does not all fit, the latest
-    events are shown and the header says how many earlier ones are hidden."""
+    """'Events this shift': every remark in full, one block per excavator in hour order (the excavator is not
+    repeated per remark, text wraps). When the blocks are taller than the space left under the boards, the list
+    scrolls slowly upwards and starts again (see the script), so the whole history is shown without cutting."""
     ev = d.events
     if ev is None or ev.empty:
         return ""
-    cap = event_capacity(d)
-    if cap <= 0:
-        return (f'<div class="ev"><h3>Events this shift<span>{len(ev)} event(s) · no room on this screen: '
-                'see Hourly input</span></h3></div>')
-    shown = ev.tail(cap)
-    more = len(ev) - len(shown)
-    items = ""
-    for r in shown.itertuples():
-        has = isinstance(r.code, str) and r.code
-        badge = (f"<i class='rc {remark_category(r.code if has else None)}'>"
-                 f"{escape(remark_tag(r.code if has else None))}</i>"
-                 + (f"<span class='cd'>{escape(str(r.code))}</span>" if has else ""))
-        code = escape(REMARKS.get(str(r.code), "") if has else "")
-        note = escape(r.remark) if isinstance(r.remark, str) and r.remark else ""
-        truck = f" · {escape(r.hauler)}" if isinstance(r.hauler, str) and r.hauler else ""
-        on = d.live and d.slot and r.slot_from <= d.slot <= r.slot_to
-        cat = remark_category(r.code if has else None)
-        sl = SLOTS[d.shift]   # '09-10' for one hour, '09–12' for 09-10 … 11-12 (fits one line)
-        hrs = sl[r.slot_from - 1] if r.slot_from == r.slot_to else f"{sl[r.slot_from - 1][:2]}–{sl[r.slot_to - 1][-2:]}"
-        items += (f"<li class='{cat}{' on' if on else ''}'><span class='t'>{hrs}"
-                  + ("<i class='on'>NOW</i>" if on else "") + "</span>"
-                  f"<span class='u'>{escape(str(r.loader))}</span>"
-                  f"<span class='w'>{badge}<b>{code}</b>{truck}" + (f" <span>— {note}</span>" if note else "")
-                  + "</span></li>")
-    sub = f"{len(ev)} event(s)" + (f" · {more} earlier not shown" if more else "")
-    return f'<div class="ev"><h3>Events this shift<span>{sub}</span></h3><ul>{items}</ul></div>'
-
+    order = [x for g in GROUPS for x in d.fleets.get(g, pd.DataFrame()).get("loader", pd.Series()).tolist()]
+    colour = {x: LINE_COLOR[g] for g in GROUPS for x in d.fleets.get(g, pd.DataFrame()).get("loader", pd.Series())}
+    blocks = ""
+    for ld in [*order, *sorted(set(ev["loader"]) - set(order))]:
+        e = ev[ev["loader"] == ld].sort_values(["slot_from", "slot_to"])
+        if e.empty:
+            continue
+        items = "".join(_event_item(d, r) for r in e.itertuples())
+        blocks += (f"<div class='fl' style='--c:{colour.get(ld, T.MUTED)}'><span class='u'>{escape(str(ld))}</span>"
+                   f"<span>{items}</span></div>")
+    # the browser measures: only when the blocks are taller than the space left, they are doubled and scroll up in a
+    # seamless loop. The TV redraws every minute (the clock), which restarts it, so one loop takes at most 55 s.
+    script = ("<script>(function(){const ev=document.currentScript.parentElement,vp=ev.querySelector('.vp'),"
+              "sc=vp.firstElementChild;const go=()=>{if(sc.classList.contains('run')||"
+              "sc.scrollHeight<=vp.clientHeight+2)return;const h=sc.scrollHeight,"
+              "line=parseFloat(getComputedStyle(sc.querySelector('.fl')).lineHeight)||20;"
+              "sc.innerHTML+=sc.innerHTML;sc.style.setProperty('--dur',Math.min(55,Math.max(20,Math.round(h/line*2.5)))"
+              "+'s');sc.classList.add('run');ev.querySelector('h3 span').textContent+=' · scrolling to show all'};"
+              "(document.fonts?document.fonts.ready:Promise.resolve()).then(()=>requestAnimationFrame(go))})()</script>")
+    return (f'<div class="ev"><h3>Events this shift<span>{len(ev)} event(s)</span></h3>'
+            f'<div class="vp"><div class="sc">{blocks}</div></div>{script}</div>')
 
 def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None) -> str:
     now = (now or dt.datetime.now(dt.UTC)).astimezone(WIB)

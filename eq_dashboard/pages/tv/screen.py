@@ -75,4 +75,4 @@ def show_hourly(site: str, kiosk: bool, date=None, shift: str | None = None) -> 
     from core.hourly_render import render as render_hourly
     now = now_wib()
     d = _hourly_payload(site, date, shift, now.strftime("%Y%m%d%H%M"), _hourly_stamp(site))
-    st.html(render_hourly(d, kiosk=kiosk, now=now))
+    st.html(render_hourly(d, kiosk=kiosk, now=now), unsafe_allow_javascript=True)   # events auto-scroll

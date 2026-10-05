@@ -124,24 +124,24 @@ def test_remarks_show_in_their_hour_and_in_the_list(db_session):
     html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
     assert "<i class='rc delay'>RAIN<sup>+1</sup></i>" not in html and "class='rk'" in html and "Events this shift" in html
     assert "<i class='rc delay'>RAIN</i>" in html and "<i class='rc down'>BD-H</i>" in html
-    assert " mk down" in html and "<li class='delay'>" in html and ">NOW<" not in html   # 09-10 is past
+    assert " mk down" in html and "class='fl'" in html and ">NOW<" not in html   # 09-10 is past
     assert "<b>Rain</b>" in html and "WHT026" in html and "— ban" in html
     assert "<th class='l'>Remark</th>" not in html              # the narrow column is gone
 
 
-def test_many_events_never_push_the_legend_off(db_session):
-    from core.hourly_render import event_capacity
+def test_every_remark_is_shown_in_full(db_session):
     _seed(db_session)
     s = db_session
     sh, rows = repo.hourly_shift(s, "WBK-BAU", dt.date(2026, 9, 26), "DS")
     keep = rows["loader"].drop_duplicates().tolist()[:3]
     repo.save_hourly(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", sh.coordinator, rows[rows["loader"].isin(keep)], "x")
-    for i in range(30):
+    notes = [f"catatan panjang nomor {i} " * 4 for i in range(30)]
+    for i, t in enumerate(notes):
         repo.add_hourly_remark(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", 1 + i % 12, 1 + i % 12, keep[i % 3], None,
-                               f"catatan panjang nomor {i} " * 4, "x")
+                               t, "x")
     s.commit()
     d = hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 14, 40, tzinfo=WIB))
-    cap = event_capacity(d)
     html = render(d, now=dt.datetime(2026, 9, 26, 14, 40, tzinfo=WIB))
-    assert 0 < cap < len(d.events) and html.count("<li class=") == cap
-    assert f"{len(d.events) - cap} earlier not shown" in html and "target met" in html
+    assert all(t.strip() in html for t in notes)                    # nothing dropped or cut
+    assert html.count("class='fl'") == 3 and "30 event(s)" in html  # one block per excavator
+    assert "classList.add('run')" in html and "target met" in html   # scrolls when it overflows; legend stays
