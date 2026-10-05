@@ -76,26 +76,25 @@ CSS = """
 .ft td.now{box-shadow:inset 0 0 0 .12cqw %(NOW)s}.ft th.now{color:%(NOW)s;font-weight:700}
 .ft td.fu,.ft tr.rf td{color:%(DIM)s}.ft td.tot{font-weight:700}
 .ft td.ach{padding-right:.5cqw}.ft td.ach .bar{margin:0;height:.3cqw}
+.ev{margin-top:.35cqw;font-size:var(--ef,.88cqw)}
+.ev .fl{display:grid;grid-template-columns:5.4cqw minmax(0,1fr);gap:.8cqw;padding:.32cqw 0 .32cqw .55cqw;
+ border-left:.3cqw solid var(--c);border-bottom:.05cqw solid %(LINE)s;font-size:1em;line-height:1.5}
+.ev .fl .u{font-weight:700}
+.ev .it{margin-right:1.3cqw}.ev .it .hd{white-space:nowrap}.ev .it .t{color:%(MUTED)s;font-weight:600;margin-right:.35cqw}
+.ev .it b{font-weight:600}.ev .it .n{color:%(MUTED)s}.ev .it .rc{margin-right:.35cqw;font-size:.8em}
+.ev .it.on{background:color-mix(in srgb,%(NOW)s 18%%,%(BG)s);border-radius:.2cqw;padding:0 .25cqw}
+.ev .it .now{font-size:.68em;font-weight:700;letter-spacing:.06em;color:%(BG)s;background:%(NOW)s;padding:.02cqw .25cqw;
+ border-radius:.15cqw;margin-right:.35cqw;vertical-align:.1cqw}
 .rc{display:inline-block;font-style:normal;font-weight:700;font-size:.72cqw;line-height:1.15;letter-spacing:.04em;
  color:var(--k);border:.09cqw solid var(--k);background:color-mix(in srgb,var(--k) 22%%,%(BG)s);
  padding:.03cqw .28cqw;border-radius:.6cqw;vertical-align:.06cqw;text-transform:uppercase}
-.rc.down,.mk.down,.sp.down{--k:#FF6B6B}.rc.delay,.mk.delay,.sp.delay{--k:#7FB3E0}
-.rc.maint,.mk.maint,.sp.maint{--k:#C08BE0}.rc.info,.rc.note,.mk.info,.mk.note,.sp.info,.sp.note{--k:%(MUTED)s}
-/* hour columns: centred, one faint line per hour from the header through the remarks, so a remark sits in the
-   same column as its trips; an hour with a remark gets a line in the remark colour that continues into it */
-.ft .h{text-align:center;border-left:.05cqw solid %(LINE)s}
-.ft td.h.mk{border-left:.16cqw solid var(--k)}
-.ft tr.rk td{white-space:normal;text-align:left;vertical-align:top;font-size:.48cqw;line-height:1.3;color:%(TEXT)s;
- padding:.1cqw .22cqw .22cqw;overflow:visible;text-overflow:clip;border-bottom:.05cqw solid %(LINE)s}
-.ft tr.rk td.rkl{text-align:right;color:%(DIM)s;font-size:.55cqw;padding-top:.15cqw}
-.ft tr.rk td.emp{border-left:.05cqw solid %(LINE)s}
-.ft tr.rk td.sp{border-left:.16cqw solid var(--k);background:color-mix(in srgb,var(--k) 8%%,%(BG)s)}
-.ft tr.rk .rm{display:block;overflow-wrap:anywhere}.ft tr.rk .rm+.rm{margin-top:.15cqw}
-.ft tr.rk .rm .rc{font-size:.44cqw;margin-right:.2cqw;padding:.01cqw .16cqw}
-.ft tr.rk .rm b{font-weight:600}.ft tr.rk .rm .hs{color:%(MUTED)s;font-weight:600;margin-right:.2cqw}
-.ft tr.rk .rm.on{color:%(TEXT)s}.ft tr.rk .rm .now{font-size:.42cqw;font-weight:700;color:%(BG)s;background:%(NOW)s;
- padding:0 .15cqw;border-radius:.12cqw;margin-right:.2cqw}
+.rc.down,.mk.down{--k:#FF6B6B}.rc.delay,.mk.delay{--k:#7FB3E0}
+.rc.maint,.mk.maint{--k:#C08BE0}.rc.info,.rc.note,.mk.info,.mk.note{--k:%(MUTED)s}
+.ft td.mk{box-shadow:inset 0 -.26cqw 0 var(--k)}.ft td.mk.now{box-shadow:inset 0 0 0 .12cqw %(NOW)s,inset 0 -.38cqw 0 var(--k)}
 .ft tr.hk td{border-bottom:none}
+.ft tr.rk td{text-align:center;padding:0 .1cqw .14cqw;overflow:visible}
+.ft tr.rk td.rkl{text-align:right;font-size:.6cqw;color:%(DIM)s;padding-right:.4cqw}
+.ft tr.rk .rc sup{font-size:.85em;margin-left:.15cqw;vertical-align:0;letter-spacing:0;opacity:.85}
 .ft td.hl{color:%(MUTED)s;font-size:.72cqw;white-space:normal;line-height:1.25;overflow:visible}.ft td.hl b{color:%(TEXT)s;font-weight:600}
 .kpi td.m span{color:%(DIM)s}
 .ft tr.tt td{font-weight:700;border-top:.1cqw solid %(MUTED)s;border-bottom:none}
@@ -245,15 +244,15 @@ def _board(g: str, d: HourlyTv) -> str:
             + '<col style="width:3.6%">' * 12 + '<col style="width:4.4%"><col>')
     th = ("<tr><th class='l'>#</th><th class='l'>Loader</th><th class='l'>Model</th>"
           "<th class='l'>Haulers</th><th class='l'>Material</th><th class='l'>PIT → disposal</th><th>Target</th>"
-          + "".join(f"<th class='h{' now' if i == now else ''}'>{lab}</th>" for i, lab in enumerate(labels, 1))
+          + "".join(f"<th class='{'now' if i == now else ''}'>{lab}</th>" for i, lab in enumerate(labels, 1))
           + "<th>Total</th><th>Ach</th></tr>")
     rows = ""
     for i, r in enumerate(df.itertuples(index=False), 1):
-        cells, hours = "", 0
+        cells, hours, tags = "", 0, []
         for k in range(1, 13):
             v = getattr(r, f"s{k}")
             if now and k > now:
-                cells += "<td class='h fu'>·</td>"
+                cells += "<td class='fu'>·</td>"
                 continue
             cls = ["h"]
             if pd.notna(r.target) and r.target:
@@ -268,105 +267,80 @@ def _board(g: str, d: HourlyTv) -> str:
                 cls += ["mk", remark_category(first[0])]
             hours += 1
             cells += f"<td class='{' '.join(cls)}'>{_n(v)}</td>"
-        remark_row = _remark_row(d, str(r.loader))
+        for k in range(1, 13):
+            codes = (getattr(r, f"m{k}", "") or "").split()
+            tags.append((f"<i class='rc {remark_category(codes[0])}'>{escape(remark_tag(codes[0]))}"
+                         + (f"<sup>+{len(codes) - 1}</sup>" if len(codes) > 1 else "") + "</i>") if codes else "")
         ach = r.total / (r.target * hours) if pd.notna(r.target) and r.target and hours else None
         route = " → ".join(x for x in (r.pit, r.disposal) if isinstance(x, str) and x)
-        rows += (f"<tr{' class=hk' if remark_row else ''}><td class='l mu'>{i}</td><td class='l u'>{escape(str(r.loader))}</td>"
+        has_tags = any(tags)
+        rows += (f"<tr{' class=hk' if has_tags else ''}><td class='l mu'>{i}</td><td class='l u'>{escape(str(r.loader))}</td>"
                  f"<td class='l mu'>{escape(str(r.model or ''))}</td>"
                  f"<td class='l hl'><b>{r.haulers}</b> · {escape(r.hauler_ids or '')}</td>"
                  f"<td class='l mu'>{escape(str(r.material or ''))}</td>"
                  f"<td class='l mu'>{escape(route)}</td><td class='tg'>{_n(r.target)}{'*' if r.on_default else ''}</td>{cells}"
                  f"<td class='tot'>{_n(r.total)}</td><td class='ach'>{_bar(ach)}</td></tr>")
-        rows += remark_row
+        if has_tags:   # remarks get their own thin row under the trips: a marker must never look like a figure
+            rows += ("<tr class='rk'><td class='l rkl' colspan='7'>remarks ↑</td>"
+                     + "".join(f"<td>{t}</td>" for t in tags) + "<td></td><td></td></tr>")
     if df.empty:
         rows = (f"<tr><td class='l' colspan='21'><div class='none'>No {TITLE[g].lower()} input for this shift yet."
                 "</div></td></tr>")
     else:
         hide = lambda k: bool(now and k > now)  # noqa: E731
-        s_cells = "".join("<td class='h'></td>" if hide(k) else f"<td class='h'>{_n(v)}</td>"
-                          for k, v in enumerate(tot["slots"], 1))
-        r_cells = "".join("<td class='h'></td>" if hide(k) else f"<td class='h'>{v}</td>"
-                          for k, v in enumerate(tot["running"], 1))
+        s_cells = "".join("<td></td>" if hide(k) else f"<td>{_n(v)}</td>" for k, v in enumerate(tot["slots"], 1))
+        r_cells = "".join("<td></td>" if hide(k) else f"<td>{v}</td>" for k, v in enumerate(tot["running"], 1))
         rows += (f"<tr class='tt'><td class='l' colspan='7'>Total {UNIT[g]}</td>{s_cells}"
                  f"<td class='tot'>{_n(tot['total'])}</td><td></td></tr>"
                  f"<tr class='rf'><td class='l' colspan='7'>Running fleet</td>{r_cells}<td></td><td></td></tr>")
     sub = (f"{UNIT[g]} per hour · {len(df)} fleets · {tot.get('haulers', 0)} haulers · "
            f"{_n(tot.get('trips'))} trips")
     return (f'<div class="brd" style="--c:{LINE_COLOR[g]}"><div class="bt"><h3>{TITLE[g]}</h3><span>{sub}</span>'
-            f'</div><table class="ft"><colgroup>{cols}</colgroup>{th}{rows}</table></div>')
+            f'</div><table class="ft"><colgroup>{cols}</colgroup>{th}{rows}</table>{_events(d, g)}</div>')
 
 
-SEVERITY = ("down", "maint", "delay", "info", "note")
-
-
-def _remark_text(d: HourlyTv, r) -> str:
-    """One remark in full: (hours when it lasts more than one hour) tag, description, truck, note."""
+def _event_item(d: HourlyTv, r) -> str:
+    """One remark inline: hour(s), tag, description, truck, note."""
     has = isinstance(r.code, str) and r.code
-    sl = SLOTS[d.shift]
-    hrs = "" if r.slot_from == r.slot_to else f"{sl[r.slot_from - 1][:2]}–{sl[r.slot_to - 1][-2:]}"
+    sl = SLOTS[d.shift]   # '09-10' for one hour, '09–12' for 09-10 … 11-12
+    hrs = sl[r.slot_from - 1] if r.slot_from == r.slot_to else f"{sl[r.slot_from - 1][:2]}–{sl[r.slot_to - 1][-2:]}"
     on = bool(d.live and d.slot and r.slot_from <= d.slot <= r.slot_to)
+    tag = remark_tag(r.code if has else None)
     desc = REMARKS.get(str(r.code), str(r.code)) if has else ""
     truck = r.hauler if isinstance(r.hauler, str) and r.hauler else ""
     note = r.remark if isinstance(r.remark, str) and r.remark else ""
-    return (f"<span class='rm{' on' if on else ''}'>" + ("<i class='now'>NOW</i>" if on else "")
-            + (f"<span class='hs'>{hrs}</span>" if hrs else "")
-            + f"<i class='rc {remark_category(r.code if has else None)}'>{escape(remark_tag(r.code if has else None))}</i>"
+    return (f"<span class='it{' on' if on else ''}'><span class='hd'><span class='t'>{hrs}</span>"
+            + ("<i class='now'>NOW</i>" if on else "")
+            + f"<i class='rc {remark_category(r.code if has else None)}'>{escape(tag)}</i></span>"
             + (f"<b>{escape(desc)}</b>" if desc else "") + (f" · {escape(truck)}" if truck else "")
-            + (f" {'— ' if desc or truck else ''}{escape(note)}" if note else "") + "</span>")
+            + (f" <span class='n'>{'— ' if desc or truck else ''}{escape(note)}</span>" if note else "") + "</span>")
 
 
-CHARS_PER_COL = 18    # remark characters that fit in one hour column over 2 lines at the remark font size
-MAX_COLS = 5          # a remark may take up to this many hour columns, so it wraps in about 2 lines
-
-
-def _remark_len(r) -> int:
-    has = isinstance(r.code, str) and r.code
-    return (len(REMARKS.get(str(r.code), str(r.code))) + 7 if has else 6) \
-        + (len(r.remark) if isinstance(r.remark, str) else 0) + (len(r.hauler) + 3 if isinstance(r.hauler, str) else 0)
-
-
-def _remark_row(d: HourlyTv, loader: str) -> str:
-    """Option A: each remark in full, starting right under its hour. It may spread over a few hour columns to the
-    right (as many as its text needs for about two lines, at most MAX_COLS) so long notes stay short instead of
-    becoming tall narrow strips. A remark that would run into another goes to the next lane (row) below, like a
-    schedule chart; in every lane a remark then fills the free columns up to the next one. Remarks starting in the
-    same hour are stacked in one cell, the most serious first. Empty for an excavator without remarks."""
+def _events(d: HourlyTv, g: str) -> str:
+    """Remarks of one board, right under its table: one block per excavator of that board, every remark in full and
+    in hour order (the excavator is not repeated per remark, text wraps)."""
     ev = d.events
-    if ev is None or ev.empty:
+    df = d.fleets.get(g, pd.DataFrame())
+    if ev is None or ev.empty or df.empty:
         return ""
-    e = ev[ev["loader"] == loader]
-    if e.empty:
-        return ""
-    groups = []                                   # (start, wanted columns, cells' html, category)
-    for k in sorted({int(x) for x in e["slot_from"]}):
-        here = e[e["slot_from"] == k].assign(
-            sev=lambda x: [SEVERITY.index(remark_category(c if isinstance(c, str) and c else None)) for c in x["code"]])
-        here = here.sort_values(["sev", "slot_to"])
-        want = max(1, min(MAX_COLS, 13 - k, -(-max(_remark_len(r) for r in here.itertuples()) // CHARS_PER_COL)))
-        cat = remark_category(here["code"].iloc[0] if isinstance(here["code"].iloc[0], str) else None)
-        groups.append((k, want, "".join(_remark_text(d, r) for r in here.itertuples()), cat))
-    lanes: list[list[tuple]] = []                 # first lane where the wanted columns are still free
-    for g in groups:
-        k, want = g[0], g[1]
-        for lane in lanes:
-            if all(k + want - 1 < a or k > a + w - 1 for a, w, *_ in lane):
-                lane.append(g)
-                break
-        else:
-            lanes.append([g])
-    rows = ""
-    for n, lane in enumerate(lanes):
-        lane.sort()
-        cells, col = "", 1
-        for idx, (k, _want, body, cat) in enumerate(lane):
-            cells += "<td class='emp'></td>" * (k - col)
-            end = lane[idx + 1][0] if idx + 1 < len(lane) else 13      # fill the free columns up to the next one
-            cells += f"<td colspan='{end - k}' class='sp {cat}'>{body}</td>"
-            col = end
-        cells += "<td class='emp'></td>" * (13 - col)
-        label = "remarks ↑" if n == 0 else ""
-        rows += f"<tr class='rk'><td class='l rkl' colspan='7'>{label}</td>{cells}<td></td><td></td></tr>"
-    return rows
+    blocks = ""
+    for ld in df["loader"].tolist():
+        e = ev[ev["loader"] == ld].sort_values(["slot_from", "slot_to"])
+        if e.empty:
+            continue
+        items = "".join(_event_item(d, r) for r in e.itertuples())
+        blocks += (f"<div class='fl' style='--c:{LINE_COLOR[g]}'><span class='u'>{escape(str(ld))}</span>"
+                   f"<span>{items}</span></div>")
+    return f'<div class="ev">{blocks}</div>' if blocks else ""
+
+
+# When everything does not fit on the screen, the browser shrinks the remark text step by step (down to a readable
+# minimum) instead of cutting the legend off. Nothing moves; it is measured again on every redraw.
+FIT_SCRIPT = ("<script>(function(){const hv=document.currentScript.parentElement;"
+              "const fit=()=>{let f=0.88;hv.style.setProperty('--ef',f+'cqw');"
+              "while(f>0.56&&hv.scrollHeight>hv.clientHeight+1){f=Math.round((f-0.04)*100)/100;"
+              "hv.style.setProperty('--ef',f+'cqw')}};"
+              "(document.fonts?document.fonts.ready:Promise.resolve()).then(()=>requestAnimationFrame(fit))})()</script>")
 
 
 def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None) -> str:
@@ -397,4 +371,4 @@ def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None) -> 
             + '</div>')
     lines = sum(len(d.fleets.get(g, pd.DataFrame())) for g in GROUPS)
     dense = " dense" if lines > 16 else ""
-    return f'{css}<div class="hv {mode}{dense}">{head}{top}{boards}{foot}</div>'
+    return f'{css}<div class="hv {mode}{dense}">{head}{top}{boards}{foot}{FIT_SCRIPT}</div>'

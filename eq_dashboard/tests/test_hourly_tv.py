@@ -62,7 +62,8 @@ def test_render_has_both_tables_and_current_hour(db_session):
     d = hourly_tv.build(db_session, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
     html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
     assert "Overburden" in html and "Coal" in html and "Running fleet" in html and "11-12" in html
-    assert "class='h now'" in html and "DANIEL PURBA" in html and "<script" not in html.lower()
+    assert "class='now'" in html and "DANIEL PURBA" in html
+    assert html.lower().count("<script") == 1 and "--ef" in html          # only the shrink-to-fit script
 
 
 def test_empty_shift_renders(db_session):
@@ -122,12 +123,12 @@ def test_remarks_show_in_their_hour_and_in_the_list(db_session):
     assert r["m4"] == "302" and r["m2"] == "402" and r["m1"] == ""
     assert d.events["hours"].tolist() == ["07-08", "09-10"]
     html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
-    assert "class='rk'" in html and "Events this shift" not in html     # option A: remarks under their hour
+    assert "class='rk'" in html and "Events this shift" not in html     # tags under the hours, no events panel
     assert "<i class='rc delay'>RAIN</i>" in html and "<i class='rc down'>BD-H</i>" in html
     assert " mk down" in html and ">NOW<" not in html                   # 09-10 is past
     assert "<b>Rain</b>" in html and "WHT026" in html and "— ban" in html
-    # the 07-08 remark spreads to the hour before the next one (09-10): two columns, then 09-10 to the end
-    assert "<td colspan='2' class='sp down'>" in html and "<td colspan='9' class='sp delay'>" in html
+    ev = html.index("class=\"ev\"")                                     # full text under the fleet's table
+    assert html.count("class=\"ev\"") == 1 and loader in html[ev:] and "09-10" in html[ev:]
     assert "<th class='l'>Remark</th>" not in html              # the narrow column is gone
 
 
@@ -145,22 +146,19 @@ def test_every_remark_is_shown_in_full(db_session):
     d = hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 14, 40, tzinfo=WIB))
     html = render(d, now=dt.datetime(2026, 9, 26, 14, 40, tzinfo=WIB))
     assert all(t.strip() in html for t in notes)                    # nothing dropped or cut
-    assert html.count("remarks ↑") == 3 and "target met" in html     # one remark block per excavator
-    assert html.count("<tr class='rk'>") > 3                          # long remarks next to each other: lanes
+    assert html.count("class='fl'") == 3 and "target met" in html     # one remark block per excavator
 
 
-def test_long_remark_spreads_right_instead_of_growing_down(db_session):
-    from core.hourly_render import MAX_COLS
+def test_remarks_go_under_their_own_board(db_session):
     _seed(db_session)
     s = db_session
     _, rows = repo.hourly_shift(s, "WBK-BAU", dt.date(2026, 9, 26), "DS")
-    ld = rows["loader"].iloc[0]
-    repo.add_hourly_remark(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", 2, 2, ld, None, "x" * 80, "x")
-    repo.add_hourly_remark(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", 3, 3, ld, None, "Refueling truck", "x")
+    first = rows.drop_duplicates("material_group").set_index("material_group")["loader"]
+    repo.add_hourly_remark(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", 2, 2, first["OB"], None, "catatan OB", "x")
+    repo.add_hourly_remark(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", 3, 3, first["CG"], None, "catatan coal", "x")
     s.commit()
     d = hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
     html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
-    block = html[html.index("remarks ↑"):]
-    block = block[:block.index("<tr class='tt'>")] if "<tr class='tt'>" in block else block
-    # 07-08 wants 5 columns, so the 08-09 remark moves to a second lane; both still start under their own hour
-    assert block.count("<tr class='rk'>") == 1 and "colspan='11'" in block and MAX_COLS == 5
+    ob_total, cg_title, cg_total = html.index("Total BCM"), html.index("<h3>Coal</h3>"), html.index("Total t")
+    assert ob_total < html.index("catatan OB") < cg_title < cg_total < html.index("catatan coal")
+
