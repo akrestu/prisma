@@ -127,6 +127,28 @@ def span_label(shift: str, a: int, b: int) -> str:
     return SLOTS[shift][a - 1] if a == b else f"{SLOTS[shift][a - 1]} – {SLOTS[shift][b - 1]}"
 
 
+# short words for the TV cells: letters, so a marker can never be read as BCM or tonnes
+REMARK_TAGS = {"100": "OK", "101": "SHIFT", "301": "STBY", "302": "RAIN", "303": "SLIP", "304": "BLAST",
+               "305": "WAIT", "401": "BD-L", "402": "BD-H", "501": "PM", "502": "FRONT"}
+REMARK_GROUP_TAG = {"1": "INFO", "2": "IDLE", "3": "DELAY", "4": "BD", "5": "MAINT"}
+REMARK_CATEGORY = {"1": "info", "2": "delay", "3": "delay", "4": "down", "5": "maint"}   # by the first digit
+
+
+def remark_tag(code) -> str:
+    """'302' → 'RAIN'; any other 3-digit code → its group word (4xx → 'BD'); no code (text only) → 'NOTE'."""
+    if code is None or pd.isna(code) or not str(code):
+        return "NOTE"
+    c = str(code)
+    return REMARK_TAGS.get(c) or REMARK_GROUP_TAG.get(c[0], "NOTE")
+
+
+def remark_category(code) -> str:
+    """info | delay | down | maint | note: the colour of the marker on the TV."""
+    if code is None or pd.isna(code) or not str(code):
+        return "note"
+    return REMARK_CATEGORY.get(str(code)[0], "note")
+
+
 def remark_label(code) -> str | None:
     """'302' → '302 - Rain'; other 3-digit codes stay as they are."""
     if code is None or pd.isna(code):

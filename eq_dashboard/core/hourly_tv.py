@@ -23,6 +23,7 @@ from db import models as m
 from db import repo
 
 GROUPS = {"OB": "Overburden", "CG": "Coal"}
+SEVERITY = {"down": 0, "maint": 1, "delay": 2, "info": 3, "note": 4}
 
 
 @dataclass
@@ -197,7 +198,9 @@ def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame,
         for ld, g in rm.groupby("loader", sort=False):
             i = out.index[out["loader"] == ld][0]
             for k, gk in g.groupby("slot"):
-                out.loc[i, f"m{int(k)}"] = " ".join(dict.fromkeys(str(c) for c in gk["code"].dropna())) or "•"
+                codes = sorted(dict.fromkeys(str(c) for c in gk["code"].dropna()),     # the most serious one first
+                               key=lambda c: SEVERITY.get(H.remark_category(c), 9))
+                out.loc[i, f"m{int(k)}"] = " ".join(codes) or "•"
     tgt = out["target"].fillna(0)
     totals = {"slots": [float(out[c].sum()) for c in cols],
               "running": [int((out[c] > 0).sum()) for c in cols],

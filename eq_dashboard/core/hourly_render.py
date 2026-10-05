@@ -15,7 +15,7 @@ import pandas as pd
 from core import brand
 from core import theme as T
 from core.config import WIB
-from core.hourly import REMARKS, SLOTS
+from core.hourly import REMARKS, SLOTS, remark_category, remark_tag
 from core.hourly_tv import GROUPS, HourlyTv
 from core.tv_render import FONT, KIOSK_CSS, _svg
 
@@ -84,12 +84,15 @@ CSS = """
  border-bottom:.05cqw solid %(LINE)s;break-inside:avoid;align-items:baseline}
 .ev li .t{color:%(MUTED)s}.ev li .u{font-weight:600}.ev li .w b{font-weight:600}.ev li .w span{color:%(MUTED)s}
 .ev li .w .rc{margin-right:.4cqw}
-.rc{display:inline-block;font-style:normal;font-weight:700;font-size:.72cqw;line-height:1.15;letter-spacing:.02em;
- color:%(BG)s;background:%(TEXT)s;padding:.02cqw .22cqw;border-radius:.15cqw;vertical-align:.08cqw}
-.ft td.h .hc{display:flex;justify-content:space-between;align-items:center;gap:.15cqw}
-.ft td.h .rc{position:relative;padding:.02cqw .18cqw}
-.ft td.h .rc sup{position:absolute;top:-.12cqw;right:-.28cqw;font-size:.48cqw;line-height:1;padding:.04cqw .1cqw;
- border-radius:.4cqw;background:%(NOW)s;color:%(BG)s}
+.rc{display:inline-block;font-style:normal;font-weight:700;font-size:.6cqw;line-height:1.1;letter-spacing:.05em;
+ color:var(--k);border:.08cqw solid var(--k);background:rgba(0,0,0,.45);padding:.02cqw .2cqw;border-radius:.6cqw;
+ vertical-align:.08cqw;text-transform:uppercase}
+.rc.down{--k:#FF6B6B}.rc.delay{--k:#7FB3E0}.rc.maint{--k:#C08BE0}.rc.info,.rc.note{--k:%(MUTED)s}
+.ft tr.hk td{border-bottom:none}
+.ft tr.rk td{text-align:center;padding:0 .1cqw .14cqw;overflow:visible}
+.ft tr.rk td.rkl{text-align:right;font-size:.6cqw;color:%(DIM)s;padding-right:.4cqw}
+.ft tr.rk .rc sup{font-size:.85em;margin-left:.15cqw;vertical-align:0;letter-spacing:0;opacity:.85}
+.ev li .w .rc{font-size:.66cqw}.ev li .w .cd{color:%(DIM)s;margin-right:.3cqw}
 .ft td.hl{color:%(MUTED)s;font-size:.72cqw;white-space:normal;line-height:1.25;overflow:visible}.ft td.hl b{color:%(TEXT)s;font-weight:600}
 .kpi td.m span{color:%(DIM)s}
 .ft tr.tt td{font-weight:700;border-top:.1cqw solid %(MUTED)s;border-bottom:none}
@@ -243,7 +246,7 @@ def _board(g: str, d: HourlyTv) -> str:
           + "<th>Total</th><th>Ach</th></tr>")
     rows = ""
     for i, r in enumerate(df.itertuples(index=False), 1):
-        cells, hours = "", 0
+        cells, hours, tags = "", 0, []
         for k in range(1, 13):
             v = getattr(r, f"s{k}")
             if now and k > now:
@@ -258,20 +261,23 @@ def _board(g: str, d: HourlyTv) -> str:
             if k == now:
                 cls.append("now")
             hours += 1
-            code = getattr(r, f"m{k}", "") or ""
-            codes = code.split()
-            mark = (f"<i class='rc'>{escape(codes[0])}" + (f"<sup>+{len(codes) - 1}</sup>" if len(codes) > 1
-                                                             else "") + "</i>") if codes else ""
-            body = f"<span class='hc'>{mark}<span>{_n(v)}</span></span>" if mark else _n(v)
-            cells += f"<td class='{' '.join(cls)}'>{body}</td>"
+            cells += f"<td class='{' '.join(cls)}'>{_n(v)}</td>"
+        for k in range(1, 13):
+            codes = (getattr(r, f"m{k}", "") or "").split()
+            tags.append((f"<i class='rc {remark_category(codes[0])}'>{escape(remark_tag(codes[0]))}"
+                         + (f"<sup>+{len(codes) - 1}</sup>" if len(codes) > 1 else "") + "</i>") if codes else "")
         ach = r.total / (r.target * hours) if pd.notna(r.target) and r.target and hours else None
         route = " → ".join(x for x in (r.pit, r.disposal) if isinstance(x, str) and x)
-        rows += (f"<tr><td class='l mu'>{i}</td><td class='l u'>{escape(str(r.loader))}</td>"
+        has_tags = any(tags)
+        rows += (f"<tr{' class=hk' if has_tags else ''}><td class='l mu'>{i}</td><td class='l u'>{escape(str(r.loader))}</td>"
                  f"<td class='l mu'>{escape(str(r.model or ''))}</td>"
                  f"<td class='l hl'><b>{r.haulers}</b> · {escape(r.hauler_ids or '')}</td>"
                  f"<td class='l mu'>{escape(str(r.material or ''))}</td>"
                  f"<td class='l mu'>{escape(route)}</td><td class='tg'>{_n(r.target)}{'*' if r.on_default else ''}</td>{cells}"
                  f"<td class='tot'>{_n(r.total)}</td><td class='ach'>{_bar(ach)}</td></tr>")
+        if has_tags:   # remarks get their own thin row under the trips: a marker must never look like a figure
+            rows += ("<tr class='rk'><td class='l rkl' colspan='7'>remarks ↑</td>"
+                     + "".join(f"<td>{t}</td>" for t in tags) + "<td></td><td></td></tr>")
     if df.empty:
         rows = (f"<tr><td class='l' colspan='21'><div class='none'>No {TITLE[g].lower()} input for this shift yet."
                 "</div></td></tr>")
@@ -300,8 +306,11 @@ def _events(d: HourlyTv) -> str:
     more = len(ev) - len(shown)
     items = ""
     for r in shown.itertuples():
-        badge = f"<i class='rc'>{escape(str(r.code))}</i>" if isinstance(r.code, str) and r.code else ""
-        code = escape(REMARKS.get(str(r.code), "") if isinstance(r.code, str) else "")
+        has = isinstance(r.code, str) and r.code
+        badge = (f"<i class='rc {remark_category(r.code if has else None)}'>"
+                 f"{escape(remark_tag(r.code if has else None))}</i>"
+                 + (f"<span class='cd'>{escape(str(r.code))}</span>" if has else ""))
+        code = escape(REMARKS.get(str(r.code), "") if has else "")
         note = escape(r.remark) if isinstance(r.remark, str) and r.remark else ""
         truck = f" · {escape(r.hauler)}" if isinstance(r.hauler, str) and r.hauler else ""
         items += (f"<li><span class='t'>{escape(r.hours)}</span><span class='u'>{escape(str(r.loader))}</span>"

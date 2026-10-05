@@ -285,3 +285,10 @@ def test_add_and_delete_remark_without_saving_the_grid(db_session):
     repo.delete_hourly_remarks(s, ev.loc[0, "ids"])
     s.commit()
     assert repo.hourly_remarks(s, "WBK-BAU", d, "NS").empty
+
+
+def test_remark_tags_are_words_never_numbers():
+    assert [H.remark_tag(c) for c in ("302", "401", "455", "599", None)] == ["RAIN", "BD-L", "BD", "MAINT", "NOTE"]
+    assert all(not t.replace("-", "").isdigit() for t in H.REMARK_TAGS.values())
+    assert [H.remark_category(c) for c in ("401", "302", "501", "100", None)] == ["down", "delay", "maint", "info",
+                                                                                   "note"]
