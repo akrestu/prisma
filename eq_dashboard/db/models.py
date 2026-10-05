@@ -436,6 +436,18 @@ class HourlyRow(Base):
     r12: Mapped[float | None] = mapped_column(Float)
 
 
+
+class HourlyRemark(Base):
+    """What happened in one production hour of a fleet: hour slot 1..12, the loader, optionally one hauler."""
+    __tablename__ = "hourly_remark"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    shift_id: Mapped[int] = mapped_column(ForeignKey("hourly_shift.id", ondelete="CASCADE"), index=True)
+    slot: Mapped[int] = mapped_column(Integer)
+    loader: Mapped[str] = mapped_column(String(40))
+    hauler: Mapped[str | None] = mapped_column(String(40))
+    code: Mapped[str | None] = mapped_column(String(10))
+    remark: Mapped[str | None] = mapped_column(Text)
+
 class Operator(Base):
     """Operator master per site: the NRP identifies a person for operator KPIs, whatever spelling the name has."""
     __tablename__ = "operators"

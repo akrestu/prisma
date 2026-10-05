@@ -42,6 +42,7 @@ with session_scope() as s:
     lf = repo.load_factors(s, site)
     tg = repo.loader_targets(s, site)
     sh, rows = repo.hourly_shift(s, site, date, shift)
+    remarks = repo.hourly_remarks(s, site, date, shift)
     prev = repo.previous_lines(s, site, date, shift) if sh is None else None
     units = repo.population_for(s, date)
     ops = repo.operators(s, site)
@@ -60,13 +61,13 @@ op_label = {n: f"{n} - {nm}" for n, nm in zip(ops["nrp"], ops["name"], strict=Tr
 code_label = {k: f"{k} - {v}" for k, v in H.REMARKS.items()}
 slots = H.SLOTS[shift]
 GRID = ["loader", "loader_nrp", "material", "hauler", "hauler_model", "hauler_nrp", "pit", "disposal", "distance_m",
-        *H.R, "remark_code", "remark"]
+        *H.R]
+RGRID = ["hour", "loader", "hauler", "code", "remark"]
 unit_model = dict(zip(site_units["unit_id"], site_units["model"], strict=True)) if len(site_units) else {}
 
 
 def to_grid(df: pd.DataFrame) -> pd.DataFrame:
     g = df.reindex(columns=GRID).copy()
-    g["remark_code"] = g["remark_code"].map(lambda x: code_label.get(str(x), x) if pd.notna(x) else None)
     for c in ("loader_nrp", "hauler_nrp"):
         g[c] = g[c].map(lambda x: op_label.get(str(x), x) if pd.notna(x) else None)
     if "operator" in df:                                   # old lines carry a name instead of an NRP
@@ -76,9 +77,15 @@ def to_grid(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def from_grid(g: pd.DataFrame) -> pd.DataFrame:
-    out = g.copy()
-    out["remark_code"] = out["remark_code"].astype("string").str.extract(r"^(\d{3})", expand=False)
-    return out
+    return g.assign(remark_code=None, remark=None)     # remarks are entered per hour in their own table
+
+
+def remarks_grid(df: pd.DataFrame) -> pd.DataFrame:
+    """Stored remarks (slot 1..12) → the editor (hour label, code label)."""
+    if df.empty:
+        return pd.DataFrame(columns=RGRID)
+    return pd.DataFrame({"hour": [slots[int(k) - 1] for k in df["slot"]], "loader": df["loader"],
+                         "hauler": df["hauler"], "code": df["code"].map(H.remark_label), "remark": df["remark"]})
 
 
 t_web, t_xls = st.tabs(["Web input", "Excel template"])
@@ -116,8 +123,6 @@ with t_web:
         "distance_m": st.column_config.NumberColumn("Distance (m)", min_value=0, step=50, format="%.0f"),
         **{r: st.column_config.NumberColumn(lbl, min_value=0, max_value=20, step=1, format="%d", width="small")
            for r, lbl in zip(H.R, slots, strict=True)},
-        "remark_code": st.column_config.SelectboxColumn("Remark code", options=list(code_label.values())),
-        "remark": st.column_config.TextColumn("Remark", width="large"),
     }
     gkey = f"hi_grid_{site}_{date}_{shift}_{ver}"
     grid = st.data_editor(to_grid(base), num_rows="dynamic", hide_index=True, width="stretch", column_config=cfg,
@@ -125,8 +130,27 @@ with t_web:
     res = H.resolve(from_grid(grid), lf, tg, units, ops, model_targets=mtg, basis=basis, hourly_models=hmt)
     st.caption("One row per hauler. When a hauler's operator changes during the shift, add a second row for the "
                "same hauler with the new operator.")
+
+    st.markdown("**Remarks per hour**")
+    st.caption("Only when something happened: pick the hour, the excavator (and the truck if it is about one truck), "
+               "a remark code and/or a text. The code shows in that hour on the TV.")
+    fleet = sorted(set(grid["loader"].dropna())) or loaders
+    rcfg = {
+        "hour": st.column_config.SelectboxColumn("Hour", options=slots, required=True, width="small"),
+        "loader": st.column_config.SelectboxColumn("Excavator", options=fleet, required=True),
+        "hauler": st.column_config.SelectboxColumn("Hauler ID (optional)", options=haulers),
+        "code": st.column_config.SelectboxColumn("Remark code", options=list(code_label.values()), width="medium"),
+        "remark": st.column_config.TextColumn("Remark", width="large"),
+    }
+    rkey = f"hi_rm_{site}_{date}_{shift}_{ver}"
+    rgrid = st.data_editor(remarks_grid(remarks), num_rows="dynamic", hide_index=True, width="stretch",
+                           column_config=rcfg, key=rkey, height=min(320, 38 * (len(remarks) + 3) + 40))
+    rclean, rproblems = H.clean_remarks(rgrid, shift, fleet)
+    res.problems.extend(rproblems)
     edits = st.session_state.get(gkey) or {}
-    dirty = any(edits.get(k) for k in ("edited_rows", "added_rows", "deleted_rows")) or coord != coord_now         or (sh is None and len(base) > 0)   # lines copied from the previous shift are not saved yet
+    redits = st.session_state.get(rkey) or {}
+    dirty = any(e.get(k) for e in (edits, redits) for k in ("edited_rows", "added_rows", "deleted_rows")) \
+        or coord != coord_now or (sh is None and len(base) > 0)   # lines copied from the previous shift: not saved yet
     if dirty:
         st.warning("Unsaved changes. Changing the site, date or shift discards them: press **Save shift** first.")
     if res.problems:
@@ -145,8 +169,9 @@ with t_web:
         k[4].metric("Haulers", res.rows["hauler"].nunique())
     if st.button("Save shift", type="primary", key="hi_save", disabled=bool(res.problems)) and not res.problems:
         with st.spinner("Saving the shift…"), session_scope() as s:
-            repo.save_hourly(s, site, date, shift, coord, res.rows, user.username, "web")
-            audit(s, user.username, "hourly_save", site, f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines")
+            repo.save_hourly(s, site, date, shift, coord, res.rows, user.username, "web", remarks=rclean)
+            audit(s, user.username, "hourly_save", site,
+                  f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines, {len(rclean)} remarks")
         refresh("hourly")
         st.session_state["hi_ver"] = ver + 1
         st.session_state["hi_msg"] = f"{site} {date:%d %b} {shift} saved ({len(res.rows)} lines)."
@@ -158,7 +183,8 @@ with t_xls:
                 "fill in the trips in Excel, then upload it here. Uploading **replaces** the shift.")
     lines = rows if sh is not None else (prev if prev is not None else None)
     st.download_button(f"Download template · {site} {date:%d %b} {shift}",
-                       lambda: H.build_template(site, date, shift, lf, tg, lines, coord_now, units, ops),
+                       lambda: H.build_template(site, date, shift, lf, tg, lines, coord_now, units, ops,
+                                                remarks if sh is not None else None),
                        file_name=H.file_name(site, date, shift), on_click="ignore",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     f = st.file_uploader("Filled template (.xlsx)", type=["xlsx"], key=f"hi_file_{st.session_state.get('hi_ver', 0)}",
@@ -186,7 +212,11 @@ with t_xls:
             mtg_f, basis_f = repo.model_targets(s), repo.site_basis(s, hf.site)
             hmt_f = repo.hourly_model_targets(s, hf.site)
         rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f, model_targets=mtg_f, basis=basis_f, hourly_models=hmt_f)
+        rm_f, rm_problems = H.clean_remarks(hf.remarks, hf.shift, sorted(set(rf.rows["loader"].dropna()))
+                                            if len(rf.rows) else None)
+        rf.problems.extend(rm_problems)
         st.markdown(f"**{hf.site} · {hf.date:%d %b %Y} · {hf.shift}** · {len(rf.rows)} lines"
+                    + (f" · {len(rm_f)} remark(s)" if len(rm_f) else "")
                     + (f" · coordinator {hf.coordinator}" if hf.coordinator else ""))
         for p in rf.problems:
             st.error(p)
@@ -198,7 +228,8 @@ with t_xls:
             ok = st.checkbox("Replace the existing lines of this shift", key=f"hi_xrep_{st.session_state.get('hi_ver', 0)}")
         if not rf.problems and st.button("Save uploaded shift", type="primary", key="hi_xsave", disabled=not ok):
             with st.spinner("Saving the shift…"), session_scope() as s:
-                repo.save_hourly(s, hf.site, hf.date, hf.shift, hf.coordinator, rf.rows, user.username, "excel")
+                repo.save_hourly(s, hf.site, hf.date, hf.shift, hf.coordinator, rf.rows, user.username, "excel",
+                                 remarks=rm_f)
                 audit(s, user.username, "hourly_upload", hf.site,
                       f"{hf.date:%Y-%m-%d} {hf.shift}: {len(rf.rows)} lines from {f.name}")
             refresh("hourly")

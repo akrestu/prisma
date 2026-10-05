@@ -105,3 +105,21 @@ def test_tv_lists_hauler_ids_per_fleet_and_hides_nan_boss(db_session):
     assert ob.loc["WEX019", "hauler_ids"].startswith("WHT018") and d.coordinator == ""
     html = render(d)
     assert "WHT018" in html and "Shift boss <b>—</b>" in html and pd.notna(ob.loc["WEX019", "haulers"])
+
+
+def test_remarks_show_in_their_hour_and_in_the_list(db_session):
+    _seed(db_session)
+    s = db_session
+    sh, rows = repo.hourly_shift(s, "WBK-BAU", dt.date(2026, 9, 26), "DS")
+    loader = rows["loader"].iloc[0]
+    rm = pd.DataFrame([{"slot": 4, "loader": loader, "hauler": None, "code": "302", "remark": None},
+                       {"slot": 2, "loader": loader, "hauler": "WHT026", "code": "402", "remark": "ban"}])
+    repo.save_hourly(s, "WBK-BAU", dt.date(2026, 9, 26), "DS", sh.coordinator, rows, "op1", remarks=rm)
+    s.commit()
+    d = hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
+    f = pd.concat(d.fleets.values())
+    r = f[f["loader"] == loader].iloc[0]
+    assert r["m4"] == "302" and r["m2"] == "402" and r["m1"] == ""
+    assert r["remark"] == "07-08 402 - Breakdown hauler ban (WHT026) · 09-10 302 - Rain"
+    html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
+    assert "<i class='rc'>302</i>" in html and "09-10 302 - Rain" in html

@@ -262,6 +262,16 @@ HOURLY_ROW_COLS = ["line", "loader", "loader_model", "operator", "loader_nrp", "
                    *[f"r{i}" for i in range(1, 13)]]
 
 
+HOURLY_REMARK_COLS = ["slot", "loader", "hauler", "code", "remark"]
+
+
+def hourly_remarks(s: Session, site: str, date, shift: str) -> pd.DataFrame:
+    """Remarks per hour of one shift (slot 1..12, loader, hauler, code, remark), in hour order."""
+    r, sh = m.HourlyRemark, m.HourlyShift
+    return frame(s, select(*[getattr(r, c) for c in HOURLY_REMARK_COLS]).join(sh, sh.id == r.shift_id)
+                 .where(sh.site == site, sh.date == date, sh.shift == shift).order_by(r.slot, r.loader, r.id))
+
+
 def load_factors(s: Session, site: str) -> pd.DataFrame:
     t = m.LoadFactor
     return frame(s, select(t.material, t.material_group, t.hauler_model, t.muatan).where(t.site == site)
@@ -314,8 +324,9 @@ def previous_lines(s: Session, site: str, date, shift: str) -> pd.DataFrame:
 
 
 def save_hourly(s: Session, site: str, date, shift: str, coordinator: str, rows: pd.DataFrame, username: str,
-                source: str = "web") -> m.HourlyShift:
-    """Replace the whole shift sheet in one transaction (the grid is always saved as a whole)."""
+                source: str = "web", remarks: pd.DataFrame | None = None) -> m.HourlyShift:
+    """Replace the whole shift sheet in one transaction (the grid is always saved as a whole). `remarks` (per hour)
+    replace the shift's remarks too; None leaves them as they are."""
     from sqlalchemy import delete, insert
     sh = s.scalar(select(m.HourlyShift).where(m.HourlyShift.site == site, m.HourlyShift.date == date,
                                               m.HourlyShift.shift == shift).with_for_update())
@@ -330,6 +341,14 @@ def save_hourly(s: Session, site: str, date, shift: str, coordinator: str, rows:
             for r in rows.to_dict("records")]
     if recs:
         s.execute(insert(m.HourlyRow), recs)
+    if remarks is not None:
+        s.execute(delete(m.HourlyRemark).where(m.HourlyRemark.shift_id == sh.id))
+        rr = [{"shift_id": sh.id, **{c: (None if pd.isna(r.get(c)) else r.get(c)) for c in HOURLY_REMARK_COLS}}
+              for r in remarks.to_dict("records")]
+        for r in rr:
+            r["slot"] = int(r["slot"])
+        if rr:
+            s.execute(insert(m.HourlyRemark), rr)
     return sh
 
 

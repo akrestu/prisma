@@ -32,12 +32,70 @@ HEADER_ROW = 7                                               # Excel row of the 
 # the order follows the work: excavator and its operator, material, then each truck it loads. Only what the data
 # officer knows goes in the file; the hauler model and load come from the unit population on upload.
 INPUT_COLS = ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "PIT", "Disposal", "Distance (m)"]
-TAIL_COLS = ["Remark code", "Remark"]
+TAIL_COLS = ["Remark code", "Remark"]                       # old templates only: one remark per line (ignored now)
+REMARK_SHEET = "Remarks"
+REMARK_HEADS = ["Hour", "Loader", "Hauler ID", "Remark code", "Remark"]
 REMARKS = {  # common reasons on the site boards; any 3-digit Equipment Events reason code is also accepted
     "100": "Productivity achieved", "101": "Change shift", "301": "Standby / waiting", "302": "Rain",
     "303": "Slippery road", "304": "Blasting", "305": "Waiting hauler", "401": "Breakdown loader",
     "402": "Breakdown hauler", "501": "Scheduled maintenance", "502": "Digging method / front condition",
 }
+
+
+def clean_remarks(df: pd.DataFrame, shift: str, loaders: list[str] | None = None) -> tuple[pd.DataFrame, list[str]]:
+    """Remarks per hour from the web table or the Remarks sheet → (slot, loader, hauler, code, remark), problems.
+
+    Hour may be the slot label ('09-10') or 1..12. The code is the 3 digits in front ('302 - Rain' → '302'). Empty
+    lines are dropped; a line needs an hour, a loader and a code or a text."""
+    cols = ["slot", "loader", "hauler", "code", "remark"]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=cols), []
+    d = df.reindex(columns=["hour", "loader", "hauler", "code", "remark"]).copy()
+    d = d[d.apply(lambda r: any(pd.notna(v) and str(v).strip() for v in r), axis=1)]
+    if d.empty:
+        return pd.DataFrame(columns=cols), []
+    labels = {lab: k for k, lab in enumerate(SLOTS[shift], 1)}
+
+    def to_slot(v):
+        if v is None or pd.isna(v):
+            return None
+        h = str(v).strip()
+        if h in labels:
+            return labels[h]
+        try:
+            k = int(float(h))
+        except ValueError:
+            return None
+        return k if 1 <= k <= 12 else None
+
+    out = pd.DataFrame({
+        "slot": d["hour"].map(to_slot),
+        "loader": _ids(d["loader"]),
+        "hauler": _ids(d["hauler"]),
+        "code": text(d["code"].astype("string")).str.extract(r"^(\d{3})", expand=False),
+        "remark": text(d["remark"].astype("string")),
+    })
+    problems = []
+    for i, (h, r) in enumerate(zip(d["hour"], out.itertuples(), strict=True), 1):
+        if r.slot is None or pd.isna(r.slot):
+            hv = "" if h is None or pd.isna(h) else str(h)
+            problems.append(f"Remark line {i}: hour '{hv}' is not an hour of the {shift} shift "
+                            f"({SLOTS[shift][0]} … {SLOTS[shift][-1]}).")
+        if pd.isna(r.loader):
+            problems.append(f"Remark line {i}: pick the loader.")
+        elif loaders is not None and r.loader not in loaders:
+            problems.append(f"Remark line {i}: loader {r.loader} is not in this shift's lines.")
+        if pd.isna(r.code) and pd.isna(r.remark):
+            problems.append(f"Remark line {i}: give a remark code or a text.")
+    out["slot"] = pd.to_numeric(out["slot"], errors="coerce").astype("Int64")
+    return out.sort_values(["slot", "loader"]).reset_index(drop=True), problems
+
+
+def remark_label(code) -> str | None:
+    """'302' → '302 - Rain'; other 3-digit codes stay as they are."""
+    if code is None or pd.isna(code):
+        return None
+    return f"{code} - {REMARKS[str(code)]}" if str(code) in REMARKS else str(code)
 
 
 # ------------------------------------------------------------------ time
@@ -314,7 +372,7 @@ def _label(nrp, names: dict) -> str | None:
 
 def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, targets: pd.DataFrame,
                    lines: pd.DataFrame | None = None, coordinator: str = "", units: pd.DataFrame | None = None,
-                   operators: pd.DataFrame | None = None) -> bytes:
+                   operators: pd.DataFrame | None = None, remarks: pd.DataFrame | None = None) -> bytes:
     """Per-shift input workbook, one row per hauler. `lines` pre-fills loader, hauler and operators (e.g. from the
     previous shift) so the data officer only types trips. Drop-downs list the site's loaders, haulers, operators."""
     from openpyxl.utils import get_column_letter
@@ -336,7 +394,7 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
                              "trips are ignored.",
                              "Operator changed during the shift? Add a second row for the same truck."], start=2):
         ws.cell(r, 4, tip).font = Font(italic=True, color="55595F")
-    heads = INPUT_COLS + SLOTS[shift] + TAIL_COLS
+    heads = INPUT_COLS + SLOTS[shift]
     widths = {"Loader": 11, "Hauler ID": 11, "Operator": 24, "Hauler operator": 24, "Material": 18, "Remark": 28}
     for j, h in enumerate(heads, start=1):
         c = ws.cell(HEADER_ROW, j, h)
@@ -359,7 +417,7 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
     lists.sheet_state = "hidden"
     last = HEADER_ROW + 400
     pos = {h: get_column_letter(j) for j, h in enumerate(heads, start=1)}
-    for head, src in (("Material", "A"), ("Remark code", "B"), ("Loader", "C"), ("Hauler ID", "D"),
+    for head, src in (("Material", "A"), ("Loader", "C"), ("Hauler ID", "D"),
                       ("Operator", "E"), ("Hauler operator", "E")):
         n = len(columns[src])
         if n:
@@ -382,10 +440,41 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
         for h, v in vals.items():
             ws[f"{pos[h]}{i}"] = None if v is None or (isinstance(v, float) and pd.isna(v)) else v
     ws.freeze_panes = ws.cell(HEADER_ROW + 1, 5)          # loader, operator, material and truck stay visible
+    _remark_sheet(wb, shift, columns, remarks)
     dataprod._meta(wb, "hourly", {"dataset": DATASET, "site": site, "date": date.isoformat(), "shift": shift, "layout": "per_hauler"})
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _remark_sheet(wb, shift: str, lists: dict, remarks: pd.DataFrame | None) -> None:
+    """Sheet 'Remarks': one line per event, only when something happened (rain at 09-10, breakdown at 13-14…)."""
+    from core import dataprod
+    rs = wb.create_sheet(REMARK_SHEET, 1)
+    rs["A1"] = "Remarks per hour: one line per event. Hour, loader and a remark code (or text) are needed."
+    rs["A1"].font = Font(italic=True, color="55595F")
+    for j, h in enumerate(REMARK_HEADS, start=1):
+        c = rs.cell(2, j, h)
+        c.fill, c.font = dataprod.HEAD_FILL, dataprod.HEAD_FONT
+        rs.column_dimensions[c.column_letter].width = {"Remark code": 30, "Remark": 40}.get(h, 12)
+    lst = wb["Lists"]
+    for i, lab in enumerate(SLOTS[shift], start=1):
+        lst[f"F{i}"] = lab
+    for col, src, n in (("A", "F", 12), ("B", "C", len(lists["C"])), ("C", "D", len(lists["D"])),
+                        ("D", "B", len(lists["B"]))):
+        if n:
+            dv = DataValidation(type="list", formula1=f"=Lists!${src}$1:${src}${n}", allow_blank=True,
+                                errorStyle="warning")
+            dv.add(f"{col}3:{col}300")
+            rs.add_data_validation(dv)
+    for i, r in enumerate((remarks.to_dict("records") if remarks is not None else []), start=3):
+        k = r.get("slot")
+        rs.cell(i, 1, SLOTS[shift][int(k) - 1] if k is not None and not pd.isna(k) else None)
+        rs.cell(i, 2, r.get("loader"))
+        rs.cell(i, 3, None if pd.isna(r.get("hauler")) else r.get("hauler"))
+        rs.cell(i, 4, remark_label(r.get("code")))
+        rs.cell(i, 5, None if pd.isna(r.get("remark")) else r.get("remark"))
+    rs.freeze_panes = "A3"
 
 
 @dataclass
@@ -395,6 +484,8 @@ class HourlyFile:
     shift: str
     coordinator: str
     rows: pd.DataFrame
+    remarks: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=["hour", "loader", "hauler", "code",
+                                                                              "remark"]))
 
 
 def file_name(site: str, date: dt.date, shift: str) -> str:
@@ -422,20 +513,23 @@ def parse_template(data: bytes) -> HourlyFile:
     if problems:
         raise StructureError(problems)
     hdr = [str(v).strip() if pd.notna(v) else "" for v in x.iloc[HEADER_ROW - 1]]
-    expected = INPUT_COLS + SLOTS[shift] + TAIL_COLS
+    expected = INPUT_COLS + SLOTS[shift]
     if hdr[:len(expected)] != expected:
         raise StructureError([f"Row {HEADER_ROW} must hold the headers: {', '.join(expected)} "
                               f"(the hour columns follow the shift in B4). Download the current template."])
-    body = x.iloc[HEADER_ROW:, :len(expected)].copy()
-    body.columns = ["loader", "loader_nrp", "material", "hauler", "hauler_nrp", "pit", "disposal", "distance_m",
-                    *R, "remark_code", "remark"]
-    body = body.dropna(how="all")
-    body["remark_code"] = text(body["remark_code"].astype("string")).str.extract(r"^(\d{3})", expand=False)
+    body = x.iloc[HEADER_ROW:, :len(expected)].copy()   # old templates: Remark code / Remark after the hours, ignored
+    body.columns = ["loader", "loader_nrp", "material", "hauler", "hauler_nrp", "pit", "disposal", "distance_m", *R]
+    body = body.dropna(how="all").assign(remark_code=None, remark=None)
+    remarks = pd.DataFrame(columns=["hour", "loader", "hauler", "code", "remark"])
+    rs = raw.get(REMARK_SHEET)
+    if rs is not None and len(rs) > 2:
+        rb = rs.iloc[2:, :len(REMARK_HEADS)].copy()
+        rb.columns = ["hour", "loader", "hauler", "code", "remark"][:rb.shape[1]]
+        remarks = rb.reindex(columns=["hour", "loader", "hauler", "code", "remark"]).dropna(how="all")
     boss = head.get("Shift boss", head.get("Coordinator"))    # older templates say 'Coordinator'
     boss = "" if boss is None or (isinstance(boss, float) and pd.isna(boss)) or str(boss).strip().lower() == "nan" \
         else str(boss).strip()
-    return HourlyFile(site, date.date(), shift, boss,
-                      body.reset_index(drop=True))
+    return HourlyFile(site, date.date(), shift, boss, body.reset_index(drop=True), remarks.reset_index(drop=True))
 
 
 # ------------------------------------------------------------------ legacy 'Mst Hourly' shift sheets

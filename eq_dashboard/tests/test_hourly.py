@@ -216,3 +216,45 @@ def test_load_factors_follow_the_population_models():
     units = pd.DataFrame([("WHT018", "Hauling", "DT", "777E-KDP", "CAT", "WBK-BAU")], columns=UNITS.columns)
     res = H.resolve(hauler_rows({"hauler": "WHT018", "r1": 2}), filled, TG, units, OPS)
     assert not res.problems and res.rows.loc[0, "muatan"] == 41          # found by its own model, no mapping
+
+
+def test_clean_remarks_per_hour():
+    raw = pd.DataFrame([{"hour": "09-10", "loader": "wex019", "hauler": None, "code": "302 - Rain", "remark": None},
+                        {"hour": 4, "loader": "WEX019", "hauler": "WHT026", "code": None, "remark": "ban bocor"},
+                        {"hour": None, "loader": None, "hauler": None, "code": None, "remark": None}])
+    out, problems = H.clean_remarks(raw, "DS", ["WEX019"])
+    assert not problems
+    assert out[["slot", "loader", "hauler", "code"]].astype(object).where(out.notna(), None).values.tolist() == [
+        [4, "WEX019", None, "302"], [4, "WEX019", "WHT026", None]]
+    bad, problems = H.clean_remarks(pd.DataFrame([{"hour": "19-20", "loader": "WEX999", "code": None}]), "DS",
+                                    ["WEX019"])
+    assert len(problems) == 3          # not a DS hour, loader not in the shift, no code or text
+    assert H.remark_label("302") == "302 - Rain" and H.remark_label("999") == "999"
+
+
+def test_template_remarks_sheet_round_trip():
+    lines = H.resolve(hauler_rows({"hauler": "WHT026", "hauler_nrp": "22001"}), LF, TG, UNITS, OPS).rows
+    rm = pd.DataFrame([{"slot": 3, "loader": "WEX019", "hauler": None, "code": "302", "remark": "hujan deras"}])
+    tpl = H.build_template("WBK-BAU", dt.date(2026, 9, 26), "DS", LF, TG, lines, "", UNITS, OPS, rm)
+    hf = H.parse_template(tpl)
+    assert "Remark" not in " ".join(map(str, hf.rows.columns.drop(["remark_code", "remark"])))
+    out, problems = H.clean_remarks(hf.remarks, "DS", ["WEX019"])
+    assert not problems and out.loc[0, "slot"] == 3 and out.loc[0, "code"] == "302"
+    assert out.loc[0, "remark"] == "hujan deras"
+
+
+def test_save_hourly_keeps_remarks_per_hour(db_session):
+    s = db_session
+    d = dt.date(2026, 9, 26)
+    r = H.resolve(rows(), LF, TG).rows
+    rm = pd.DataFrame([{"slot": 2, "loader": "WEX019", "hauler": None, "code": "401", "remark": None}])
+    repo.save_hourly(s, "WBK-BAU", d, "DS", "", r, "op1", remarks=rm)
+    s.commit()
+    got = repo.hourly_remarks(s, "WBK-BAU", d, "DS")
+    assert got[["slot", "loader", "code"]].values.tolist() == [[2, "WEX019", "401"]]
+    repo.save_hourly(s, "WBK-BAU", d, "DS", "", r, "op1")              # no remarks given: left as they are
+    s.commit()
+    assert len(repo.hourly_remarks(s, "WBK-BAU", d, "DS")) == 1
+    repo.save_hourly(s, "WBK-BAU", d, "DS", "", r, "op1", remarks=rm.iloc[:0])
+    s.commit()
+    assert repo.hourly_remarks(s, "WBK-BAU", d, "DS").empty

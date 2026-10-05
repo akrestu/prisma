@@ -151,13 +151,16 @@ def build(s: Session, site: str, now: dt.datetime, date: dt.date | None = None, 
                                     None if pd.isna(m_cg) else float(m_cg), t_sr, t_dist)
 
     # ---- fleet tables for the shift on screen
+    remarks = repo.hourly_remarks(s, site, date, shift)
     for g in GROUPS:
         rows = cur[cur["material_group"] == g] if len(cur) else cur
-        tv.fleets[g], tv.totals[g] = _fleet_table(rows, lc[lc["material_group"] == g] if len(lc) else lc)
+        tv.fleets[g], tv.totals[g] = _fleet_table(rows, lc[lc["material_group"] == g] if len(lc) else lc,
+                                                  remarks, H.SLOTS[shift])
     return tv
 
 
-def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame, remarks: pd.DataFrame | None = None,
+                 slots: list[str] | None = None) -> tuple[pd.DataFrame, dict]:
     """One row per loader (fleet) with volume per hour, plus shift totals. `target_slots` is the hourly target of
     the fleets that worked in each hour (the yardstick of the hourly bars and the burn-up line)."""
     empty = {"slots": [0.0] * 12, "running": [0] * 12, "target_slots": [0.0] * 12, "total": 0.0, "haulers": 0,
@@ -175,14 +178,27 @@ def _fleet_table(rows: pd.DataFrame, long: pd.DataFrame) -> tuple[pd.DataFrame, 
         operator=("operator", lambda x: ", ".join(dict.fromkeys(x.dropna()))),
         haulers=("hauler_key", "nunique"),
         hauler_ids=("hauler_key", lambda x: ", ".join(dict.fromkeys(str(v) for v in x.dropna()))),
-        code=("remark_code", "first"), remark=("remark", lambda x: "; ".join(dict.fromkeys(x.dropna()))),
         line=("line", "min"), on_default=("on_default", "any"))
     out = first.join(vol).sort_values("line").reset_index()
     cols = [f"s{k}" for k in range(1, 13)]
     out["total"] = out[cols].sum(axis=1)
-    label = {k: f"{k} - {v}" for k, v in H.REMARKS.items()}
-    out["remark"] = [" · ".join(x for x in (label.get(str(c), c if pd.notna(c) else None), r or None) if x)
-                     for c, r in zip(out["code"], out["remark"], strict=True)]
+    # remarks per hour: the code(s) go into the hour cell (m1..m12), the list in hour order into the Remark column
+    rm = remarks[remarks["loader"].isin(out["loader"])] if remarks is not None and len(remarks) else pd.DataFrame()
+    for k in range(1, 13):
+        out[f"m{k}"] = ""
+    out["remark"] = ""
+    if len(rm):
+        labels = slots or [str(k) for k in range(1, 13)]
+        for ld, g in rm.groupby("loader", sort=False):
+            i = out.index[out["loader"] == ld][0]
+            for k, gk in g.groupby("slot"):
+                out.loc[i, f"m{int(k)}"] = " ".join(dict.fromkeys(str(c) for c in gk["code"].dropna())) or "•"
+            out.loc[i, "remark"] = " · ".join(
+                f"{labels[int(r.slot) - 1]} "
+                + " ".join(x for x in (H.remark_label(r.code),
+                                       r.remark if isinstance(r.remark, str) and r.remark else None,
+                                       f"({r.hauler})" if isinstance(r.hauler, str) and r.hauler else None) if x)
+                for r in g.sort_values("slot").itertuples())
     tgt = out["target"].fillna(0)
     totals = {"slots": [float(out[c].sum()) for c in cols],
               "running": [int((out[c] > 0).sum()) for c in cols],

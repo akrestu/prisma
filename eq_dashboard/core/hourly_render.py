@@ -76,7 +76,8 @@ CSS = """
 .ft td.now{box-shadow:inset 0 0 0 .12cqw %(NOW)s}.ft th.now{color:%(NOW)s;font-weight:700}
 .ft td.fu,.ft tr.rf td{color:%(DIM)s}.ft td.tot{font-weight:700}
 .ft td.ach{padding-right:.5cqw}.ft td.ach .bar{margin:0;height:.3cqw}
-.ft td.rm{text-align:left;color:%(MUTED)s}
+.ft td.rm{text-align:left;color:%(MUTED)s;white-space:normal;line-height:1.2;font-size:.72cqw}
+.ft td.h i.rc{display:block;font-style:normal;font-size:.62cqw;line-height:1;color:%(TEXT)s;opacity:.8;font-weight:600;letter-spacing:.02em}
 .ft td.hl{color:%(MUTED)s;font-size:.72cqw;white-space:normal;line-height:1.25;overflow:visible}.ft td.hl b{color:%(TEXT)s;font-weight:600}
 .kpi td.m span{color:%(DIM)s}
 .ft tr.tt td{font-weight:700;border-top:.1cqw solid %(MUTED)s;border-bottom:none}
@@ -245,7 +246,9 @@ def _board(g: str, d: HourlyTv) -> str:
             if k == now:
                 cls.append("now")
             hours += 1
-            cells += f"<td class='{' '.join(cls)}'>{_n(v)}</td>"
+            code = getattr(r, f"m{k}", "") or ""
+            mark = f"<i class='rc'>{escape(code)}</i>" if code else ""
+            cells += f"<td class='{' '.join(cls)}'>{_n(v)}{mark}</td>"
         ach = r.total / (r.target * hours) if pd.notna(r.target) and r.target and hours else None
         route = " → ".join(x for x in (r.pit, r.disposal) if isinstance(x, str) and x)
         rows += (f"<tr><td class='l mu'>{i}</td><td class='l u'>{escape(str(r.loader))}</td>"

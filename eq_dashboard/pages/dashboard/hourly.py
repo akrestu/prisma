@@ -39,6 +39,7 @@ st.caption(("Live: the shift running now. " if live else "")
 with session_scope() as s:
     month = date.replace(day=1)
     rows = repo.hourly_range(s, [site], month, date)
+    remarks = repo.hourly_remarks(s, site, date, shift)
 cur = rows[(rows["date"] == date) & (rows["shift"] == shift)] if len(rows) else rows
 long = H.to_long(cur) if len(cur) else H.to_long(pd.DataFrame())
 lg = long[(long["material_group"] == group) & (long["slot"] <= now_slot)] if len(long) else long
@@ -248,6 +249,14 @@ with t_lines:
     else:
         show = cur.rename(columns=dict(zip(H.R, H.SLOTS[shift], strict=True)))
         cols = ["line", "loader", "loader_model", "operator", "hauler", "hauler_model", "hauler_operator", "material",
-                "muatan", "pit", "disposal", "distance_m", "target_per_hour", *H.SLOTS[shift], "remark_code", "remark"]
+                "muatan", "pit", "disposal", "distance_m", "target_per_hour", *H.SLOTS[shift]]
         st.dataframe(show[cols], hide_index=True, width="stretch")
         excel_download(show[cols], f"hourly_{site}_{date:%Y-%m-%d}_{shift}.xlsx", key="hp_dl")
+    st.markdown("**Remarks per hour**")
+    if remarks.empty:
+        st.caption("No remarks for this shift.")
+    else:
+        rv = pd.DataFrame({"Hour": [H.SLOTS[shift][int(k) - 1] for k in remarks["slot"]], "Excavator": remarks["loader"],
+                           "Hauler": remarks["hauler"], "Code": remarks["code"].map(H.remark_label),
+                           "Remark": remarks["remark"]})
+        st.dataframe(rv, hide_index=True, width="stretch")
