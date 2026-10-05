@@ -226,7 +226,7 @@ def test_clean_remarks_per_hour():
     assert not problems
     assert out[["slot", "loader", "hauler", "code"]].astype(object).where(out.notna(), None).values.tolist() == [
         [4, "WEX019", None, "302"], [4, "WEX019", "WHT026", None]]
-    bad, problems = H.clean_remarks(pd.DataFrame([{"hour": "19-20", "loader": "WEX999", "code": None}]), "DS",
+    _, problems = H.clean_remarks(pd.DataFrame([{"hour": "19-20", "loader": "WEX999", "code": None}]), "DS",
                                     ["WEX019"])
     assert len(problems) == 3          # not a DS hour, loader not in the shift, no code or text
     assert H.remark_label("302") == "302 - Rain" and H.remark_label("999") == "999"
