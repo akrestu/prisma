@@ -122,6 +122,6 @@ def test_remarks_show_in_their_hour_and_in_the_list(db_session):
     assert r["m4"] == "302" and r["m2"] == "402" and r["m1"] == ""
     assert d.events["hours"].tolist() == ["07-08", "09-10"]
     html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
-    assert "<i class='rc'>302</i>" in html and "Events this shift" in html
-    assert "302 - Rain" in html and "WHT026" in html and "— ban" in html
+    assert "<i class='rc'>302</i>" in html and "Events this shift" in html and "class='hc'" in html
+    assert "<b>Rain</b>" in html and "WHT026" in html and "— ban" in html
     assert "<th class='l'>Remark</th>" not in html              # the narrow column is gone

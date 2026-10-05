@@ -15,7 +15,7 @@ import pandas as pd
 from core import brand
 from core import theme as T
 from core.config import WIB
-from core.hourly import SLOTS
+from core.hourly import REMARKS, SLOTS
 from core.hourly_tv import GROUPS, HourlyTv
 from core.tv_render import FONT, KIOSK_CSS, _svg
 
@@ -83,7 +83,13 @@ CSS = """
 .ev li{display:grid;grid-template-columns:7.5cqw 4.6cqw 1fr;gap:.6cqw;font-size:.85cqw;padding:.2cqw 0;
  border-bottom:.05cqw solid %(LINE)s;break-inside:avoid;align-items:baseline}
 .ev li .t{color:%(MUTED)s}.ev li .u{font-weight:600}.ev li .w b{font-weight:600}.ev li .w span{color:%(MUTED)s}
-.ft td.h i.rc{display:block;font-style:normal;font-size:.62cqw;line-height:1;color:%(TEXT)s;opacity:.8;font-weight:600;letter-spacing:.02em}
+.ev li .w .rc{margin-right:.4cqw}
+.rc{display:inline-block;font-style:normal;font-weight:700;font-size:.72cqw;line-height:1.15;letter-spacing:.02em;
+ color:%(BG)s;background:%(TEXT)s;padding:.02cqw .22cqw;border-radius:.15cqw;vertical-align:.08cqw}
+.ft td.h .hc{display:flex;justify-content:space-between;align-items:center;gap:.15cqw}
+.ft td.h .rc{position:relative;padding:.02cqw .18cqw}
+.ft td.h .rc sup{position:absolute;top:-.12cqw;right:-.28cqw;font-size:.48cqw;line-height:1;padding:.04cqw .1cqw;
+ border-radius:.4cqw;background:%(NOW)s;color:%(BG)s}
 .ft td.hl{color:%(MUTED)s;font-size:.72cqw;white-space:normal;line-height:1.25;overflow:visible}.ft td.hl b{color:%(TEXT)s;font-weight:600}
 .kpi td.m span{color:%(DIM)s}
 .ft tr.tt td{font-weight:700;border-top:.1cqw solid %(MUTED)s;border-bottom:none}
@@ -253,8 +259,11 @@ def _board(g: str, d: HourlyTv) -> str:
                 cls.append("now")
             hours += 1
             code = getattr(r, f"m{k}", "") or ""
-            mark = f"<i class='rc'>{escape(code)}</i>" if code else ""
-            cells += f"<td class='{' '.join(cls)}'>{_n(v)}{mark}</td>"
+            codes = code.split()
+            mark = (f"<i class='rc'>{escape(codes[0])}" + (f"<sup>+{len(codes) - 1}</sup>" if len(codes) > 1
+                                                             else "") + "</i>") if codes else ""
+            body = f"<span class='hc'>{mark}<span>{_n(v)}</span></span>" if mark else _n(v)
+            cells += f"<td class='{' '.join(cls)}'>{body}</td>"
         ach = r.total / (r.target * hours) if pd.notna(r.target) and r.target and hours else None
         route = " → ".join(x for x in (r.pit, r.disposal) if isinstance(x, str) and x)
         rows += (f"<tr><td class='l mu'>{i}</td><td class='l u'>{escape(str(r.loader))}</td>"
@@ -291,11 +300,12 @@ def _events(d: HourlyTv) -> str:
     more = len(ev) - len(shown)
     items = ""
     for r in shown.itertuples():
-        code = escape(r.what or "")
+        badge = f"<i class='rc'>{escape(str(r.code))}</i>" if isinstance(r.code, str) and r.code else ""
+        code = escape(REMARKS.get(str(r.code), "") if isinstance(r.code, str) else "")
         note = escape(r.remark) if isinstance(r.remark, str) and r.remark else ""
         truck = f" · {escape(r.hauler)}" if isinstance(r.hauler, str) and r.hauler else ""
         items += (f"<li><span class='t'>{escape(r.hours)}</span><span class='u'>{escape(str(r.loader))}</span>"
-                  f"<span class='w'><b>{code}</b>{truck}" + (f" <span>— {note}</span>" if note else "")
+                  f"<span class='w'>{badge}<b>{code}</b>{truck}" + (f" <span>— {note}</span>" if note else "")
                   + "</span></li>")
     sub = f"{len(ev)} event(s)" + (f" · {more} earlier not shown" if more else "")
     return f'<div class="ev"><h3>Events this shift<span>{sub}</span></h3><ul>{items}</ul></div>'
