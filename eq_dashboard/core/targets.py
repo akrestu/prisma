@@ -50,6 +50,16 @@ def import_targets(s: Session, data: bytes, sites: list[str] | None = None) -> i
     cols = [c for c in (*METRICS, *EXTRA) if c in df.columns]    # a column missing from the file is left as it is
     if not cols:
         raise ValueError("The file has no target columns (e.g. Target PA, Target UoA, MTBS Target).")
+    known = set(s.scalars(select(m.Site.code)))
+    unknown = sorted(set(df["site"].dropna()) - known)
+    if unknown:
+        raise ValueError(f"Unknown site code(s) in the file: {', '.join(unknown)}. Check the spelling or add the site "
+                         "first (Sites & mapping).")
+    dup = df[df.duplicated(["site", "year", "month"], keep=False)]
+    if len(dup):
+        first = dup.iloc[0]
+        raise ValueError(f"The file has {len(dup)} rows for the same site and month (e.g. {first['site']} "
+                         f"{int(first['year'])}-{int(first['month']):02d}). Keep one row per site and month.")
     part = df[["site", "year", "month", *cols]]
     recs = part.astype(object).where(part.notna(), None).to_dict("records")
     stmt = pg_insert(m.Target).values(recs)

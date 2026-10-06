@@ -70,7 +70,9 @@ for uid, uname, name, role, allsite, active, locked in rows:
                 with session_scope() as s:
                     u = s.get(m.User, uid)
                     u.role, u.all_sites, u.active = new_role, new_all or new_role == "admin", new_active
-                    s.execute(delete(m.UserSite).where(m.UserSite.user_id == uid))
+                    # only the sites offered here are replaced: links to inactive sites stay
+                    s.execute(delete(m.UserSite).where(m.UserSite.user_id == uid,
+                                                       m.UserSite.site_code.in_(all_sites)))
                     for code in new_sites:
                         s.add(m.UserSite(user_id=uid, site_code=code))
                     audit(s, user.username, "update_user", None,

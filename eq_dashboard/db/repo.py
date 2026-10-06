@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pandas as pd
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from core.ingest import PENDING, PUBLISHED
@@ -337,13 +337,13 @@ def hourly_shift(s: Session, site: str, date, shift: str) -> tuple[m.HourlyShift
 
 def previous_lines(s: Session, site: str, date, shift: str) -> pd.DataFrame:
     """Lines (without trips) of the latest earlier shift of the site: a starting point for the next shift."""
-    order = (m.HourlyShift.date.desc(), m.HourlyShift.shift.desc())
-    earlier = [sh for sh in s.scalars(select(m.HourlyShift).where(m.HourlyShift.site == site,
-                                                                   m.HourlyShift.date <= date).order_by(*order))
-               if (sh.date, sh.shift) < (date, shift)]
-    if not earlier:
+    h = m.HourlyShift
+    prev = s.execute(select(h.date, h.shift)
+                     .where(h.site == site, or_(h.date < date, and_(h.date == date, h.shift < shift)))
+                     .order_by(h.date.desc(), h.shift.desc()).limit(1)).first()
+    if prev is None:
         return pd.DataFrame(columns=HOURLY_ROW_COLS)
-    _, rows = hourly_shift(s, site, earlier[0].date, earlier[0].shift)
+    _, rows = hourly_shift(s, site, prev.date, prev.shift)
     return rows.assign(**{f"r{i}": None for i in range(1, 13)}, remark_code=None, remark=None)
 
 

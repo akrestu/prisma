@@ -36,7 +36,7 @@ def _confirm(action: str, row, comment: str) -> None:
     if a.button("Approve and publish" if action == "approve" else "Reject upload", type="primary", width="stretch"):
         try:
             with session_scope() as s:
-                us = s.get(m.UploadSite, int(row["id"]))
+                us = _version(s, int(row["id"]))
                 if action == "approve":
                     ing.publish(s, us, user.id, user.username, comment=comment)
                 else:
@@ -48,6 +48,14 @@ def _confirm(action: str, row, comment: str) -> None:
         st.rerun()
     if b.button("Cancel", width="stretch"):
         st.rerun()
+
+
+def _version(s, us_id: int) -> m.UploadSite:
+    """The version to decide on, re-checked on the server: the queue filter alone is not an access check."""
+    us = s.get(m.UploadSite, us_id)
+    if us is None or not can_review(user, us.site_code, sites):
+        raise ValueError(f"Version #{us_id}: you may not review this site.")
+    return us
 
 
 @st.dialog("Approve all")
@@ -63,7 +71,7 @@ def _approve_all(rows) -> None:
         for i, r in enumerate(rows, 1):
             try:
                 with session_scope() as s:
-                    ing.publish(s, s.get(m.UploadSite, int(r["id"])), user.id, user.username, comment="approve all")
+                    ing.publish(s, _version(s, int(r["id"])), user.id, user.username, comment="approve all")
                 done += 1
             except ValueError as e:
                 failed.append(str(e))

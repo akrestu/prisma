@@ -101,3 +101,23 @@ def test_publish_refuses_stale_status_and_db_keeps_one_published(db_session, sam
     with pytest.raises(IntegrityError):
         s.flush()
     s.rollback()
+
+
+def _target_xlsx(rows: list[dict]) -> bytes:
+    import io
+
+    import pandas as pd
+    buf = io.BytesIO()
+    pd.DataFrame(rows).to_excel(buf, index=False)
+    return buf.getvalue()
+
+
+def test_import_targets_refuses_unknown_site_and_duplicate_rows(db_session):
+    s = db_session
+    s.add(m.Site(code="WBK-MAS", name="MAS"))
+    s.commit()
+    with pytest.raises(ValueError, match="Unknown site"):
+        import_targets(s, _target_xlsx([{"Site": "WBK-MSA", "Year": 2026, "Month": 1, "Target UoA": 0.8}]))
+    with pytest.raises(ValueError, match="same site and month"):
+        import_targets(s, _target_xlsx([{"Site": "WBK-MAS", "Year": 2026, "Month": 1, "Target UoA": 0.8}] * 2))
+    assert s.scalar(select(func.count()).select_from(m.Target)) == 0
