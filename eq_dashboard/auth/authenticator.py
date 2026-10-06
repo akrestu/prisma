@@ -91,7 +91,7 @@ def _finish_login(username: str, auth: stauth.Authenticate) -> CurrentUser | Non
             return None
         now = security.now()
         idle = u.last_seen is not None and now - u.last_seen > dt.timedelta(minutes=security.IDLE_MINUTES)
-        if idle and not fresh and not st.session_state.get("_active"):
+        if idle and not fresh:
             s.add(m.AuditLog(username=username, action="session_expired"))
             _force_logout(auth)
             st.info(f"Your session ended after more than {security.IDLE_MINUTES} minutes of inactivity. Please sign in again.")

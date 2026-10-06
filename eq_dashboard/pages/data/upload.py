@@ -5,6 +5,7 @@ import logging
 import pandas as pd
 import streamlit as st
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from auth.access import ADMIN, DATA_OFFICER
 from core import dataprod, metrics
@@ -201,8 +202,14 @@ with t_imp:
             if crit:
                 st.warning(f"{len(crit)} month(s) with critical findings. Sites with critical findings are never "
                            "auto-approved and wait for Site Manager approval. Fixing the file first is better.")
+            # A file may only write the sites this user is scoped to (or unknown codes only an Admin may create).
+            scope = set(sites) | {UNMAPPED}
+            foreign = [] if user.is_admin else sorted({c for r in chosen for c in r.parsed.sites} - scope)
+            if foreign:
+                st.error(f"This file has data for site(s) outside your access: {', '.join(foreign)}. "
+                         "Remove those rows, or ask an Admin to upload it (or to add the site to your account).")
             label = "Submit for approval" if len(chosen) <= 1 else f"Submit {len(chosen)} months for approval"
-            if st.button(label, type="primary", disabled=not chosen):
+            if st.button(label, type="primary", disabled=not chosen or bool(foreign)):
                 saved = []
                 bar = st.progress(0.0, text=f"Saving {len(chosen)} month(s) to the database…")
                 for i, r in enumerate(chosen, 1):
@@ -210,10 +217,15 @@ with t_imp:
                     try:
                         with session_scope() as s:
                             up, ups = ing.ingest(s, data, name, user.id, user.username, parsed=r.parsed,
-                                                 digest=digests[r.month])
+                                                 digest=digests[r.month],
+                                                 sites=None if user.is_admin else sorted(scope))
                             saved.append((r.month, up.id, [(us.site_code, us.status) for us in ups]))
                     except ing.DuplicateUpload as e:
                         st.error(f"{r.month:%b %Y}: {e}")
+                    except SQLAlchemyError as e:
+                        log.exception("Import of %s failed", r.month)
+                        st.error(f"{r.month:%b %Y}: not saved, the database refused the data "
+                                 f"({type(e.__cause__ or e).__name__}). Check blank Shift/Tone/volume cells.")
                     bar.progress(i / len(chosen), text=f"Saved {r.month:%b %Y} ({i} of {len(chosen)})")
                 bar.empty()
                 st.session_state.pop("upload_preview", None)

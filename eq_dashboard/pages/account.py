@@ -19,6 +19,7 @@ with st.form("change_pw", clear_on_submit=True):
     ok = st.form_submit_button("Save", type="primary")
 
 if ok:
+    changed = False
     with session_scope() as s:
         u = s.get(m.User, user.id)
         if not security.check_password(old, u.password_hash):
@@ -32,7 +33,9 @@ if ok:
                 security.set_password(s, user.id, new)
                 s.add(m.AuditLog(username=user.username, action="password_changed"))
                 st.session_state["user"] = type(user)(**{**user.__dict__, "must_change_password": False})
-                st.success("Password updated.")
-                st.rerun()
+                changed = True
             except ValueError as e:
                 st.error(str(e))
+    # st.rerun() raises a BaseException: calling it inside session_scope skips the commit.
+    if changed:
+        st.rerun()
