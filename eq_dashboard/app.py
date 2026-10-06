@@ -104,6 +104,8 @@ def allowed(key: str) -> bool:
     return user.role in PAGE_ROLES[key]
 
 
+if st.session_state.pop("password_updated", False):
+    st.toast("Password updated.")
 if user.must_change_password:
     nav = st.navigation([OTHER["account"]])
 else:

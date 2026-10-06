@@ -113,13 +113,13 @@ def check_fuel(f_raw_missing: int, f: pd.DataFrame, rc: pd.DataFrame) -> list[pd
 
 def dropped_rows(df: pd.DataFrame, sheet: str, what: str, sites: list[str]) -> list[pd.DataFrame]:
     """Rows clean_* removed because `what` was unreadable. Their figures are lost, so this is critical; a row whose
-    site is unknown is reported to every site of the file (any of them may be the one missing data)."""
+    site is unknown (or UNMAPPED, e.g. a blank unit) is reported to every site of the file (any of them may be the one missing data)."""
     gone = df.attrs.get("dropped", [])
     if not gone:
         return []
     by_site: dict[str, list[int]] = {}
     for row, site in gone:
-        for s in [site] if site else (sites or [UNMAPPED]):
+        for s in [site] if site and site != UNMAPPED else (sites or [UNMAPPED]):
             by_site.setdefault(s, []).append(row)
     return [pd.DataFrame([{"site": s, "rule": "rows_dropped", "severity": "critical", "sheet": sheet,
                            "row_ref": rows[0], "unit_id": None, "date": None,
@@ -144,7 +144,7 @@ def fit_table(df: pd.DataFrame, model, sheet: str, skip: tuple[str, ...] = ("id"
         out = out[~bad]
     for c in cols:
         n = c.type.length if isinstance(c.type, String) else None
-        if n is None or not pd.api.types.is_string_dtype(out[c.key]):
+        if n is None or not (out[c.key].dtype == object or pd.api.types.is_string_dtype(out[c.key])):
             continue
         long = out[c.key].map(lambda v, n=n: isinstance(v, str) and len(v) > n)
         if long.any():

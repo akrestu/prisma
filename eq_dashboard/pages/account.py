@@ -38,4 +38,5 @@ if ok:
                 st.error(str(e))
     # st.rerun() raises a BaseException: calling it inside session_scope skips the commit.
     if changed:
+        st.session_state["password_updated"] = True
         st.rerun()

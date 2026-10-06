@@ -128,7 +128,9 @@ def parse_frames(frames: dict[str, pd.DataFrame], alias: dict[str, str] | None =
         fit.extend(found)
         return out
 
+    units = fit_(units, m.DimUnit, "Unit Population")
     events = fit_(events, m.FactEvent, "Equipment Events")
+    events["seq"] = events.groupby("unit_id").cumcount()  # no gaps where rows were left out (PM block starts)
     stoppages = fit_(clean.build_stoppages(events), m.FactStoppage, "Equipment Events")
     ritase = fit_(ritase, m.FactRitase, "Hauler Trips")
     kept = fit_(coal[~coal["cancelled"]], m.FactCoalTicket, "Coal Weighbridge")

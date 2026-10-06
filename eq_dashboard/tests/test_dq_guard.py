@@ -42,3 +42,18 @@ def test_dropped_row_of_unknown_site_is_critical_for_every_site():
 
 def test_no_findings_when_nothing_dropped():
     assert dq.dropped_rows(_events(), "Equipment Events", "date", ["S1"]) == []
+
+
+def test_dropped_row_of_unmapped_unit_counts_for_every_site():
+    """A blank Unit ID looks up to UNMAPPED: the finding must still stop the real sites from auto-approving."""
+    ev = _events()
+    ev.attrs["dropped"] = [(9, "UNMAPPED")]
+    f = dq.combine(dq.dropped_rows(ev, "Equipment Events", "unit", ["S1", "S2"]))
+    assert sorted(f["site"]) == ["S1", "S2"]
+
+
+def test_object_text_column_with_gaps_is_still_cut():
+    """Lookup columns are object dtype with NaN for unknown units; they must be cut as well."""
+    ev = _events().assign(model=pd.Series(["m" * 90, None, "short"], dtype=object))
+    out, _ = dq.fit_table(ev, m.FactEvent, "Equipment Events")
+    assert out["model"].dropna().str.len().max() == 80
