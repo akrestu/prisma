@@ -38,6 +38,18 @@ def _ids(s: pd.Series, alias: dict[str, str] | None = None) -> pd.Series:
     return out.replace(alias) if alias else out
 
 
+def _drop_missing(out: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """dropna on `cols`, remembering the Excel rows removed as (row, site) in attrs['dropped'] so parse can
+    report them."""
+    miss = out[cols].isna().any(axis=1)
+    kept = out[~miss]
+    gone = out.loc[miss].drop_duplicates("row_ref")
+    site = gone["site"] if "site" in gone else pd.Series(None, index=gone.index)  # None: site unknown
+    kept.attrs["dropped"] = [(int(r), s) for r, s in zip(gone["row_ref"], site.where(site.notna(), None),
+                                                          strict=True) if pd.notna(r)]
+    return kept
+
+
 def month_start(d: pd.Series) -> pd.Series:
     return pd.to_datetime(d).dt.to_period("M").dt.to_timestamp().dt.date
 
@@ -92,7 +104,7 @@ def clean_events(df: pd.DataFrame, units: pd.DataFrame, week_fn=week_of) -> pd.D
         "reason_text": reason.str.replace(r"^\s*\d{3}\s*", "", regex=True).str.strip(),
         "down_type": status.map({"SM": "Schedule", "USM": "Unschedule"}),
     })
-    out = out.dropna(subset=["date", "unit_id"])
+    out = _drop_missing(out, ["date", "unit_id"])
     out["month"] = month_start(out["date"])
     # urutan kronologis: shift malam melewati tengah malam (jam < 12:00 = setelah 00:00)
     t = out["time_start"].fillna(0.0)
@@ -155,7 +167,7 @@ def clean_ritasi(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str] | 
     hours = df[HOUR_SLOTS].apply(num)
     long = pd.concat([base, hours], axis=1).melt(id_vars=list(base.columns), value_vars=HOUR_SLOTS,
                                                  var_name="hour_slot", value_name="rit")
-    long = long[long["rit"].fillna(0) > 0].dropna(subset=["date"]).copy()
+    long = _drop_missing(long[long["rit"].fillna(0) > 0], ["date"]).copy()
     long["shift"] = np.where(long["hour_slot"].isin(DS_SLOTS), "DS", "NS")
     long["volume"] = long["rit"] * long["muatan"]
     long["material_group"] = material_group(long["material"])
@@ -188,7 +200,8 @@ def clean_timbangan(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str]
         "time_out": excel_date(df["Tanggal / Jam Keluar"]),
         "dist_h": num(df["H Distance"]),
         "dist_v": num(df["V Distance"]),
-    }).dropna(subset=["date"])
+    })
+    out = _drop_missing(out, ["date"])
     out["cancelled"] = out["supplier"].str.upper().eq("BATAL").fillna(False)
     out["site"] = _lookup(out["loader"], units, "site", UNMAPPED)
     out["site_dt"] = _lookup(out["dt_unit"], units, "site", UNMAPPED)
@@ -210,7 +223,8 @@ def clean_fuel(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str] | No
         "model": _lookup(unit, units, "model").fillna(text(df["MODEL"])),
         "liters": num(df["FLUID CONSUMPTION"]),
         "site": _lookup(unit, units, "site", UNMAPPED),
-    }).dropna(subset=["date", "unit_id"])
+    })
+    out = _drop_missing(out, ["date", "unit_id"])
     out["month"] = month_start(out["date"])
     p99 = out.groupby("model")["liters"].transform(lambda s: s.quantile(0.99) if s.count() >= 20 else np.inf)
     out["outlier"] = (out["liters"] > p99).fillna(False)
@@ -233,6 +247,7 @@ def clean_receipt(df: pd.DataFrame, units: pd.DataFrame, tank_site: dict[str, st
         "dn_no": text(df["DELIVERY NOTE"]),
         "liters": num(df["DELIVERY NOTE_VOLUME"]),
         "site": site.fillna(UNMAPPED),
-    }).dropna(subset=["date"])
+    })
+    out = _drop_missing(out, ["date"])
     out["month"] = month_start(out["date"])
     return out.reset_index(drop=True)

@@ -61,6 +61,7 @@ def authenticate() -> tuple[CurrentUser | None, stauth.Authenticate]:
 
 
 def _login_form(auth: stauth.Authenticate, creds: dict) -> CurrentUser | None:
+    before = security.failed_counts(creds)
     try:
         auth.login(location="main", max_login_attempts=security.MAX_FAILED, fields=LOGIN_FIELDS,
                    callback=_on_login)
@@ -71,7 +72,7 @@ def _login_form(auth: stauth.Authenticate, creds: dict) -> CurrentUser | None:
         return None
 
     with session_scope() as s:
-        locked = security.sync_failed_attempts(s, creds)
+        locked = security.sync_failed_attempts(s, creds, before)
     if locked:
         st.error(f"Too many failed attempts. The account is locked for {security.LOCK_MINUTES} minutes.")
     status = st.session_state.get("authentication_status")

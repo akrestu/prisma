@@ -60,6 +60,20 @@ def lookups(s: Session) -> tuple[dict[str, str], dict[str, str]]:
     return alias, tanks
 
 
+def live_uploads(s: Session, digests: list[str]) -> dict[str, int]:
+    """digest → upload id for files already imported and still in use. An upload whose versions were all rejected or
+    superseded does not count: the same file may come in again (e.g. after fixing an alias or the unit population,
+    which are applied at import)."""
+    if not digests:
+        return {}
+    rows = s.execute(select(m.Upload.sha256, m.Upload.id, m.UploadSite.status)
+                     .outerjoin(m.UploadSite, m.UploadSite.upload_id == m.Upload.id)
+                     .where(m.Upload.sha256.in_(digests))).all()
+    retired = {REJECTED, SUPERSEDED}
+    # PENDING, PUBLISHED, or an upload without versions
+    return {d: up_id for d, up_id, status in rows if status not in retired}
+
+
 def month_digest(data: bytes, month) -> str:
     """Fingerprint of one month taken from a multi-month file: re-uploading the same file finds each month again."""
     return sha256(data + f"|{month:%Y-%m}".encode())
@@ -72,8 +86,12 @@ def ingest(s: Session, data: bytes, filename: str, user_id: int | None = None,
     multi-month file pass its `parsed` month and `digest` (month_digest). `sites` limits the versions created (a
     manual edit of one site must not create partial versions for other sites its rows mention)."""
     digest = digest or sha256(data)
-    if s.scalar(select(m.Upload.id).where(m.Upload.sha256 == digest)):
+    if digest in live_uploads(s, [digest]):
         raise DuplicateUpload("An identical file has already been uploaded.")
+    old = s.scalar(select(m.Upload).where(m.Upload.sha256 == digest))
+    if old is not None:  # retired copy of the same file: free the unique digest, keep the old rows for history
+        old.sha256 = sha256(f"{digest}#retired-{old.id}".encode())
+        s.flush()
     if parsed is None:
         from db.repo import population_for  # local import: db.repo imports this module
         alias, tanks = lookups(s)

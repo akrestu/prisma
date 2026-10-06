@@ -8,6 +8,7 @@ Severity:
 from __future__ import annotations
 
 import pandas as pd
+from sqlalchemy import String
 
 from core.config import NO_DATA, UNMAPPED
 
@@ -108,6 +109,49 @@ def check_fuel(f_raw_missing: int, f: pd.DataFrame, rc: pd.DataFrame) -> list[pd
     tk = rc[rc["site"] == UNMAPPED].rename(columns={"unit": "unit_id"}).drop_duplicates("unit_id")
     out.append(_rows(tk, "tank_without_site", "warn", "Fuel Receipts", "Add a tank → site mapping"))
     return out
+
+
+def dropped_rows(df: pd.DataFrame, sheet: str, what: str, sites: list[str]) -> list[pd.DataFrame]:
+    """Rows clean_* removed because `what` was unreadable. Their figures are lost, so this is critical; a row whose
+    site is unknown is reported to every site of the file (any of them may be the one missing data)."""
+    gone = df.attrs.get("dropped", [])
+    if not gone:
+        return []
+    by_site: dict[str, list[int]] = {}
+    for row, site in gone:
+        for s in [site] if site else (sites or [UNMAPPED]):
+            by_site.setdefault(s, []).append(row)
+    return [pd.DataFrame([{"site": s, "rule": "rows_dropped", "severity": "critical", "sheet": sheet,
+                           "row_ref": rows[0], "unit_id": None, "date": None,
+                           "detail": f"{len(rows)} row(s) without a readable {what} were left out (Excel row "
+                                     f"{', '.join(map(str, rows[:10]))}{' …' if len(rows) > 10 else ''})"}])
+            for s, rows in by_site.items()]
+
+
+def fit_table(df: pd.DataFrame, model, sheet: str, skip: tuple[str, ...] = ("id", "upload_id", "month")
+              ) -> tuple[pd.DataFrame, list[pd.DataFrame]]:
+    """Make a cleaned sheet storable in `model`'s table: a row with an empty required column is left out (critical,
+    or the database would refuse the whole month), text longer than its column is cut (warn)."""
+    cols = [c for c in model.__table__.columns if c.key not in skip and c.key in df.columns]
+    out, found = df, []
+    req = [c.key for c in cols if not c.nullable]
+    miss = out[req].isna()
+    bad = miss.any(axis=1)
+    if bad.any():
+        b = out[bad].assign(_cols=miss[bad].apply(lambda r: ", ".join(r.index[r]), axis=1))
+        found.append(_rows(b, "required_value_missing", "critical", sheet,
+                           lambda r: f"Empty or unreadable {r['_cols']} → row left out"))
+        out = out[~bad]
+    for c in cols:
+        n = c.type.length if isinstance(c.type, String) else None
+        if n is None or not pd.api.types.is_string_dtype(out[c.key]):
+            continue
+        long = out[c.key].map(lambda v, n=n: isinstance(v, str) and len(v) > n)
+        if long.any():
+            found.append(_rows(out[long].drop_duplicates(c.key), "text_too_long", "warn", sheet,
+                               f"{c.key} longer than {n} characters → cut"))
+            out = out.assign(**{c.key: out[c.key].where(~long, out[c.key].str[:n])})
+    return out, found
 
 
 def combine(parts: list[pd.DataFrame]) -> pd.DataFrame:

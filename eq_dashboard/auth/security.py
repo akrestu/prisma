@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime as dt
 
 import bcrypt
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from db import models as m
@@ -58,24 +58,34 @@ def credentials(s: Session) -> dict:
     return {"usernames": users}
 
 
-def sync_failed_attempts(s: Session, creds: dict) -> list[str]:
-    """Tulis balik hitungan gagal login dari credentials ke DB; kunci akun yang mencapai batas.
-    Mengembalikan username yang baru terkunci."""
+def failed_counts(creds: dict) -> dict[str, int]:
+    """Failed-login counts as read from the DB, taken before the login form runs (it changes `creds` in place)."""
+    return {u: int(i.get("failed_login_attempts", 0)) for u, i in creds["usernames"].items()}
+
+
+def sync_failed_attempts(s: Session, creds: dict, before: dict[str, int]) -> list[str]:
+    """Add this run's new failed logins to the DB and lock accounts that reach the limit. Only the increase is
+    written, atomically, so guesses from parallel sessions all count. Returns the usernames newly locked."""
     locked = []
-    users = {u.username: u for u in s.scalars(select(m.User).where(m.User.username.in_(list(creds["usernames"]))))}
     for username, info in creds["usernames"].items():
-        u = users.get(username)
-        n = int(info.get("failed_login_attempts", 0))
-        if u is None or n == u.failed_logins:
+        n, was = int(info.get("failed_login_attempts", 0)), before.get(username, 0)
+        if n == was:
             continue
-        if n >= MAX_FAILED:
-            u.failed_logins, u.locked_until = 0, now() + dt.timedelta(minutes=LOCK_MINUTES)
+        if n < was:  # successful sign-in reset the count
+            s.execute(update(m.User).where(m.User.username == username).values(failed_logins=0))
+            continue
+        total = s.scalar(update(m.User).where(m.User.username == username)
+                         .values(failed_logins=m.User.failed_logins + (n - was)).returning(m.User.failed_logins))
+        if total is None:
+            continue
+        if total >= MAX_FAILED:
+            s.execute(update(m.User).where(m.User.username == username)
+                      .values(failed_logins=0, locked_until=now() + dt.timedelta(minutes=LOCK_MINUTES)))
             s.add(m.AuditLog(username=username, action="account_locked",
                              detail=f"{MAX_FAILED} failed logins, locked for {LOCK_MINUTES} minutes"))
             locked.append(username)
         else:
-            u.failed_logins = n
-            s.add(m.AuditLog(username=username, action="login_failed", detail=f"attempt {n}"))
+            s.add(m.AuditLog(username=username, action="login_failed", detail=f"attempt {total}"))
     return locked
 
 

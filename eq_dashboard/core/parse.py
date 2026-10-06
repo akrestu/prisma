@@ -10,6 +10,7 @@ import pandas as pd
 from core import clean, dq
 from core.io import excel_date, read_workbook
 from core.validate import StructureError, validate
+from db import models as m
 
 
 @dataclass
@@ -110,16 +111,36 @@ def parse_frames(frames: dict[str, pd.DataFrame], alias: dict[str, str] | None =
     if len(months) > 1:
         raise StructureError([f"This data holds more than one month ({', '.join(map(str, months))}); "
                               "use parse_months to read it month by month."])
-    stoppages = clean.build_stoppages(events)
     ritase = clean.clean_ritasi(frames["Hauler Trips"], units, alias)
     coal = clean.clean_timbangan(frames["Coal Weighbridge"], units, alias)
     fuel_all = clean.clean_fuel(frames["Fuel Consumption"], units, alias)
     fuel = fuel_all.dropna(subset=["liters"])
+    no_volume = len(fuel_all) - len(fuel)
     receipt = clean.clean_receipt(frames["Fuel Receipts"], units, tank_site)
-    findings = dq.combine(dq.check_units(units) + dq.check_events(events) + dq.check_ritasi(ritase)
-                          + dq.check_timbangan(coal) + dq.check_fuel(len(fuel_all) - len(fuel), fuel, receipt))
+    raw = {"Equipment Events": (events, "date or unit"), "Hauler Trips": (ritase, "date"),
+           "Coal Weighbridge": (coal, "date"), "Fuel Consumption": (fuel_all, "date or unit"),
+           "Fuel Receipts": (receipt, "date")}
+    # what the database would refuse is left out here, with a finding, instead of failing the whole month on submit
+    fit: list[pd.DataFrame] = []
+
+    def fit_(df, model, sheet):
+        out, found = dq.fit_table(df, model, sheet)
+        fit.extend(found)
+        return out
+
+    events = fit_(events, m.FactEvent, "Equipment Events")
+    stoppages = fit_(clean.build_stoppages(events), m.FactStoppage, "Equipment Events")
+    ritase = fit_(ritase, m.FactRitase, "Hauler Trips")
+    kept = fit_(coal[~coal["cancelled"]], m.FactCoalTicket, "Coal Weighbridge")
+    coal = pd.concat([kept, coal[coal["cancelled"]]]).sort_index()
+    fuel = fit_(fuel, m.FactFuel, "Fuel Consumption")
+    receipt = fit_(receipt, m.FactFuelReceipt, "Fuel Receipts")
     sites = sorted(set(events["site"]) | set(ritase["site"]) | set(coal["site"]) | set(fuel["site"])
                    | set(receipt["site"]))
+    gone = [x for sheet, (df, what) in raw.items() for x in dq.dropped_rows(df, sheet, what, sites)]
+    findings = dq.combine(dq.check_units(units) + dq.check_events(events) + dq.check_ritasi(ritase)
+                          + dq.check_timbangan(coal) + dq.check_fuel(no_volume, fuel, receipt)
+                          + gone + fit)
     return Parsed(months[0], units, events, stoppages, ritase, coal, fuel, receipt, findings, sites, source)
 
 

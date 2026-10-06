@@ -46,18 +46,40 @@ def test_lockout_after_5_failures(db_session):
     security.create_user(s, "budi", "Budi S", VIEWER, "Tambang-2026x", sites=["WBK-MAS"])
     s.commit()
     creds = security.credentials(s)
+    before = security.failed_counts(creds)
     creds["usernames"]["budi"]["failed_login_attempts"] = 3
-    assert security.sync_failed_attempts(s, creds) == []
+    assert security.sync_failed_attempts(s, creds, before) == []
+    s.expire_all()
     assert s.query(m.User).filter_by(username="budi").one().failed_logins == 3
+    before = security.failed_counts(creds)
     creds["usernames"]["budi"]["failed_login_attempts"] = 5
-    assert security.sync_failed_attempts(s, creds) == ["budi"]
+    assert security.sync_failed_attempts(s, creds, before) == ["budi"]
     s.commit()
+    s.expire_all()
     u = s.query(m.User).filter_by(username="budi").one()
     assert security.is_locked(u) and u.failed_logins == 0
     assert "budi" not in security.credentials(s)["usernames"]  # cookie & login ditolak selama terkunci
     u.locked_until = security.now() - dt.timedelta(minutes=1)
     s.commit()
     assert "budi" in security.credentials(s)["usernames"]
+
+
+def test_parallel_failed_logins_all_count(db_session):
+    """Each session reads the same count from the DB; every session's failure must still be added."""
+    s = db_session
+    _sites(s)
+    security.create_user(s, "budi", "Budi S", VIEWER, "Tambang-2026x", sites=["WBK-MAS"])
+    s.commit()
+    sessions = [security.credentials(s) for _ in range(security.MAX_FAILED)]
+    befores = [security.failed_counts(c) for c in sessions]
+    locked = []
+    for c, b in zip(sessions, befores, strict=True):
+        c["usernames"]["budi"]["failed_login_attempts"] = 1
+        locked += security.sync_failed_attempts(s, c, b)
+    s.commit()
+    assert locked == ["budi"]
+    s.expire_all()
+    assert security.is_locked(s.query(m.User).filter_by(username="budi").one())
 
 
 def test_inactive_user_excluded(db_session):

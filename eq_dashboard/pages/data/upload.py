@@ -4,7 +4,6 @@ import logging
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from auth.access import ADMIN, DATA_OFFICER
@@ -15,7 +14,6 @@ from core.io import sha256
 from core.parse import parse_months
 from core.ui import STATUS_BADGE, fmt_num, fmt_pct, require, sites_for
 from core.validate import DATA_SHEETS, DATASET, EVENTS, SHEET_BY_NAME, TEMPLATE_VERSION, StructureError, file_stem
-from db import models as m
 from db import repo
 from db.engine import session_scope
 
@@ -113,7 +111,7 @@ with t_imp:
             prev = st.session_state.get("upload_preview")
             if prev is None or prev["digest"] != digest:
                 with session_scope() as s:
-                    dup = s.scalar(select(m.Upload.id).where(m.Upload.sha256 == digest))
+                    dup = ing.live_uploads(s, [digest]).get(digest)
                     alias, tanks = ing.lookups(s)
                 if dup:
                     st.error(f"This file is identical to upload #{dup}. No need to upload it again.")
@@ -139,8 +137,7 @@ with t_imp:
                     multi = len(results) > 1
                     digests = {r.month: ing.month_digest(data, r.month) if multi else digest for r in results}
                     with session_scope() as s:
-                        done = dict(s.execute(select(m.Upload.sha256, m.Upload.id)
-                                              .where(m.Upload.sha256.in_(list(digests.values())))).all())
+                        done = ing.live_uploads(s, list(digests.values()))
                     ok = sum(r.parsed is not None for r in results)
                     box.update(label=f"Workbook read: {len(results)} month(s), {ok} readable", state="complete",
                                expanded=False)
