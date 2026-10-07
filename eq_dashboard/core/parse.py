@@ -30,11 +30,13 @@ class Parsed:
 
 def parse_data_prod(data: bytes, alias: dict[str, str] | None = None,
                     tank_site: dict[str, str] | None = None,
-                    population: Callable[[dt.date], pd.DataFrame | None] | pd.DataFrame | None = None) -> Parsed:
+                    population: Callable[[dt.date], pd.DataFrame | None] | pd.DataFrame | None = None, *,
+                    cutover: dt.date | None = None) -> Parsed:
     """`population` gives the units (unit_id, type, description, model, manufacturer, site) valid for the file's
     month: a DataFrame, or a function month → DataFrame (the Unit Population version in force). Without one, the
-    old 'Unit Population' sheet of the workbook is used. The file must hold one month (see `parse_months`)."""
-    return parse_frames(validate(read_workbook(data)), alias, tank_site, population)
+    old 'Unit Population' sheet of the workbook is used. The file must hold one month (see `parse_months`).
+    `cutover`: Hauler Trips rows on or after it are left out (Hourly Production is the source from then on)."""
+    return parse_frames(validate(read_workbook(data)), alias, tank_site, population, cutover=cutover)
 
 
 # the production date of each data sheet: a multi-month workbook is split on these
@@ -75,14 +77,14 @@ def split_months(frames: dict[str, pd.DataFrame]) -> dict[dt.date, dict[str, pd.
 
 
 def parse_months(data: bytes, alias: dict[str, str] | None = None, tank_site: dict[str, str] | None = None,
-                 population: Callable[[dt.date], pd.DataFrame | None] | pd.DataFrame | None = None
-                 ) -> list[MonthResult]:
+                 population: Callable[[dt.date], pd.DataFrame | None] | pd.DataFrame | None = None, *,
+                 cutover: dt.date | None = None) -> list[MonthResult]:
     """A workbook with one or many months (e.g. a whole year) → one result per month. The structure is checked once
     for the whole file (StructureError); a month that cannot be read gets its problems instead of failing the file."""
     out = []
     for mo, part in split_months(validate(read_workbook(data))).items():
         try:
-            out.append(MonthResult(mo, parse_frames(part, alias, tank_site, population)))
+            out.append(MonthResult(mo, parse_frames(part, alias, tank_site, population, cutover=cutover)))
         except StructureError as e:
             out.append(MonthResult(mo, problems=e.problems))
     return out
@@ -90,7 +92,8 @@ def parse_months(data: bytes, alias: dict[str, str] | None = None, tank_site: di
 
 def parse_frames(frames: dict[str, pd.DataFrame], alias: dict[str, str] | None = None,
                  tank_site: dict[str, str] | None = None,
-                 population: Callable[[dt.date], pd.DataFrame | None] | pd.DataFrame | None = None) -> Parsed:
+                 population: Callable[[dt.date], pd.DataFrame | None] | pd.DataFrame | None = None, *,
+                 cutover: dt.date | None = None) -> Parsed:
     month = _file_month(frames["Equipment Events"])
     units, source = None, ""
     if population is not None:
@@ -112,7 +115,10 @@ def parse_frames(frames: dict[str, pd.DataFrame], alias: dict[str, str] | None =
         raise StructureError([f"This data holds more than one month ({', '.join(map(str, months))}); "
                               "use parse_months to read it month by month."])
     ritase = clean.clean_ritasi(frames["Hauler Trips"], units, alias)
-    coal = clean.clean_timbangan(frames["Coal Weighbridge"], units, alias)
+    after_cut = dq.after_cutover(ritase, cutover)
+    if cutover is not None and len(ritase):
+        ritase = ritase[ritase["date"].isna() | (ritase["date"] < cutover)].reset_index(drop=True)
+    coal =clean.clean_timbangan(frames["Coal Weighbridge"], units, alias)
     fuel_all = clean.clean_fuel(frames["Fuel Consumption"], units, alias)
     fuel = fuel_all.dropna(subset=["liters"])
     no_volume = len(fuel_all) - len(fuel)
@@ -142,7 +148,7 @@ def parse_frames(frames: dict[str, pd.DataFrame], alias: dict[str, str] | None =
     gone = [x for sheet, (df, what) in raw.items() for x in dq.dropped_rows(df, sheet, what, sites)]
     findings = dq.combine(dq.check_units(units) + dq.check_events(events) + dq.check_ritasi(ritase)
                           + dq.check_timbangan(coal) + dq.check_fuel(no_volume, fuel, receipt)
-                          + gone + fit)
+                          + gone + fit + after_cut)
     return Parsed(months[0], units, events, stoppages, ritase, coal, fuel, receipt, findings, sites, source)
 
 

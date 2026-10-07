@@ -150,14 +150,17 @@ def material_group(material: pd.Series) -> pd.Series:
 
 def clean_ritasi(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str] | None = None) -> pd.DataFrame:
     dt_ = excel_date(df["Date"])
+    hauler, loader = _ids(df["EqNumber"], alias), _ids(df["Loader"], alias)
+    na = pd.Series(pd.NA, index=df.index, dtype="string")
     base = pd.DataFrame({
         "row_ref": df["_row"],
         "date": dt_.dt.date,
-        "hauler": _ids(df["EqNumber"], alias),
-        "hauler_model": text(df["EqModel"]),
+        "hauler": hauler,
+        # models come from the Unit Population; the file's columns are optional and only fill units it lacks
+        "hauler_model": _lookup(hauler, units, "model").fillna(text(df.get("EqModel", na))),
         "muatan": num(df["Muatan"]).fillna(0.0),
-        "loader": _ids(df["Loader"], alias),
-        "loader_model": text(df["Loader Model"]),
+        "loader": loader,
+        "loader_model": _lookup(loader, units, "model").fillna(text(df.get("Loader Model", na))),
         "material": text(df["Material"]),
         "pit": text(df["Lokasi Loader"]),
         "disposal": text(df["Disposal"]),
@@ -220,7 +223,8 @@ def clean_fuel(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str] | No
         "time": day_fraction(df["TIME"]),
         "unit_id": unit,
         "type": _lookup(unit, units, "type"),
-        "model": _lookup(unit, units, "model").fillna(text(df["MODEL"])),
+        "model": _lookup(unit, units, "model").fillna(text(df.get("MODEL", pd.Series(pd.NA, index=df.index,
+                                                                                   dtype="string")))),
         "liters": num(df["FLUID CONSUMPTION"]),
         "site": _lookup(unit, units, "site", UNMAPPED),
     })

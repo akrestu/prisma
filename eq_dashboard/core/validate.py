@@ -35,6 +35,7 @@ class Col:
     desc: str
     example: object = None
     choices: tuple[str, ...] = ()
+    optional: bool = False     # may be left empty or left out of the file (filled from the Unit Population)
 
 
 @dataclass(frozen=True)
@@ -72,10 +73,11 @@ SHEETS: tuple[Sheet, ...] = (
     Sheet("Hauler Trips", 1, "Trips per hauler × loader × material, counted per production hour (06-07 … 05-06).", (
         Col("Date", "date", "Production date", "2026-09-01"),
         Col("EqNumber", "text", "Hauler unit ID", "WHT026"),
-        Col("EqModel", "text", "Hauler model", "777E"),
+        Col("EqModel", "text", "Hauler model (optional: taken from the Unit Population)", "777E", optional=True),
         Col("Muatan", "number", "Load per trip (BCM for OB, ton for coal)", 41),
         Col("Loader", "text", "Loader unit ID (production is credited to the loader's site)", "WEX015"),
-        Col("Loader Model", "text", "Loader model", "CAT6015B"),
+        Col("Loader Model", "text", "Loader model (optional: taken from the Unit Population)", "CAT6015B",
+            optional=True),
         Col("Material", "text", "Starts with OB or CG (e.g. 'OB - FreeDig', 'CG - Seam UP3')", "OB - FreeDig"),
         Col("Lokasi Loader", "text", "Pit / loading point", "PIT ALAM 1-3"),
         Col("Disposal", "text", "Dumping point", "DISPOSAL A"),
@@ -100,7 +102,7 @@ SHEETS: tuple[Sheet, ...] = (
     Sheet("Fuel Consumption", 0, "Fuel given to each unit.", (
         Col("DATE", "date", "Date", "2026-09-01"),
         Col("SHIFT", "list", "I (day) or II (night); DS/NS also accepted", "I", ("I", "II")),
-        Col("MODEL", "text", "Unit model", "CGE37084R"),
+        Col("MODEL", "text", "Unit model (optional: taken from the Unit Population)", "CGE37084R", optional=True),
         Col("UNIT", "text", "Unit ID", "WDT027"),
         Col("TIME", "time", "Time of refuelling (HH:MM)", "07:10"),
         Col("FLUID CONSUMPTION", "number", "Litres", 159),
@@ -172,7 +174,10 @@ def validate(raw: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
             problems.append(f"Sheet '{sh.name}' is empty: the column names belong in row {sh.header_row + 1}.")
             continue
         df = frame(raw[sh.name], sh.header_row)
-        missing = [c.name for c in sh.cols if c.name not in df.columns]
+        missing = [c.name for c in sh.cols if c.name not in df.columns and not c.optional]
+        for c in sh.cols:
+            if c.optional and c.name not in df.columns:
+                df[c.name] = pd.NA
         if missing:
             problems.append(f"Sheet '{sh.name}' (row {sh.header_row + 1}) is missing columns: {', '.join(missing)}.")
         frames[sh.name] = df

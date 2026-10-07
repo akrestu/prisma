@@ -56,6 +56,22 @@ def check_ritasi(r: pd.DataFrame) -> list[pd.DataFrame]:
     return out
 
 
+def after_cutover(r: pd.DataFrame, cutover) -> list[pd.DataFrame]:
+    """Hauler Trips rows on or after the hourly cutover are left out (Hourly Production is the source from then on):
+    one info finding per site, so the import says what happened instead of dropping them silently."""
+    if cutover is None or r.empty:
+        return []
+    x = r[r["date"].notna() & (r["date"] >= cutover)]
+    if x.empty:
+        return []
+    g = x.groupby("site").agg(rows=("row_ref", "nunique"), first=("date", "min"), last=("date", "max")).reset_index()
+    return [pd.DataFrame({"site": g["site"], "rule": "ritase_after_cutover", "severity": "info", "sheet": "Hauler Trips",
+                          "row_ref": None, "unit_id": None, "date": None,
+                          "detail": g.apply(lambda q: f"{int(q['rows'])} row(s) dated {q['first']:%d %b} – "
+                                                      f"{q['last']:%d %b %Y} left out: from {cutover:%d %b %Y} OB and "
+                                                      "coal ritase come from Hourly Production.", axis=1)})]
+
+
 def _rit_as_volume(r: pd.DataFrame) -> pd.DataFrame:
     """Hour cells must hold trips. When nearly every cell of a site is a whole multiple of Muatan (and at least one
     load), the sheet was filled with volume: every figure would be Muatan times too high. Critical, so it is never

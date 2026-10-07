@@ -121,7 +121,8 @@ with t_imp:
                         st.write("Checking sheets and columns, splitting by month")
                         with session_scope() as s:
                             results = parse_months(data, alias, tanks,
-                                                   population=lambda mo: repo.population_for(s, mo))
+                                                   population=lambda mo: repo.population_for(s, mo),
+                                                   cutover=repo.hourly_cutover(s))
                     except StructureError as e:
                         box.update(label="File rejected: the structure does not match the template", state="error")
                         for p_ in e.problems:
@@ -352,7 +353,8 @@ with t_edit:
                         alias, tanks = ing.lookups(s)
                         try:
                             results = parse_months(data, alias, tanks,
-                                                   population=lambda mo: repo.population_for(s, mo))
+                                                   population=lambda mo: repo.population_for(s, mo),
+                                                   cutover=repo.hourly_cutover(s))
                         except StructureError as e:
                             results, problems = [], e.problems
                     if len(results) != 1 or results[0].parsed is None or results[0].month != month:

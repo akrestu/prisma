@@ -469,6 +469,22 @@ def hourly_ritase(s: Session, sites: list[str], d0, d1) -> pd.DataFrame:
     return H.as_ritase(H.to_long(rows)) if len(rows) else pd.DataFrame(columns=H.RITASE_COLS)
 
 
+def workbook_ritase_after_cutover(s: Session, delete: bool = False) -> pd.DataFrame:
+    """Production Data ritase rows dated on or after the cutover (dashboards already ignore them): per site the row
+    count and dates; `delete=True` removes them once, so no duplicate stays stored next to Hourly Production."""
+    from sqlalchemy import delete as sql_delete
+    cut = hourly_cutover(s)
+    r = m.FactRitase
+    cols = ["site", "rows", "first", "last"]
+    if cut is None:
+        return pd.DataFrame(columns=cols)
+    out = frame(s, select(r.site, func.count().label("rows"), func.min(r.date).label("first"),
+                          func.max(r.date).label("last")).where(r.date >= cut).group_by(r.site).order_by(r.site))
+    if delete and len(out):
+        s.execute(sql_delete(r).where(r.date >= cut))
+    return out
+
+
 def hourly_stamp(s: Session, sites: list[str]) -> str:
     """Changes on every shift save (or change applied) of the sites and on a new cutover: a cache key."""
     h = m.HourlyShift

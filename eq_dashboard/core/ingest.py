@@ -93,9 +93,10 @@ def ingest(s: Session, data: bytes, filename: str, user_id: int | None = None,
         old.sha256 = sha256(f"{digest}#retired-{old.id}".encode())
         s.flush()
     if parsed is None:
-        from db.repo import population_for  # local import: db.repo imports this module
+        from db.repo import hourly_cutover, population_for  # local import: db.repo imports this module
         alias, tanks = lookups(s)
-        parsed = parse_data_prod(data, alias, tanks, population=lambda mo: population_for(s, mo))
+        parsed = parse_data_prod(data, alias, tanks, population=lambda mo: population_for(s, mo),
+                                 cutover=hourly_cutover(s))
     p = parsed
     month = p.month
 

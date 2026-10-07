@@ -32,6 +32,27 @@ with tab_c:
             audit(s, user.username, "hourly_cutover", None, new.isoformat() if new else "off")
         st.success(f"Cutover {'set to ' + f'{new:%d %b %Y}' if new else 'switched off'}. Dashboards and TVs follow "
                    "within a minute.")
+    if cut is not None:
+        st.divider()
+        st.markdown("**Workbook ritase on or after the cutover.** Dashboards already ignore it and new imports leave "
+                    "it out; rows imported before the cutover was set can be deleted once so no duplicate stays "
+                    "stored. Events, coal tickets and fuel are not touched.")
+        with session_scope() as s:
+            left = repo.workbook_ritase_after_cutover(s)
+        if left.empty:
+            st.caption(f"None stored from {cut:%d %b %Y} on.")
+        else:
+            st.dataframe(left.rename(columns={"rows": "ritase rows"}), hide_index=True, width="content")
+            sure = st.checkbox(f"Delete these {int(left['rows'].sum()):,} workbook ritase rows (cannot be undone)",
+                               key="cut_del_ok")
+            if st.button("Delete", key="cut_del", disabled=not sure):
+                from core.ui import refresh
+                with session_scope() as s:
+                    gone = repo.workbook_ritase_after_cutover(s, delete=True)
+                    audit(s, user.username, "ritase_after_cutover_delete", None,
+                          ", ".join(f"{r.site} {int(r.rows)} rows" for r in gone.itertuples()))
+                refresh("all")
+                st.success(f"{int(gone['rows'].sum()):,} rows deleted.")
 
 with tab_s:
     with session_scope() as s:
