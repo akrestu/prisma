@@ -53,13 +53,6 @@ def check_ritasi(r: pd.DataFrame) -> list[pd.DataFrame]:
     out.append(_rit_as_volume(r))
     ul = r[r["site"] == UNMAPPED].drop_duplicates("loader").rename(columns={"loader": "unit_id"})
     out.append(_rows(ul, "loader_without_site", "warn", "Hauler Trips", "Unknown loader → UNMAPPED"))
-    x = r[(r["site"] != r["site_hauler"]) & (r["site"] != UNMAPPED) & (r["site_hauler"] != UNMAPPED)]
-    if not x.empty:
-        s = x.groupby(["site", "site_hauler"])["volume"].sum().reset_index()
-        out.append(pd.DataFrame({"site": s["site"], "rule": "cross_site_production", "severity": "info",
-                                 "sheet": "Hauler Trips", "row_ref": None, "unit_id": None, "date": None,
-                                 "detail": s.apply(lambda q: f"{q['volume']:,.0f} hauled by site "
-                                                             f"{q['site_hauler']} units → counted to the loader site", axis=1)}))
     return out
 
 

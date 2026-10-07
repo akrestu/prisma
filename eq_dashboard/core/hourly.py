@@ -28,10 +28,12 @@ DATASET = HOURLY_PRODUCTION
 SHEET = HOURLY_PRODUCTION                                    # "Hourly Production"; files made before used "Hourly"
 SHEET_NAMES = (SHEET, "Hourly")
 HEADER_ROW = 7                                               # Excel row of the table header in the template
-# the order follows the work: excavator and its operator, material, then each truck it loads
-# the order follows the work: excavator and its operator, material, then each truck it loads. Only what the data
-# officer knows goes in the file; the hauler model and load come from the unit population on upload.
-INPUT_COLS = ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "PIT", "Disposal", "Distance (m)"]
+# the order follows the work: excavator and its operator, material, then each truck it loads and where it goes. Only
+# what the data officer knows goes in the file; hauler model and load come from the unit population, pit and
+# distances from the route (loader + destination) on upload.
+INPUT_COLS = ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "Destination"]
+INPUT_COLS_V1 = ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "PIT", "Disposal", "Distance (m)"]
+MAX_TRIPS = 20                                               # trips of one hauler in one hour, all its lines together
 TAIL_COLS = ["Remark code", "Remark"]                       # old templates only: one remark per line (ignored now)
 REMARK_SHEET = "Remarks"
 REMARK_HEADS = ["Hour", "Loader", "Hauler ID", "Remark code", "Remark"]
@@ -293,16 +295,22 @@ def expand_to_population(load: pd.DataFrame, pop_models) -> tuple[pd.DataFrame, 
 def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units: pd.DataFrame | None = None,
             operators: pd.DataFrame | None = None, model_map: dict | None = None,
             model_targets: pd.DataFrame | None = None, basis: str = "internal",
-            hourly_models: pd.DataFrame | None = None) -> Resolved:
+            hourly_models: pd.DataFrame | None = None, destinations: pd.DataFrame | None = None,
+            routes: pd.DataFrame | None = None) -> Resolved:
     """Fill hauler model, load, material group, loader model, hourly target and operator names; check every line.
 
     Target of each excavator (core.prod_target.hourly_target): `targets` = unit overrides, `hourly_models` = the
     site's Hourly Production targets per model, `model_targets` = the Production Data defaults (the fallback,
     marked 'default' in target_source).
 
-    rows: loader, loader_nrp, hauler, hauler_nrp, material, pit, disposal, distance_m, r1..r12, remark_code, remark
-    (legacy lines without a hauler ID may give hauler_model instead). One line = one hauler for one loader; the
-    same hauler may appear on several lines when its operator changes during the shift."""
+    `destinations` (name, material_group, active) of the site: when given, a line with trips needs one of them in
+    `disposal` (the destination). `routes` (core.routes.routes_at for the shift date: loader, destination, pit,
+    dist_h, dist_v) then fill pit, distance_m (horizontal) and dist_v; a missing route only warns.
+
+    rows: loader, loader_nrp, hauler, hauler_nrp, material, disposal (destination), r1..r12, remark_code, remark;
+    pit / distance_m typed on older templates are kept when no route applies (legacy lines without a hauler ID may
+    give hauler_model instead). One line = one hauler for one loader and one destination; the same hauler may
+    appear on several lines (another destination, or its operator changed)."""
     out = rows.copy()
     for c in R:
         out[c] = num(out[c]) if c in out else np.nan
@@ -312,7 +320,8 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
         out[c] = text(out[c].astype("string")) if c in out else pd.NA
     for c in ("loader_nrp", "hauler_nrp"):
         out[c] = out[c].map(nrp_of) if c in out else None
-    out["distance_m"] = num(out["distance_m"]) if "distance_m" in out else np.nan
+    for c in ("distance_m", "dist_v"):
+        out[c] = num(out[c]) if c in out else np.nan
     has_trips = out[R].fillna(0).sum(axis=1) > 0
     legacy = (out["hauler_model"].notna() & out["loader"].notna()) if "hauler_model" in out else False
     truck = out["hauler"].notna() | legacy
@@ -359,9 +368,10 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
             problems.append(f"{line}: no load factor for {r['material']} × {lm}.{hint}")
             continue
         out.loc[i, ["muatan", "material_group"]] = list(hit)
-        bad = out.loc[i, R][(out.loc[i, R] < 0) | (out.loc[i, R] > 20)].dropna()
+        bad = out.loc[i, R][(out.loc[i, R] < 0) | (out.loc[i, R] > MAX_TRIPS)].dropna()
         if len(bad):
-            problems.append(f"{line}: trips of one hauler in one hour must be between 0 and 20.")
+            problems.append(f"{line}: trips of one hauler in one hour must be between 0 and {MAX_TRIPS}.")
+    _destinations(out, destinations, routes, problems, warnings)
 
     from core.prod_target import SOURCE_LABEL, hourly_target
     ov = targets
@@ -397,21 +407,69 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
     missing = out[(out[R].fillna(0).sum(axis=1) > 0) & (out["hauler_nrp"].isna()) & out["hauler"].notna()]
     if len(missing):
         warnings.append(f"{len(missing)} line(s) with trips but no hauler operator: operator KPIs will miss them.")
-    busy = out.melt(id_vars=["hauler"], value_vars=R).dropna()
+    busy = out.melt(id_vars=["hauler", "loader"], value_vars=R).dropna(subset=["value"])
     busy = busy[(busy["value"] > 0) & busy["hauler"].notna()]
-    dup = busy[busy.duplicated(["hauler", "variable"], keep=False)]
-    if len(dup):
-        warnings.append("Same hauler on more than one line in the same hour: "
-                        f"{', '.join(sorted(set(dup['hauler'])))} (fine when it changed loader or operator).")
+    per_hour = busy.groupby(["hauler", "variable"])["value"].sum()
+    over = per_hour[per_hour > MAX_TRIPS]
+    for (hauler, rc), v in over.items():
+        problems.append(f"Hauler {hauler}: {v:,.0f} trips in hour {int(rc[1:])} over all its lines; one hauler can "
+                        f"make at most {MAX_TRIPS} trips in an hour.")
+    two = busy.groupby(["hauler", "variable"])["loader"].nunique()
+    two = sorted({h for (h, _), n in two.items() if n > 1})
+    if two:
+        warnings.append(f"Same hauler loaded by more than one excavator in the same hour: {', '.join(two)} "
+                        "(fine when it moved to another excavator).")
     out["line"] = range(1, len(out) + 1)
     return Resolved(out, problems, warnings)
+
+
+def _destinations(out: pd.DataFrame, destinations: pd.DataFrame | None, routes: pd.DataFrame | None,
+                  problems: list[str], warnings: list[str]) -> None:
+    """Check the destination of each line and fill pit and distances from the route (in place)."""
+    if destinations is None or destinations.empty or out.empty:
+        return
+    act = destinations[destinations["active"].astype(bool)] if "active" in destinations else destinations
+    known = {str(n).upper(): (n, g) for n, g in zip(act["name"], act["material_group"], strict=True)}
+    has_trips = out[R].fillna(0).sum(axis=1) > 0
+    for i, r in out.iterrows():
+        line = f"Line {i + 1} ({r['loader'] if pd.notna(r['loader']) else 'no loader'} · " \
+               f"{r['hauler'] if pd.notna(r['hauler']) else 'no hauler'})"
+        dest = r["disposal"]
+        if pd.isna(dest):
+            if has_trips[i]:
+                problems.append(f"{line}: pick the destination (Tujuan).")
+            continue
+        hit = known.get(str(dest).upper())
+        if hit is None:
+            problems.append(f"{line}: destination {dest} is not an active destination of this site "
+                            "(Hourly Production setup → Destinations & routes).")
+            continue
+        out.loc[i, "disposal"] = hit[0]
+        if r["material_group"] in ("OB", "CG") and hit[1] != r["material_group"]:
+            problems.append(f"{line}: {hit[0]} is a {hit[1]} destination but the material is {r['material']}.")
+    rt = routes if routes is not None else pd.DataFrame(columns=["loader", "destination", "pit", "dist_h", "dist_v"])
+    by = {(str(a).upper(), str(b).upper()): (p, h, v) for a, b, p, h, v in
+          rt[["loader", "destination", "pit", "dist_h", "dist_v"]].itertuples(index=False)}
+    missing = set()
+    for i, r in out.iterrows():
+        if pd.isna(r["disposal"]) or pd.isna(r["loader"]):
+            continue
+        hit = by.get((str(r["loader"]).upper(), str(r["disposal"]).upper()))
+        if hit is None:
+            missing.add(f"{r['loader']} → {r['disposal']}")
+            out.loc[i, ["pit", "distance_m", "dist_v"]] = [None, np.nan, np.nan]   # never a stale copied distance
+            continue
+        out.loc[i, ["pit", "distance_m", "dist_v"]] = [None if pd.isna(x) else x for x in hit]
+    if missing:
+        warnings.append(f"No route yet for: {', '.join(sorted(missing))}. The lines are saved without pit and "
+                        "distance (Hourly Production setup → Destinations & routes).")
 
 
 def to_long(rows: pd.DataFrame) -> pd.DataFrame:
     """Rows (with shift, date, site) → one record per line × hour: hour_slot, slot, rit, volume."""
     if rows.empty:
         return pd.DataFrame(columns=["site", "date", "shift", "loader", "hauler", "material_group", "hour_slot",
-                                     "slot", "rit", "volume", "distance_m", "hauler_model", "operator",
+                                     "slot", "rit", "volume", "distance_m", "dist_v", "hauler_model", "operator",
                                      "hauler_operator", "loader_nrp", "hauler_nrp", "muatan", "target_per_hour"])
     keep = [c for c in rows.columns if c not in R]
     long = rows.melt(id_vars=keep, value_vars=R, var_name="rc", value_name="rit")
@@ -430,9 +488,11 @@ def _label(nrp, names: dict) -> str | None:
 
 def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, targets: pd.DataFrame,
                    lines: pd.DataFrame | None = None, coordinator: str = "", units: pd.DataFrame | None = None,
-                   operators: pd.DataFrame | None = None, remarks: pd.DataFrame | None = None) -> bytes:
-    """Per-shift input workbook, one row per hauler. `lines` pre-fills loader, hauler and operators (e.g. from the
-    previous shift) so the data officer only types trips. Drop-downs list the site's loaders, haulers, operators."""
+                   operators: pd.DataFrame | None = None, remarks: pd.DataFrame | None = None,
+                   destinations: pd.DataFrame | None = None) -> bytes:
+    """Per-shift input workbook, one row per hauler and destination. `lines` pre-fills loader, hauler, operators and
+    destination (e.g. from the previous shift) so the data officer only types trips. Drop-downs list the site's
+    loaders, haulers, operators and active destinations."""
     from openpyxl.utils import get_column_letter
 
     from core import dataprod
@@ -446,14 +506,16 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
         ws.cell(r, 1, k).font = Font(bold=True)
         ws.cell(r, 2, v)
     ws["B3"].number_format = "yyyy-mm-dd"
-    for r, tip in enumerate(["How to fill: one row per truck. Pick Loader, Operator, Material and Hauler ID from the "
-                             "drop-downs, then type the trips per hour.",
-                             "Truck model and load are added automatically. Rows without a Hauler ID and without "
-                             "trips are ignored.",
-                             "Operator changed during the shift? Add a second row for the same truck."], start=2):
+    for r, tip in enumerate(["How to fill: one row per truck and destination. Pick Loader, Operator, Material, Hauler "
+                             "ID and Destination from the drop-downs, then type the trips per hour.",
+                             "Truck model, load, pit and distances are added automatically. Rows without a Hauler ID "
+                             "and without trips are ignored.",
+                             "Truck went to two destinations, or its operator changed? Add a second row for the same "
+                             "truck."], start=2):
         ws.cell(r, 4, tip).font = Font(italic=True, color="55595F")
     heads = INPUT_COLS + SLOTS[shift]
-    widths = {"Loader": 11, "Hauler ID": 11, "Operator": 24, "Hauler operator": 24, "Material": 18, "Remark": 28}
+    widths = {"Loader": 11, "Hauler ID": 11, "Operator": 24, "Hauler operator": 24, "Material": 18, "Remark": 28,
+              "Destination": 22}
     for j, h in enumerate(heads, start=1):
         c = ws.cell(HEADER_ROW, j, h)
         c.fill, c.font = dataprod.HEAD_FILL, dataprod.HEAD_FONT
@@ -466,9 +528,12 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
     haulers = hu["unit_id"].tolist() if len(hu) else []
     loaders = sorted(set(targets["unit_id"]) if len(targets) else set())
     lists = wb.create_sheet("Lists")
+    dest = destinations if destinations is not None else pd.DataFrame(columns=["name", "active"])
+    dest = dest[dest["active"].astype(bool)] if len(dest) and "active" in dest else dest
     columns = {"A": sorted(load["material"].unique()) if len(load) else [],
                "B": [f"{k} - {v}" for k, v in REMARKS.items()], "C": loaders, "D": haulers,
-               "E": [f"{n} - {nm}" for n, nm in sorted(names.items(), key=lambda x: x[1])]}
+               "E": [f"{n} - {nm}" for n, nm in sorted(names.items(), key=lambda x: x[1])],
+               "G": sorted(dest["name"]) if len(dest) else []}       # F holds the hour labels (Remarks sheet)
     for col, vals in columns.items():
         for i, v in enumerate(vals, start=1):
             lists[f"{col}{i}"] = v
@@ -476,7 +541,7 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
     last = HEADER_ROW + 400
     pos = {h: get_column_letter(j) for j, h in enumerate(heads, start=1)}
     for head, src in (("Material", "A"), ("Loader", "C"), ("Hauler ID", "D"),
-                      ("Operator", "E"), ("Hauler operator", "E")):
+                      ("Operator", "E"), ("Hauler operator", "E"), ("Destination", "G")):
         n = len(columns[src])
         if n:
             dv = DataValidation(type="list", formula1=f"=Lists!${src}$1:${src}${n}", allow_blank=True,
@@ -493,8 +558,7 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
         name = r.get("operator") if isinstance(r.get("operator"), str) else None
         vals = {"Loader": r.get("loader"), "Operator": _label(r.get("loader_nrp"), names) or name,
                 "Material": r.get("material"), "Hauler ID": r.get("hauler"),
-                "Hauler operator": _label(r.get("hauler_nrp"), names), "PIT": r.get("pit"),
-                "Disposal": r.get("disposal"), "Distance (m)": r.get("distance_m")}
+                "Hauler operator": _label(r.get("hauler_nrp"), names), "Destination": r.get("disposal")}
         for h, v in vals.items():
             ws[f"{pos[h]}{i}"] = None if v is None or (isinstance(v, float) and pd.isna(v)) else v
     ws.freeze_panes = ws.cell(HEADER_ROW + 1, 5)          # loader, operator, material and truck stay visible
@@ -572,11 +636,17 @@ def parse_template(data: bytes) -> HourlyFile:
         raise StructureError(problems)
     hdr = [str(v).strip() if pd.notna(v) else "" for v in x.iloc[HEADER_ROW - 1]]
     expected = INPUT_COLS + SLOTS[shift]
-    if hdr[:len(expected)] != expected:
+    v1 = INPUT_COLS_V1 + SLOTS[shift]                    # templates before destinations: pit/distance typed
+    if hdr[:len(expected)] == expected:
+        names = ["loader", "loader_nrp", "material", "hauler", "hauler_nrp", "disposal", *R]
+    elif hdr[:len(v1)] == v1:
+        expected = v1
+        names = ["loader", "loader_nrp", "material", "hauler", "hauler_nrp", "pit", "disposal", "distance_m", *R]
+    else:
         raise StructureError([f"Row {HEADER_ROW} must hold the headers: {', '.join(expected)} "
                               f"(the hour columns follow the shift in B4). Download the current template."])
     body = x.iloc[HEADER_ROW:, :len(expected)].copy()   # old templates: Remark code / Remark after the hours, ignored
-    body.columns = ["loader", "loader_nrp", "material", "hauler", "hauler_nrp", "pit", "disposal", "distance_m", *R]
+    body.columns = names
     body = body.dropna(how="all").assign(remark_code=None, remark=None)
     remarks = pd.DataFrame(columns=["hour", "loader", "hauler", "code", "remark"])
     rs = raw.get(REMARK_SHEET)

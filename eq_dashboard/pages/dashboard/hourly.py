@@ -249,7 +249,7 @@ with t_lines:
     else:
         show = cur.rename(columns=dict(zip(H.R, H.SLOTS[shift], strict=True)))
         cols = ["line", "loader", "loader_model", "operator", "hauler", "hauler_model", "hauler_operator", "material",
-                "muatan", "pit", "disposal", "distance_m", "target_per_hour", *H.SLOTS[shift]]
+                "muatan", "disposal", "pit", "distance_m", "dist_v", "target_per_hour", *H.SLOTS[shift]]
         st.dataframe(show[cols], hide_index=True, width="stretch")
         excel_download(show[cols], f"hourly_{site}_{date:%Y-%m-%d}_{shift}.xlsx", key="hp_dl")
     st.markdown("**Remarks per hour**")

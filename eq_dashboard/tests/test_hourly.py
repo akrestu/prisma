@@ -130,8 +130,13 @@ def test_operator_change_mid_shift_and_unknowns():
     assert any("99999" in w for w in res.warnings)
     assert not any("Same hauler" in w for w in res.warnings)       # different hours: no overlap warning
     both = H.resolve(hauler_rows({"hauler": "WHT026", "r1": 2}, {"hauler": "WHT026", "r1": 1}), LF, TG, UNITS, OPS)
-    assert any("Same hauler on more than one line" in w for w in both.warnings)
+    assert not both.problems and not any("more than one excavator" in w for w in both.warnings)   # 2 destinations
     assert any("no hauler operator" in w for w in both.warnings)
+    moved = H.resolve(hauler_rows({"hauler": "WHT026", "r1": 2}, {"hauler": "WHT026", "loader": "WEX010", "r1": 1}),
+                      LF, TG, UNITS, OPS)
+    assert any("more than one excavator" in w for w in moved.warnings)
+    over = H.resolve(hauler_rows({"hauler": "WHT026", "r1": 12}, {"hauler": "WHT026", "r1": 9}), LF, TG, UNITS, OPS)
+    assert any("21 trips in hour 1" in p for p in over.problems)                # 20 per hour over all its lines
 
 
 def test_per_hauler_template_round_trip():
@@ -154,9 +159,8 @@ def test_template_only_asks_what_the_officer_knows():
                            "hauler_model": "777E"}])                      # old per-model line → blank truck row
     tpl = H.build_template("WBK-BAU", dt.date(2026, 9, 28), "NS", LF, TG, pd.concat([lines, spare]), "", UNITS, OPS)
     ws = load_workbook(_io.BytesIO(tpl))["Hourly Production"]
-    heads = [c.value for c in ws[H.HEADER_ROW]][:8]
-    assert heads == ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "PIT", "Disposal",
-                     "Distance (m)"]
+    heads = [c.value for c in ws[H.HEADER_ROW]][:6]
+    assert heads == ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "Destination"]
     assert "Hauler model" not in [c.value for c in ws[H.HEADER_ROW]]
     hf = H.parse_template(tpl)
     res = H.resolve(hf.rows.assign(r1=[3, None]), LF, TG, UNITS, OPS)   # the spare row stays unused

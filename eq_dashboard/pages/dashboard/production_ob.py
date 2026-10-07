@@ -98,6 +98,3 @@ lt["Total"] = lt.sum(axis=1)
 lt = lt.sort_values("Total", ascending=False)
 st.dataframe(lt.round(0), width="stretch")
 excel_download(lt.reset_index(), "ob_loader_by_date.xlsx", key="dl_lt")
-cross = ob[(ob["site"] != ob["site_hauler"])]
-if len(cross):
-    st.caption(f"Includes {fmt_num(cross['volume'].sum())} BCM hauled by other sites' units (counted to the loader site).")

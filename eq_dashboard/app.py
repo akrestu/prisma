@@ -85,6 +85,7 @@ OTHER = {
     "data_explorer": P("pages/data/explorer.py", "Data explorer", "table_view"),
     "hourly_input": P("pages/data/hourly_input.py", HOURLY_PRODUCTION, "schedule_send"),
     "hourly_setup": P("pages/admin/hourly_setup.py", "Load factors", "scale"),
+    "haul_routes": P("pages/admin/haul_routes.py", "Destinations & routes", "alt_route"),
     "operators": P("pages/admin/operators.py", "Operators", "badge"),
     "unit_population": P("pages/admin/unit_population.py", UNIT_POPULATION, "precision_manufacturing"),
     "delete_data": P("pages/admin/delete_data.py", "Delete data", "delete_forever"),
@@ -129,7 +130,7 @@ else:
         "TV": pick(["preview_tv", "display_devices"]),
         # setup per dataset: what Production Data is measured against, what Hourly Production needs to run
         f"{PRODUCTION_DATA} setup": pick(["targets_plan", "pm_interval"]),
-        f"{HOURLY_PRODUCTION} setup": pick(["hourly_targets", "hourly_setup", "operators"]),
+        f"{HOURLY_PRODUCTION} setup": pick(["hourly_targets", "hourly_setup", "haul_routes", "operators"]),
         "Settings": pick(["sites_mapping", "users_roles", "audit_log", "delete_data"]),
         "Account": pick(["account"]),
     }
