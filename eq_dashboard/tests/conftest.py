@@ -32,6 +32,21 @@ def raw_frames(sample_bytes):
     return read_workbook(sample_bytes)
 
 
+@pytest.fixture(autouse=True)
+def shift_clock(monkeypatch):
+    """Shift locking (core.shift_flow) runs on a fixed clock before the September 2026 test shifts, so they can be
+    saved again; a test that checks locking sets its own time with `shift_clock(datetime)`."""
+    import datetime as dt
+
+    from core import shift_flow as SF
+    from core.config import WIB
+
+    def set_(when: dt.datetime) -> None:
+        monkeypatch.setattr(SF, "now", lambda: when)
+    set_(dt.datetime(2026, 9, 1, 8, 0, tzinfo=WIB))
+    return set_
+
+
 @pytest.fixture(scope="session")
 def test_engine():
     """The test database with the current schema, built once per test run."""

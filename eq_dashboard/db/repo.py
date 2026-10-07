@@ -279,9 +279,12 @@ def add_hourly_remark(s: Session, site: str, date, shift: str, slot_from: int, s
     sh = s.scalar(select(m.HourlyShift).where(m.HourlyShift.site == site, m.HourlyShift.date == date,
                                               m.HourlyShift.shift == shift))
     if sh is None:
-        sh = m.HourlyShift(site=site, date=date, shift=shift, coordinator="", source="web", updated_by=username)
+        sh = m.HourlyShift(site=site, date=date, shift=shift, coordinator="", source="web", updated_by=username,
+                           status="DRAFT")
         s.add(sh)
         s.flush()
+    else:
+        _refuse_locked(sh)
     a, b = sorted((int(slot_from), int(slot_to)))
     for k in range(a, b + 1):
         s.add(m.HourlyRemark(shift_id=sh.id, slot=k, loader=loader, hauler=hauler or None, code=code or None,
@@ -293,7 +296,19 @@ def add_hourly_remark(s: Session, site: str, date, shift: str, slot_from: int, s
 def delete_hourly_remarks(s: Session, ids: list[int]) -> None:
     from sqlalchemy import delete
     if ids:
-        s.execute(delete(m.HourlyRemark).where(m.HourlyRemark.id.in_([int(i) for i in ids])))
+        ids = [int(i) for i in ids]
+        for sh in s.scalars(select(m.HourlyShift).join(m.HourlyRemark, m.HourlyRemark.shift_id == m.HourlyShift.id)
+                            .where(m.HourlyRemark.id.in_(ids)).distinct()):
+            _refuse_locked(sh)
+        s.execute(delete(m.HourlyRemark).where(m.HourlyRemark.id.in_(ids)))
+
+
+def _refuse_locked(sh: m.HourlyShift) -> None:
+    from core import shift_flow as SF
+    st_ = SF.state(sh.status, sh.date, SF.now())
+    if st_.locked:
+        raise ValueError(f"{sh.site} {sh.date:%d %b %Y} {sh.shift} is locked ({st_.label}): remarks cannot be "
+                         "changed any more.")
 
 
 def load_factors(s: Session, site: str) -> pd.DataFrame:
@@ -382,15 +397,25 @@ def previous_lines(s: Session, site: str, date, shift: str) -> pd.DataFrame:
 
 
 def save_hourly(s: Session, site: str, date, shift: str, coordinator: str, rows: pd.DataFrame, username: str,
-                source: str = "web", remarks: pd.DataFrame | None = None) -> m.HourlyShift:
+                source: str = "web", remarks: pd.DataFrame | None = None, *, change_request: bool = False
+                ) -> m.HourlyShift:
     """Replace the whole shift sheet in one transaction (the grid is always saved as a whole). `remarks` (per hour)
-    replace the shift's remarks too; None leaves them as they are."""
+    replace the shift's remarks too; None leaves them as they are. A locked shift (approved, or past closing) is
+    refused unless the save applies an approved change request; a direct save makes the shift DRAFT again."""
     from sqlalchemy import delete, insert
+
+    from core import shift_flow as SF
     sh = s.scalar(select(m.HourlyShift).where(m.HourlyShift.site == site, m.HourlyShift.date == date,
                                               m.HourlyShift.shift == shift).with_for_update())
-    if sh is None:
-        sh = m.HourlyShift(site=site, date=date, shift=shift)
+    if sh is None:                       # a shift never entered may still be entered late; it is locked after that
+        sh = m.HourlyShift(site=site, date=date, shift=shift, status=SF.DRAFT)
         s.add(sh)
+    elif not change_request:
+        now_state = SF.state(sh.status, date, SF.now())
+        if now_state.locked:
+            raise ValueError(f"{site} {date:%d %b %Y} {shift} is locked ({now_state.label}): send a change request "
+                             "instead.")
+        sh.status = SF.after_save(sh.status)
     sh.coordinator, sh.source, sh.updated_by = coordinator or "", source, username
     sh.updated_at = func.now()
     s.flush()
@@ -408,6 +433,120 @@ def save_hourly(s: Session, site: str, date, shift: str, coordinator: str, rows:
         if rr:
             s.execute(insert(m.HourlyRemark), rr)
     return sh
+
+
+# ---------------------------------------------------------------- approval per shift (core.shift_flow)
+def _locked_shift(s: Session, shift_id: int) -> m.HourlyShift:
+    sh = s.scalar(select(m.HourlyShift).where(m.HourlyShift.id == int(shift_id)).with_for_update())
+    if sh is None:
+        raise ValueError(f"Shift #{shift_id} no longer exists.")
+    return sh
+
+
+def submit_shift(s: Session, site: str, date, shift: str, username: str) -> m.HourlyShift:
+    """Send a saved shift to the Site Manager."""
+    from core import shift_flow as SF
+    sh = s.scalar(select(m.HourlyShift).where(m.HourlyShift.site == site, m.HourlyShift.date == date,
+                                              m.HourlyShift.shift == shift).with_for_update())
+    if sh is None or not SF.state(sh.status, date, SF.now()).can_submit:
+        raise ValueError(f"{site} {date:%d %b %Y} {shift} cannot be submitted now"
+                         + (f" ({SF.LABEL.get(sh.status, sh.status)})." if sh is not None else ": save it first."))
+    sh.status, sh.submitted_by, sh.submitted_at = SF.SUBMITTED, username, func.now()
+    return sh
+
+
+def review_shift(s: Session, shift_id: int, approve: bool, username: str, note: str = "") -> m.HourlyShift:
+    """Approve or reject a submitted shift (a reason is needed to reject). The caller checks the reviewer's site."""
+    from core import shift_flow as SF
+    sh = _locked_shift(s, shift_id)
+    if sh.status != SF.SUBMITTED:
+        raise ValueError(f"{sh.site} {sh.date:%d %b %Y} {sh.shift} is no longer waiting for approval "
+                         f"({SF.LABEL.get(sh.status, sh.status)}).")
+    if not approve and not (note or "").strip():
+        raise ValueError("Enter a reason for rejecting.")
+    sh.status = SF.APPROVED if approve else SF.REJECTED
+    sh.reviewed_by, sh.reviewed_at, sh.review_note = username, func.now(), (note or "").strip() or None
+    return sh
+
+
+def shifts_waiting(s: Session, sites: list[str]) -> pd.DataFrame:
+    """Submitted shifts of the sites, oldest first."""
+    h = m.HourlyShift
+    return frame(s, select(h.id, h.site, h.date, h.shift, h.coordinator, h.submitted_by, h.submitted_at,
+                           h.updated_by, h.updated_at)
+                 .where(h.site.in_(sites), h.status == "SUBMITTED").order_by(h.date, h.shift, h.site))
+
+
+def _rows_json(rows: pd.DataFrame) -> list[dict]:
+    import json
+    return json.loads(rows.reindex(columns=HOURLY_ROW_COLS).to_json(orient="records", date_format="iso"))
+
+
+def request_change(s: Session, site: str, date, shift: str, coordinator: str, rows: pd.DataFrame, reason: str,
+                   username: str) -> m.HourlyChangeRequest:
+    """New sheet for a locked shift, waiting for the Site Manager. Sending again replaces the open request."""
+    from core import shift_flow as SF
+    if not (reason or "").strip():
+        raise ValueError("Enter the reason for the change.")
+    sh = s.scalar(select(m.HourlyShift).where(m.HourlyShift.site == site, m.HourlyShift.date == date,
+                                              m.HourlyShift.shift == shift).with_for_update())
+    if sh is None or not SF.state(sh.status, date, SF.now()).locked:
+        raise ValueError(f"{site} {date:%d %b %Y} {shift} is not locked: save it directly.")
+    cr = pending_change(s, sh.id)
+    if cr is None:
+        cr = m.HourlyChangeRequest(shift_id=sh.id, status=SF.PENDING)
+        s.add(cr)
+    cr.coordinator, cr.rows, cr.reason = coordinator or "", _rows_json(rows), reason.strip()
+    cr.requested_by, cr.requested_at = username, func.now()
+    s.flush()
+    return cr
+
+
+def pending_change(s: Session, shift_id: int) -> m.HourlyChangeRequest | None:
+    c = m.HourlyChangeRequest
+    return s.scalar(select(c).where(c.shift_id == int(shift_id), c.status == "PENDING"))
+
+
+def change_requests(s: Session, sites: list[str]) -> pd.DataFrame:
+    """Open change requests of the sites, oldest first, with their shift."""
+    c, h = m.HourlyChangeRequest, m.HourlyShift
+    return frame(s, select(c.id, c.shift_id, h.site, h.date, h.shift, h.status.label("shift_status"), c.reason,
+                           c.requested_by, c.requested_at, c.coordinator)
+                 .join(h, h.id == c.shift_id).where(h.site.in_(sites), c.status == "PENDING")
+                 .order_by(c.requested_at))
+
+
+def change_rows(s: Session, request_id: int) -> pd.DataFrame:
+    cr = s.get(m.HourlyChangeRequest, int(request_id))
+    return pd.DataFrame(cr.rows or [], columns=HOURLY_ROW_COLS) if cr else pd.DataFrame(columns=HOURLY_ROW_COLS)
+
+
+def decide_change(s: Session, request_id: int, approve: bool, username: str, note: str = "") -> m.HourlyShift:
+    """Apply (approve) or refuse a change request. Applying replaces the shift's lines; its status stays as it was.
+    The caller checks the reviewer's site."""
+    from core import shift_flow as SF
+    cr = s.scalar(select(m.HourlyChangeRequest).where(m.HourlyChangeRequest.id == int(request_id))
+                  .with_for_update())
+    if cr is None or cr.status != SF.PENDING:
+        raise ValueError(f"Change request #{request_id} is no longer open.")
+    if not approve and not (note or "").strip():
+        raise ValueError("Enter a reason for rejecting.")
+    sh = _locked_shift(s, cr.shift_id)
+    if approve:
+        save_hourly(s, sh.site, sh.date, sh.shift, cr.coordinator, change_rows(s, cr.id), cr.requested_by,
+                    sh.source, change_request=True)
+    cr.status = SF.APPROVED if approve else SF.REJECTED
+    cr.decided_by, cr.decided_at, cr.decision_note = username, func.now(), (note or "").strip() or None
+    return sh
+
+
+def hourly_waiting_count(s: Session, sites: list[str]) -> int:
+    """Shifts and change requests waiting for a Site Manager."""
+    h, c = m.HourlyShift, m.HourlyChangeRequest
+    a = s.scalar(select(func.count()).select_from(h).where(h.site.in_(sites), h.status == "SUBMITTED")) or 0
+    b = s.scalar(select(func.count()).select_from(c).join(h, h.id == c.shift_id)
+                 .where(h.site.in_(sites), c.status == "PENDING")) or 0
+    return int(a) + int(b)
 
 
 def last_hourly_shift(s: Session, sites: list[str]) -> tuple[str, object, str] | None:

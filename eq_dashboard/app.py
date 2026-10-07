@@ -81,6 +81,7 @@ OTHER = {
     "preview_tv": P("pages/tv/preview.py", "TV preview", "tv"),
     "upload": P("pages/data/upload.py", PRODUCTION_DATA, "upload_file"),
     "approval": P("pages/data/approval.py", "Approval", "fact_check"),
+    "shift_approval": P("pages/data/shift_approval.py", "Shift approval", "task_alt"),
     "upload_history": P("pages/data/upload_history.py", "Upload history", "history"),
     "data_explorer": P("pages/data/explorer.py", "Data explorer", "table_view"),
     "hourly_input": P("pages/data/hourly_input.py", HOURLY_PRODUCTION, "schedule_send"),
@@ -115,8 +116,11 @@ else:
 
         with session_scope() as s:
             n = repo.pending_count(s, sites_for(user))
+            n_sh = repo.hourly_waiting_count(s, sites_for(user))
         if n:
             OTHER["approval"] = P("pages/data/approval.py", f"Approval ({n} waiting)", "fact_check")
+        if n_sh:
+            OTHER["shift_approval"] = P("pages/data/shift_approval.py", f"Shift approval ({n_sh} waiting)", "task_alt")
     else:
         n = 0
     pick = lambda keys, src=OTHER: [src[k] for k in keys if allowed(k)]  # noqa: E731
@@ -126,7 +130,7 @@ else:
         "Analysis": pick(["loader_fleet", "time_distribution", "data_quality"], DASH) + pick(["data_explorer"]),
         # the three datasets in the order they are needed: units first, then production, then hourly
         "Input & upload": pick(["home", "unit_population", "upload", "hourly_input", "upload_history"]),
-        "Approval": pick(["approval"]),
+        "Approval": pick(["approval", "shift_approval"]),
         "TV": pick(["preview_tv", "display_devices"]),
         # setup per dataset: what Production Data is measured against, what Hourly Production needs to run
         f"{PRODUCTION_DATA} setup": pick(["targets_plan", "pm_interval"]),

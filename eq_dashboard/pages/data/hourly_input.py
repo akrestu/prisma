@@ -9,6 +9,7 @@ import streamlit as st
 
 from core import hourly as H
 from core import routes as RT
+from core import shift_flow as SF
 from core.config import UNMAPPED, WIB, now_wib
 from core.ingest import audit
 from core.ui import fmt_num, refresh, require, sites_for
@@ -20,7 +21,8 @@ user = require("hourly_input")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
 st.title(H.DATASET)
 st.caption("Trips per hauler per production hour, entered here in the grid or uploaded with the Excel template of "
-           "the shift. Flash data: saved at once without approval and shown on the hourly TV within a minute.")
+           "the shift. Saved lines show on the hourly TV within a minute; submit the shift for the Site Manager's "
+           "approval before closing (09:00 WIB the next day).")
 if not sites:
     st.info("No site access.")
     st.stop()
@@ -53,6 +55,10 @@ with session_scope() as s:
     dest, rts = repo.haul_destinations(s, site), RT.routes_at(repo.haul_routes(s, site), date)
     coord_now = sh.coordinator if sh else ""
     stamp = f"{sh.updated_by} · {sh.updated_at.astimezone(WIB):%d %b %H:%M} WIB" if sh else ""
+    cr = repo.pending_change(s, sh.id) if sh else None
+    cr_info = (cr.requested_by, cr.requested_at, cr.reason) if cr else None
+    flow = SF.state(sh.status if sh else None, date, SF.now(), cr is not None)
+    review = (sh.reviewed_by, sh.reviewed_at, sh.review_note) if sh and sh.reviewed_by else None
 if lf.empty:
     st.warning(f"No load factors for {site} yet. An Admin or Site Manager sets them in **Hourly Production setup → Load factors**.")
     st.stop()
@@ -84,6 +90,34 @@ def from_grid(g: pd.DataFrame) -> pd.DataFrame:
     return g.assign(remark_code=None, remark=None)     # remarks are entered per hour in their own table
 
 
+# ------------------------------------------------------------------ approval status of the shift
+with st.container(border=True):
+    a, b = st.columns([4, 1.3], vertical_alignment="center")
+    icon = {SF.APPROVED: ":material/verified:", SF.SUBMITTED: ":material/hourglass_top:",
+            SF.REJECTED: ":material/undo:"}.get(flow.status, ":material/edit_note:")
+    a.markdown(f"{icon} **{flow.label if sh else 'Not entered yet'}** · closing "
+               f"{SF.closes_at(date).astimezone(WIB):%d %b %H:%M} WIB")
+    if review and flow.status in (SF.APPROVED, SF.REJECTED):
+        a.caption(f"{'Approved' if flow.status == SF.APPROVED else 'Rejected'} by {review[0]} · "
+                  f"{review[1].astimezone(WIB):%d %b %H:%M} WIB" + (f" — {review[2]}" if review[2] else ""))
+    if cr_info:
+        a.caption(f"Change request by {cr_info[0]} ({cr_info[1].astimezone(WIB):%d %b %H:%M}) waiting for the Site "
+                  f"Manager — {cr_info[2]}")
+    if flow.locked:
+        a.caption("Locked: edit the grid below and send a **change request**; the Site Manager approves it.")
+    if flow.can_submit and b.button("Submit for approval", type="primary", key="hi_submit", width="stretch",
+                                    icon=":material/send:"):
+        try:
+            with session_scope() as s:
+                repo.submit_shift(s, site, date, shift, user.username)
+                audit(s, user.username, "hourly_submit", site, f"{date:%Y-%m-%d} {shift}")
+        except ValueError as e:
+            st.error(str(e))
+        else:
+            refresh("hourly")
+            st.session_state["hi_msg"] = f"{site} {date:%d %b} {shift} submitted to the Site Manager."
+            st.rerun()
+
 t_web, t_xls = st.tabs(["Web input", "Excel template"])
 
 # ------------------------------------------------------------------ remarks per hour
@@ -99,6 +133,8 @@ def remark_box() -> None:
     with st.container(border=True):
         st.markdown("**Remarks per hour** · only when something happened (rain, breakdown, waiting…). "
                     "Saved at once and shown in that hour on the TV.")
+        if flow.locked:
+            st.caption("The shift is locked: remarks can no longer be added or deleted.")
         with st.form(f"hi_rm_{site}_{date}_{shift}", clear_on_submit=True, border=False):
             c = st.columns([1, 1.2, 2.2, 2.6, 0.9], vertical_alignment="bottom")
             hour = c[0].selectbox("Hour", slots, index=(p_slot - 1) if live else 0)
@@ -106,7 +142,8 @@ def remark_box() -> None:
             loader = c[1].selectbox("Excavator", fleet, index=fleet.index(last) if last in fleet else 0)
             code = c[2].selectbox("Remark code", list(code_label.values()), index=None, placeholder="Pick a code")
             note = c[3].text_input("Note (optional)", placeholder="e.g. hujan deras, front basah")
-            add = c[4].form_submit_button("Add", type="primary", width="stretch", icon=":material/add:")
+            add = c[4].form_submit_button("Add", type="primary", width="stretch", icon=":material/add:",
+                                          disabled=flow.locked)
             with st.expander("More: several hours, one truck"):
                 d1, d2 = st.columns(2)
                 until = d1.selectbox("Until hour", ["(same hour)", *slots], key=None)
@@ -117,12 +154,16 @@ def remark_box() -> None:
             else:
                 a = slots.index(hour) + 1
                 b = a if until == "(same hour)" else slots.index(until) + 1
-                with session_scope() as s:
-                    n = repo.add_hourly_remark(s, site, date, shift, a, b, loader, (code or "")[:3] or None, note,
-                                               user.username, hauler)
-                    audit(s, user.username, "hourly_remark", site,
-                          f"{date:%Y-%m-%d} {shift} {H.span_label(shift, min(a, b), max(a, b))} {loader} "
-                          f"{(code or '')[:3]} {note.strip()}".strip())
+                try:
+                    with session_scope() as s:
+                        n = repo.add_hourly_remark(s, site, date, shift, a, b, loader, (code or "")[:3] or None,
+                                                   note, user.username, hauler)
+                        audit(s, user.username, "hourly_remark", site,
+                              f"{date:%Y-%m-%d} {shift} {H.span_label(shift, min(a, b), max(a, b))} {loader} "
+                              f"{(code or '')[:3]} {note.strip()}".strip())
+                except ValueError as e:
+                    st.error(str(e))
+                    return
                 st.session_state["hi_rm_loader"] = loader
                 refresh("hourly")
                 st.toast(f"Remark added ({n} hour{'s' if n > 1 else ''}).")
@@ -136,11 +177,16 @@ def remark_box() -> None:
             truck = f" · {r.hauler}" if isinstance(r.hauler, str) and r.hauler else ""
             a.markdown(f"`{H.span_label(shift, r.slot_from, r.slot_to)}` **{r.loader}**{truck} · "
                        f"{H.remark_label(r.code) or ''}{note}")
-            if b.button("", key=f"hi_rm_del_{r.ids[0]}", icon=":material/delete:", help="Delete this remark"):
-                with session_scope() as s:
-                    repo.delete_hourly_remarks(s, r.ids)
-                    audit(s, user.username, "hourly_remark_delete", site,
-                          f"{date:%Y-%m-%d} {shift} {H.span_label(shift, r.slot_from, r.slot_to)} {r.loader}")
+            if b.button("", key=f"hi_rm_del_{r.ids[0]}", icon=":material/delete:", help="Delete this remark",
+                        disabled=flow.locked):
+                try:
+                    with session_scope() as s:
+                        repo.delete_hourly_remarks(s, r.ids)
+                        audit(s, user.username, "hourly_remark_delete", site,
+                              f"{date:%Y-%m-%d} {shift} {H.span_label(shift, r.slot_from, r.slot_to)} {r.loader}")
+                except ValueError as e:
+                    st.error(str(e))
+                    return
                 refresh("hourly")
                 st.rerun()
 
@@ -215,14 +261,37 @@ with t_web:
         k[2].metric("Trips", fmt_num(long["rit"].sum()))
         k[3].metric("Fleets", res.rows["loader"].nunique())
         k[4].metric("Haulers", res.rows["hauler"].nunique())
-    if st.button("Save shift", type="primary", key="hi_save", disabled=bool(res.problems)) and not res.problems:
-        with st.spinner("Saving the shift…"), session_scope() as s:
-            repo.save_hourly(s, site, date, shift, coord, res.rows, user.username, "web")
-            audit(s, user.username, "hourly_save", site, f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines")
-        refresh("hourly")
-        st.session_state["hi_ver"] = ver + 1
-        st.session_state["hi_msg"] = f"{site} {date:%d %b} {shift} saved ({len(res.rows)} lines)."
-        st.rerun()
+    if flow.locked:
+        reason = st.text_input("Reason for the change (required)", key=f"hi_cr_reason_{site}_{date}_{shift}",
+                               placeholder="e.g. ritase WDT017 jam 09-10 salah ketik, hasil cek form")
+        if st.button("Send change request", type="primary", key="hi_cr", disabled=bool(res.problems),
+                     icon=":material/send:") and not res.problems:
+            try:
+                with st.spinner("Sending…"), session_scope() as s:
+                    repo.request_change(s, site, date, shift, coord, res.rows, reason, user.username)
+                    audit(s, user.username, "hourly_change_request", site,
+                          f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines — {reason.strip()}")
+            except ValueError as e:
+                st.error(str(e))
+            else:
+                refresh("hourly")
+                st.session_state["hi_ver"] = ver + 1
+                st.session_state["hi_msg"] = (f"Change request for {site} {date:%d %b} {shift} sent to the Site "
+                                              "Manager; the shift keeps its current lines until it is approved.")
+                st.rerun()
+    elif st.button("Save shift", type="primary", key="hi_save", disabled=bool(res.problems)) and not res.problems:
+        try:
+            with st.spinner("Saving the shift…"), session_scope() as s:
+                repo.save_hourly(s, site, date, shift, coord, res.rows, user.username, "web")
+                audit(s, user.username, "hourly_save", site, f"{date:%Y-%m-%d} {shift}: {len(res.rows)} lines")
+        except ValueError as e:                            # locked meanwhile (approved, or closing passed)
+            st.error(str(e))
+        else:
+            refresh("hourly")
+            st.session_state["hi_ver"] = ver + 1
+            again = " Submit it again for approval." if flow.status in (SF.SUBMITTED, SF.REJECTED) else ""
+            st.session_state["hi_msg"] = f"{site} {date:%d %b} {shift} saved ({len(res.rows)} lines).{again}"
+            st.rerun()
 
 # ------------------------------------------------------------------ Excel template
 with t_xls:
@@ -255,6 +324,7 @@ with t_xls:
         with session_scope() as s:
             lf_f, tg_f = repo.load_factors(s, hf.site), repo.loader_targets(s, hf.site)
             exists, _ = repo.hourly_shift(s, hf.site, hf.date, hf.shift)
+            flow_f = SF.state(exists.status if exists else None, hf.date, SF.now())
             units_f = repo.population_for(s, hf.date)
             ops_f = repo.operators(s, hf.site)
             mtg_f, basis_f = repo.model_targets(s), repo.site_basis(s, hf.site)
@@ -274,15 +344,39 @@ with t_xls:
         for w in rf.warnings:
             st.warning(w)
         ok = True
+        if flow_f.locked:
+            st.warning(f"This shift is locked ({flow_f.label}): the file is sent as a change request for the Site "
+                       "Manager (remarks in the file are not changed).")
+            why = st.text_input("Reason for the change (required)", key=f"hi_xcr_{st.session_state.get('hi_ver', 0)}")
+            if not rf.problems and st.button("Send change request", type="primary", key="hi_xcr_send"):
+                try:
+                    with session_scope() as s:
+                        repo.request_change(s, hf.site, hf.date, hf.shift, hf.coordinator, rf.rows, why,
+                                            user.username)
+                        audit(s, user.username, "hourly_change_request", hf.site,
+                              f"{hf.date:%Y-%m-%d} {hf.shift}: {len(rf.rows)} lines from {f.name} — {why.strip()}")
+                except ValueError as e:
+                    st.error(str(e))
+                    st.stop()
+                refresh("hourly")
+                st.session_state["hi_goto"] = (hf.site, hf.date, hf.shift)
+                st.session_state["hi_ver"] = st.session_state.get("hi_ver", 0) + 1
+                st.session_state["hi_msg"] = f"Change request for {hf.site} {hf.date:%d %b} {hf.shift} sent."
+                st.rerun()
+            st.stop()
         if exists is not None:
             st.warning("This shift already has data; saving replaces it.")
             ok = st.checkbox("Replace the existing lines of this shift", key=f"hi_xrep_{st.session_state.get('hi_ver', 0)}")
         if not rf.problems and st.button("Save uploaded shift", type="primary", key="hi_xsave", disabled=not ok):
-            with st.spinner("Saving the shift…"), session_scope() as s:
-                repo.save_hourly(s, hf.site, hf.date, hf.shift, hf.coordinator, rf.rows, user.username, "excel",
-                                 remarks=rm_f)
-                audit(s, user.username, "hourly_upload", hf.site,
-                      f"{hf.date:%Y-%m-%d} {hf.shift}: {len(rf.rows)} lines from {f.name}")
+            try:
+                with st.spinner("Saving the shift…"), session_scope() as s:
+                    repo.save_hourly(s, hf.site, hf.date, hf.shift, hf.coordinator, rf.rows, user.username, "excel",
+                                     remarks=rm_f)
+                    audit(s, user.username, "hourly_upload", hf.site,
+                          f"{hf.date:%Y-%m-%d} {hf.shift}: {len(rf.rows)} lines from {f.name}")
+            except ValueError as e:
+                st.error(str(e))
+                st.stop()
             refresh("hourly")
             lg = H.to_long(rf.rows.assign(site=hf.site, date=hf.date, shift=hf.shift))
             vol = lg.groupby("material_group")["volume"].sum()

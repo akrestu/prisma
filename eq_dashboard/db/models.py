@@ -397,6 +397,30 @@ class HourlyShift(Base):
     updated_by: Mapped[str | None] = mapped_column(String(60))
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(),
                                                     onupdate=func.now())
+    # approval per shift (core.shift_flow): DRAFT → SUBMITTED → APPROVED | REJECTED (back to the data officer)
+    status: Mapped[str] = mapped_column(String(10), default="DRAFT", server_default="DRAFT", index=True)
+    submitted_by: Mapped[str | None] = mapped_column(String(60))
+    submitted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[str | None] = mapped_column(String(60))
+    reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str | None] = mapped_column(Text)
+
+
+class HourlyChangeRequest(Base):
+    """A change to a locked shift (approved, or past closing): the whole new sheet, applied only when the Site
+    Manager approves it. One open request per shift."""
+    __tablename__ = "hourly_change_request"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shift_id: Mapped[int] = mapped_column(ForeignKey("hourly_shift.id", ondelete="CASCADE"), index=True)
+    coordinator: Mapped[str] = mapped_column(String(160), default="")
+    rows: Mapped[list] = mapped_column(JSON)                        # the shift lines as they should become
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(10), default="PENDING", index=True)   # PENDING|APPROVED|REJECTED
+    requested_by: Mapped[str] = mapped_column(String(60))
+    requested_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    decided_by: Mapped[str | None] = mapped_column(String(60))
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str | None] = mapped_column(Text)
 
 
 class HourlyRow(Base):
