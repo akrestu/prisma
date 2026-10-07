@@ -227,6 +227,10 @@ def _kpi(d: HourlyTv) -> str:
                 out = d.daily_outlook[key]
                 ach = out / t if t else ach
                 extra = f'<div class="s">outlook <b>{_n(out, dec)}</b></div>'
+            elif blk == "Outlook" and key in d.month_runrate:
+                state = "" if a is None else ("still to go · " if a > 0 else "ahead of plan · ")
+                extra = f'<div class="s">{state}run rate <b>{_n(d.month_runrate[key], dec)}</b></div>'
+                a = abs(a) if a is not None else a
             body += (f'<td><div class="a">{_n(a, dec)}</div><div class="s">target {_n(t, dec)} · '
                      f'<b style="color:{_tone(ach)}">{_pct(ach)}</b></div>{extra}{_bar(ach)}</td>')
         body += "</tr>"

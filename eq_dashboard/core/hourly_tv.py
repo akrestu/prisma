@@ -4,7 +4,8 @@ Figures, all for OB (BCM), Coal (t), SR (BCM per t) and Distance (m, trip-weight
 - Hour: the current production hour; target = hourly targets of the fleets working that hour.
 - Daily: the production date so far; outlook = run rate per elapsed hour × 24; target = daily plan.
 - MTD: approved Production Data trips up to its last date, then flash data for the days after; target = plan to date.
-- Outlook: MTD per elapsed day × days in the month; target = the month's plan.
+- Outlook: OB / Coal = the month's plan − MTD (volume still to go, < 0 when ahead); target = the month's plan,
+  achievement = MTD ÷ month plan. The run rate (MTD per elapsed day × days in the month) is kept in month_runrate.
 """
 from __future__ import annotations
 
@@ -38,6 +39,7 @@ class HourlyTv:
     updated_by: str | None = None
     summary: dict = field(default_factory=dict)     # {block: {metric: (actual, target, ach)}}
     daily_outlook: dict = field(default_factory=dict)
+    month_runrate: dict = field(default_factory=dict)   # {"OB"/"Coal": MTD per elapsed day × days in month}
     fleets: dict = field(default_factory=dict)      # {"OB"/"CG": DataFrame}
     totals: dict = field(default_factory=dict)      # {"OB"/"CG": {"slots": [...], "running": [...], "total": x}}
     official_until: dt.date | None = None
@@ -149,8 +151,14 @@ def build(s: Session, site: str, now: dt.datetime, date: dt.date | None = None, 
     days_done = (date - month).days + (elapsed / 24)
     f = days_in_month / days_done if days_done else np.nan
     m_ob, m_cg = plan["ob_plan"].sum(min_count=1), plan["coal_plan"].sum(min_count=1)
-    tv.summary["Outlook"] = _triple(mtd_ob * f, mtd_cg * f, mtd_dist, None if pd.isna(m_ob) else float(m_ob),
-                                    None if pd.isna(m_cg) else float(m_cg), t_sr, t_dist)
+    out = _triple(mtd_ob * f, mtd_cg * f, mtd_dist, None if pd.isna(m_ob) else float(m_ob),
+                  None if pd.isna(m_cg) else float(m_cg), t_sr, t_dist)
+    tv.month_runrate = {"OB": mtd_ob * f, "Coal": mtd_cg * f}
+    # OB / coal: what is still missing to the month's plan; achievement is what is already done of it
+    for key, plan_m, mtd in (("OB", m_ob, mtd_ob), ("Coal", m_cg, mtd_cg)):
+        out[key] = (float(plan_m) - mtd, float(plan_m), _ach(mtd, float(plan_m))) if pd.notna(plan_m) \
+            else (None, None, None)
+    tv.summary["Outlook"] = out
 
     # ---- fleet tables for the shift on screen
     remarks = repo.hourly_remarks(s, site, date, shift)
