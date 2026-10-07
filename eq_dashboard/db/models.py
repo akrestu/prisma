@@ -475,6 +475,16 @@ class HourlyRemark(Base):
     remark: Mapped[str | None] = mapped_column(Text)
 
 
+class AppSetting(Base):
+    """Settings for the whole application, one row per key (e.g. hourly_cutover = '2026-11-01')."""
+    __tablename__ = "app_setting"
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(String(60))
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(),
+                                                    onupdate=func.now())
+
+
 class HaulDestination(Base):
     """Where haulers of a site unload (Tujuan): disposals for OB, ROM/stockpiles for coal. Never deleted once used;
     set inactive instead."""

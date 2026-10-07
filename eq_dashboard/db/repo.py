@@ -435,6 +435,47 @@ def save_hourly(s: Session, site: str, date, shift: str, coordinator: str, rows:
     return sh
 
 
+# ---------------------------------------------------------------- settings and the hourly cutover
+CUTOVER_KEY = "hourly_cutover"
+
+
+def get_setting(s: Session, key: str) -> str | None:
+    row = s.get(m.AppSetting, key)
+    return row.value if row else None
+
+
+def set_setting(s: Session, key: str, value: str | None, username: str) -> None:
+    row = s.get(m.AppSetting, key)
+    if row is None:
+        row = m.AppSetting(key=key)
+        s.add(row)
+    row.value, row.updated_by, row.updated_at = value, username, func.now()
+
+
+def hourly_cutover(s: Session):
+    """First production date whose official ritase comes from Hourly Production (same for every site), or None."""
+    import datetime as dt
+    v = get_setting(s, CUTOVER_KEY)
+    try:
+        return dt.date.fromisoformat(v) if v else None
+    except ValueError:
+        return None
+
+
+def hourly_ritase(s: Session, sites: list[str], d0, d1) -> pd.DataFrame:
+    """Hourly Production shifts of the sites between two dates in the columns of the ritase table."""
+    from core import hourly as H
+    rows = hourly_range(s, sites, d0, d1) if sites else pd.DataFrame()
+    return H.as_ritase(H.to_long(rows)) if len(rows) else pd.DataFrame(columns=H.RITASE_COLS)
+
+
+def hourly_stamp(s: Session, sites: list[str]) -> str:
+    """Changes on every shift save (or change applied) of the sites and on a new cutover: a cache key."""
+    h = m.HourlyShift
+    last = s.execute(select(func.max(h.updated_at), func.count()).where(h.site.in_(sites))).first() if sites else None
+    return f"{tuple(last) if last else None}|{get_setting(s, CUTOVER_KEY)}"   # count: deleted shifts too
+
+
 # ---------------------------------------------------------------- approval per shift (core.shift_flow)
 def _locked_shift(s: Session, shift_id: int) -> m.HourlyShift:
     sh = s.scalar(select(m.HourlyShift).where(m.HourlyShift.id == int(shift_id)).with_for_update())

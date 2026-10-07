@@ -69,6 +69,31 @@ def combine(name: str, versions: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=TABLES[name][1])
 
 
+@st.cache_data(ttl=600, max_entries=60, show_spinner=False)
+def _hourly_ritase(sites: tuple, d0: dt.date, d1: dt.date, stamp: str) -> pd.DataFrame:
+    """Hourly Production ritase; `stamp` changes on every shift save, so new input shows at once."""
+    with session_scope() as s:
+        return repo.hourly_ritase(s, list(sites), d0, d1)
+
+
+def ritase(versions: pd.DataFrame, allowed: list[str]) -> pd.DataFrame:
+    """Official ritase of the versions' sites and months: Production Data before the cutover date, Hourly
+    Production from it on (core.hourly.official_ritase)."""
+    from core import hourly as H
+    imported = scope_filter(combine("ritase", versions), allowed)
+    if versions.empty:
+        return imported
+    sites = sorted(set(versions["site"]) & set(allowed))
+    with session_scope() as s:
+        cut = repo.hourly_cutover(s)
+        stamp = repo.hourly_stamp(s, sites) if cut else ""
+    if cut is None:
+        return imported
+    d0, d1 = max(min(versions["month"]), cut), F.month_end(max(versions["month"]))
+    hourly = _hourly_ritase(tuple(sites), d0, d1, stamp) if d0 <= d1 else None
+    return H.official_ritase(imported, hourly, cut)
+
+
 @dataclass
 class Ctx:
     user: object
@@ -289,7 +314,7 @@ def context(page: str, unit_filter: bool = True, title: str | None = None) -> Ct
         return Loaded(
             versions, months, by_unit(by_date(ev)),
             by_unit(by_date(scope_filter(combine("stoppages", versions), allowed), "start_date", "start_shift")),
-            by_date(scope_filter(combine("ritase", versions), allowed)),
+            by_date(ritase(versions, allowed)),
             by_date(scope_filter(combine("coal", versions), allowed)),
             by_unit(by_date(scope_filter(combine("fuel", versions), allowed))),
             by_date(scope_filter(combine("receipt", versions), allowed), shift_col="-"))  # deliveries: no shift

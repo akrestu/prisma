@@ -70,12 +70,14 @@ def _triple(ob, cg, dist, t_ob, t_cg, t_sr, t_dist) -> dict:
 
 
 def _official(s: Session, site: str, month: dt.date) -> pd.DataFrame:
-    """Approved ritase of the month per date: ob, cg, rit-weighted distance numerator (dist_w) and trips."""
+    """Approved Production Data ritase of the month per date: ob, cg, rit-weighted distance numerator (dist_w) and
+    trips. Only dates before the hourly cutover: from it on the shifts themselves are the official figures."""
     r, us = m.FactRitase, m.UploadSite
+    cut = repo.hourly_cutover(s)
     q = (select(r.date, r.material_group, func.sum(r.volume).label("vol"), func.sum(r.rit).label("rit"),
                 func.sum(r.dist_h * r.rit).label("dist_w"))
          .join(us, (us.upload_id == r.upload_id) & (us.site_code == r.site))
-         .where(r.site == site, r.month == month, us.status == "PUBLISHED")
+         .where(r.site == site, r.month == month, us.status == "PUBLISHED", *([r.date < cut] if cut else []))
          .group_by(r.date, r.material_group))
     return repo.frame(s, q)
 

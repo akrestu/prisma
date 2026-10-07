@@ -55,7 +55,7 @@ with st.spinner(f"Calculating {group} productivity ({PERIOD_LABEL[period].lower(
     else:
         vers = c.versions_for(scope)
         ev = scope_filter(dash.combine("events", vers), c.allowed)
-        rit = scope_filter(dash.combine("ritase", vers), c.allowed)
+        rit = dash.ritase(vers, c.allowed)
     if rit.empty or rit[rit["material_group"] == group].empty:
         st.info(f"No {group} trips for this selection.")
         st.stop()

@@ -12,7 +12,26 @@ user = require("sites_mapping")
 st.title("Sites & mapping")
 st.caption("Aliases and tank mappings apply to the next uploads. Existing data does not change; "
            "re-upload the month's file if needed.")
-tab_s, tab_a, tab_t, tab_u = st.tabs(["Sites", "ID aliases", "Fuel tanks", "Unmapped"])
+tab_s, tab_a, tab_t, tab_u, tab_c = st.tabs(["Sites", "ID aliases", "Fuel tanks", "Unmapped", "Hourly cutover"])
+
+with tab_c:
+    st.markdown("From the **cutover date** on, OB and coal ritase on every dashboard and TV comes from **Hourly "
+                "Production** shifts (all sites, approved or not yet); before it, from the Production Data workbook. "
+                "Ritase rows of the workbook on or after the cutover are then ignored.")
+    with session_scope() as s:
+        cut = repo.hourly_cutover(s)
+    on = st.toggle("Hourly Production is the official source of OB and coal ritase", value=cut is not None,
+                   key="cut_on")
+    from core.config import today_wib
+    day = st.date_input("Cutover date (first production date from Hourly Production)", cut or today_wib(),
+                        key="cut_date", disabled=not on, format="YYYY-MM-DD")
+    new = day if on else None
+    if new != cut and st.button("Save cutover", type="primary", key="cut_save"):
+        with session_scope() as s:
+            repo.set_setting(s, repo.CUTOVER_KEY, new.isoformat() if new else None, user.username)
+            audit(s, user.username, "hourly_cutover", None, new.isoformat() if new else "off")
+        st.success(f"Cutover {'set to ' + f'{new:%d %b %Y}' if new else 'switched off'}. Dashboards and TVs follow "
+                   "within a minute.")
 
 with tab_s:
     with session_scope() as s:

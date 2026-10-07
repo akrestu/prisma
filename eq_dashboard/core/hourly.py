@@ -480,6 +480,34 @@ def to_long(rows: pd.DataFrame) -> pd.DataFrame:
     return long.drop(columns="rc")
 
 
+# ------------------------------------------------------------------ official ritase from the cutover date on
+RITASE_COLS = ["site", "site_hauler", "date", "hour_slot", "shift", "hauler", "hauler_model", "muatan", "loader",
+               "loader_model", "material", "material_group", "pit", "disposal", "dist_v", "dist_h", "rit", "volume"]
+
+
+def as_ritase(long: pd.DataFrame) -> pd.DataFrame:
+    """Shift lines per hour (to_long) → the columns of the Production Data ritase table, hours with trips only.
+    The hauler counts to the loader's site, as in Production Data."""
+    if long is None or long.empty:
+        return pd.DataFrame(columns=RITASE_COLS)
+    d = long[long["rit"] > 0]
+    out = d.assign(site_hauler=d["site"], dist_h=d.get("distance_m", np.nan))
+    return out.reindex(columns=RITASE_COLS).reset_index(drop=True)
+
+
+def official_ritase(imported: pd.DataFrame, hourly: pd.DataFrame, cutover: dt.date | None) -> pd.DataFrame:
+    """Ritase used by dashboards and TVs: Production Data before the cutover date, Hourly Production from it on (all
+    saved shifts, approved or not). No cutover → Production Data only."""
+    if cutover is None:
+        return imported
+    before = imported[imported["date"] < cutover] if len(imported) else imported
+    after = hourly[hourly["date"] >= cutover] if hourly is not None and len(hourly) else None
+    parts = [p for p in (before, after) if p is not None and len(p)]
+    if not parts:
+        return imported.iloc[:0] if len(imported.columns) else pd.DataFrame(columns=RITASE_COLS)
+    return pd.concat(parts, ignore_index=True)
+
+
 # ------------------------------------------------------------------ Excel template (one shift per file)
 def _label(nrp, names: dict) -> str | None:
     nrp = nrp_of(nrp)

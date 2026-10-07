@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from core import tv
 from core.tv_render import render
 from db import models as m
+from db import repo
 from db.engine import session_scope
 
 
@@ -23,7 +24,8 @@ def _payload(site: str, period: str, version_key: tuple, review: tuple | None = 
 
 
 def version_key(site: str) -> tuple:
-    """Changes on every publish/rollback and on any edit of targets, plans or PM intervals (values, not counts)."""
+    """Changes on every publish/rollback, on any edit of targets, plans or PM intervals (values, not counts), and on
+    every Hourly Production save or cutover change."""
     with session_scope() as s:
         pub = tuple((int(uid), str(ts)) for uid, ts in s.execute(
             select(m.UploadSite.upload_id, m.UploadSite.reviewed_at)
@@ -36,6 +38,7 @@ def version_key(site: str) -> tuple:
             s.execute(select(P.year, P.month, P.date, P.ob_bcm, P.coal_ton)
                       .where(P.site == site).order_by(P.year, P.month, P.date)).all(),
             s.execute(select(PMI.model, PMI.interval_hm, PMI.tolerance_pct).order_by(PMI.model)).all(),
+            repo.hourly_stamp(s, [site]),            # ritase from the cutover date on comes from Hourly Production
         )
     cfg = hashlib.sha1(repr(rows).encode(), usedforsecurity=False).hexdigest()
     return pub, cfg

@@ -102,6 +102,19 @@ def _load(s: Session, site: str, ids: list[int]):
     return ev, st_, rit, coal, fuel
 
 
+def _with_hourly(s: Session, site: str, rit: pd.DataFrame, months) -> pd.DataFrame:
+    """Production Data ritase before the cutover date, Hourly Production from it on (core.hourly.official_ritase)."""
+    from core import hourly as H
+    from db import repo
+    cut = repo.hourly_cutover(s)
+    if cut is None or not len(months):
+        return rit
+    d0, d1 = max(min(months), cut), max(months)
+    d1 = d1.replace(day=calendar.monthrange(d1.year, d1.month)[1])
+    hourly = repo.hourly_ritase(s, [site], d0, d1) if d0 <= d1 else None
+    return H.official_ritase(rit, hourly.reindex(columns=rit.columns) if hourly is not None else None, cut)
+
+
 def _targets(s: Session, site: str, months: list[dt.date], weights: dict) -> dict:
     rows = frame(s, select(m.Target.year, m.Target.month, *[getattr(m.Target, c) for c in METRICS])
                  .where(m.Target.site == site))
@@ -169,6 +182,7 @@ def build(s: Session, site: str, intervals: pd.DataFrame | None = None, period: 
         ver = ver[[mo.year == latest.year for mo in ver["month"]]]
     tv.updated_at = ver["reviewed_at"].max()
     ev, st_, rit, coal, fuel = _load(s, site, [int(x) for x in ver["upload_id"]])
+    rit = _with_hourly(s, site, rit, ver["month"])
     if review:
         inside = lambda d, c="date": d[(d[c] >= date_from) & (d[c] <= date_to)] if len(d) else d  # noqa: E731
         ev, rit, coal, fuel, st_ = inside(ev), inside(rit), inside(coal), inside(fuel), inside(st_, "start_date")
