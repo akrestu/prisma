@@ -87,7 +87,7 @@ OTHER = {
     "data_explorer": P("pages/data/explorer.py", "Data explorer", "table_view"),
     "hourly_input": P("pages/data/hourly_input.py", HOURLY_PRODUCTION, "schedule_send"),
     "hourly_setup": P("pages/admin/hourly_setup.py", "Load factors", "scale"),
-    "haul_routes": P("pages/admin/haul_routes.py", "Destinations & routes", "alt_route"),
+    "haul_routes": P("pages/admin/pit_disposal.py", "PIT & disposals", "alt_route"),
     "operators": P("pages/admin/operators.py", "Operators", "badge"),
     "unit_population": P("pages/admin/unit_population.py", UNIT_POPULATION, "precision_manufacturing"),
     "delete_data": P("pages/admin/delete_data.py", "Delete data", "delete_forever"),

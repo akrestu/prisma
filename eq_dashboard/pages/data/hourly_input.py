@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from core import hourly as H
-from core import routes as RT
+from core import locations as LC
 from core import shift_flow as SF
 from core.config import UNMAPPED, WIB, now_wib
 from core.ingest import audit
@@ -52,7 +52,7 @@ with session_scope() as s:
     units = repo.population_for(s, date)
     ops = repo.operators(s, site)
     mtg, basis, hmt = repo.model_targets(s), repo.site_basis(s, site), repo.hourly_model_targets(s, site)
-    dest, rts = repo.haul_destinations(s, site), RT.routes_at(repo.haul_routes(s, site), date)
+    locs = repo.haul_locations(s, site)
     coord_now = sh.coordinator if sh else ""
     stamp = f"{sh.updated_by} · {sh.updated_at.astimezone(WIB):%d %b %H:%M} WIB" if sh else ""
     cr = repo.pending_change(s, sh.id) if sh else None
@@ -70,9 +70,9 @@ haulers = sorted(site_units.loc[H.is_hauler(site_units), "unit_id"]) if len(site
 op_label = {n: f"{n} - {nm}" for n, nm in zip(ops["nrp"], ops["name"], strict=True)}
 code_label = {k: f"{k} - {v}" for k, v in H.REMARKS.items()}
 slots = H.SLOTS[shift]
-GRID = ["loader", "loader_nrp", "material", "hauler", "hauler_model", "hauler_nrp", "disposal", "pit", "distance_m",
+GRID = ["loader", "loader_nrp", "material", "hauler", "hauler_model", "hauler_nrp", "pit", "disposal", "distance_m",
         "dist_v", *H.R]
-dest_names = sorted(dest.loc[dest["active"].astype(bool), "name"]) if len(dest) else []
+pit_names, disp_names = LC.names(locs, "PIT"), LC.names(locs, "DISPOSAL")
 unit_model = dict(zip(site_units["unit_id"], site_units["model"], strict=True)) if len(site_units) else {}
 
 
@@ -247,10 +247,11 @@ with t_web:
                                                          "picked; not typed"),
         "hauler_nrp": st.column_config.SelectboxColumn("Hauler operator", options=list(op_label.values()),
                                                        width="medium"),
-        "disposal": st.column_config.SelectboxColumn("Destination", options=dest_names, width="medium",
-                                                     help="Where the hauler unloads; pit follows from the "
-                                                          "route of this loader + destination"),
-        "pit": st.column_config.TextColumn("PIT", disabled=True, help="From the route after saving; not typed"),
+        "pit": st.column_config.SelectboxColumn("PIT", options=pit_names, width="small",
+                                                help="Loading pit (the site's list, of the line's material)"),
+        "disposal": st.column_config.SelectboxColumn("Disposal", options=disp_names, width="medium",
+                                                     help="Where the hauler unloads (the site's list, of the line's "
+                                                          "material)"),
         "distance_m": st.column_config.NumberColumn("H distance (m)", format="%.0f",
                                                     help="Horizontal distance, typed by the engineering checker"),
         "dist_v": st.column_config.NumberColumn("V distance (m)", format="%.0f",
@@ -267,12 +268,12 @@ with t_web:
                           key=gkey, height=min(600, 38 * (len(work) + 3) + 40), on_change=fill_model,
                           args=(gkey, wkey))
     res = H.resolve(from_grid(grid), lf, tg, units, ops, model_targets=mtg, basis=basis, hourly_models=hmt,
-                    destinations=dest, routes=rts)
-    st.caption("One row per hauler and destination. When a hauler goes to a second destination, or its operator "
+                    locations=locs)
+    st.caption("One row per hauler and disposal. When a hauler goes to a second disposal, or its operator "
                "changes during the shift, add a second row for the same hauler.")
-    if dest.empty:
-        st.caption("⚠ No destinations for this site yet: an Admin or Site Manager adds them in **Hourly Production "
-                   "setup → Destinations & routes**.")
+    if not pit_names or not disp_names:
+        st.caption("⚠ No PIT or disposal for this site yet: an Admin or Site Manager adds them in **Hourly "
+                   "Production setup → PIT & disposals**.")
 
     edits = st.session_state.get(gkey) or {}
     dirty = any(edits.get(k) for k in ("edited_rows", "added_rows", "deleted_rows")) \
@@ -332,7 +333,7 @@ with t_xls:
     lines = rows if sh is not None else (prev if prev is not None else None)
     st.download_button(f"Download template · {site} {date:%d %b} {shift}",
                        lambda: H.build_template(site, date, shift, lf, tg, lines, coord_now, units, ops,
-                                                remarks if sh is not None else None, dest),
+                                                remarks if sh is not None else None, locs),
                        file_name=H.file_name(site, date, shift), on_click="ignore",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     f = st.file_uploader("Filled template (.xlsx)", type=["xlsx"], key=f"hi_file_{st.session_state.get('hi_ver', 0)}",
@@ -361,10 +362,9 @@ with t_xls:
             ops_f = repo.operators(s, hf.site)
             mtg_f, basis_f = repo.model_targets(s), repo.site_basis(s, hf.site)
             hmt_f = repo.hourly_model_targets(s, hf.site)
-            dest_f = repo.haul_destinations(s, hf.site)
-            rts_f = RT.routes_at(repo.haul_routes(s, hf.site), hf.date)
+            locs_f = repo.haul_locations(s, hf.site)
         rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f, model_targets=mtg_f, basis=basis_f, hourly_models=hmt_f,
-                       destinations=dest_f, routes=rts_f)
+                       locations=locs_f)
         rm_f, rm_problems = H.clean_remarks(hf.remarks, hf.shift, sorted(set(rf.rows["loader"].dropna()))
                                             if len(rf.rows) else None)
         rf.problems.extend(rm_problems)

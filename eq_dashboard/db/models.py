@@ -439,7 +439,7 @@ class HourlyRow(Base):
     material: Mapped[str] = mapped_column(String(80))
     material_group: Mapped[str] = mapped_column(String(5))
     pit: Mapped[str | None] = mapped_column(String(120))               # from the route (loader + destination)
-    disposal: Mapped[str | None] = mapped_column(String(120))          # destination (Tujuan), from HaulDestination
+    disposal: Mapped[str | None] = mapped_column(String(120))          # from the site's disposal list (HaulLocation)
     distance_m: Mapped[float | None] = mapped_column(Float)            # horizontal distance, from the route
     dist_v: Mapped[float | None] = mapped_column(Float)                # vertical distance, from the route
     hauler_model: Mapped[str] = mapped_column(String(80))
@@ -485,30 +485,18 @@ class AppSetting(Base):
                                                     onupdate=func.now())
 
 
-class HaulDestination(Base):
-    """Where haulers of a site unload (Tujuan): disposals for OB, ROM/stockpiles for coal. Never deleted once used;
-    set inactive instead."""
-    __tablename__ = "haul_destination"
-    __table_args__ = (UniqueConstraint("site", "name"),)
+class HaulLocation(Base):
+    """PIT and disposal master of a site per material: the drop-down lists of the Hourly Production lines (OB →
+    disposals, CG → ROM / stockpiles). Set inactive to hide one from the shift form."""
+    __tablename__ = "haul_location"
+    __table_args__ = (UniqueConstraint("site", "kind", "material_group", "name"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     site: Mapped[str] = mapped_column(String(40), index=True)
+    kind: Mapped[str] = mapped_column(String(10))              # PIT | DISPOSAL
     name: Mapped[str] = mapped_column(String(120))
     material_group: Mapped[str] = mapped_column(String(5))    # OB | CG
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-
-class HaulRoute(Base):
-    """Loader + destination → loading pit and haul distances, valid from a date until a newer row replaces it."""
-    __tablename__ = "haul_route"
-    __table_args__ = (UniqueConstraint("site", "loader", "destination", "valid_from"),)
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    site: Mapped[str] = mapped_column(String(40), index=True)
-    loader: Mapped[str] = mapped_column(String(40))
-    destination: Mapped[str] = mapped_column(String(120))
-    pit: Mapped[str | None] = mapped_column(String(120))
-    dist_h: Mapped[float | None] = mapped_column(Float)
-    dist_v: Mapped[float | None] = mapped_column(Float)
-    valid_from: Mapped[dt.date] = mapped_column(Date)
 
 class Operator(Base):
     """Operator master per site: the NRP identifies a person for operator KPIs, whatever spelling the name has."""

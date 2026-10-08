@@ -159,8 +159,8 @@ def test_template_only_asks_what_the_officer_knows():
                            "hauler_model": "777E"}])                      # old per-model line → blank truck row
     tpl = H.build_template("WBK-BAU", dt.date(2026, 9, 28), "NS", LF, TG, pd.concat([lines, spare]), "", UNITS, OPS)
     ws = load_workbook(_io.BytesIO(tpl))["Hourly Production"]
-    heads = [c.value for c in ws[H.HEADER_ROW]][:8]
-    assert heads == ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "Destination",
+    heads = [c.value for c in ws[H.HEADER_ROW]][:9]
+    assert heads == ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "PIT", "Disposal",
                      "H distance (m)", "V distance (m)"]
     assert "Hauler model" not in [c.value for c in ws[H.HEADER_ROW]]
     hf = H.parse_template(tpl)

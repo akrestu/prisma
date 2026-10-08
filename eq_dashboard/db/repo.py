@@ -330,38 +330,17 @@ def hourly_model_targets(s: Session, site: str) -> pd.DataFrame:
     return frame(s, select(t.model, t.basis, t.ob, t.mud, t.coal).where(t.site == site).order_by(t.model, t.basis))
 
 
-def haul_destinations(s: Session, site: str) -> pd.DataFrame:
-    """Destinations (Tujuan) of a site: name, material_group, active."""
-    t = m.HaulDestination
-    return frame(s, select(t.name, t.material_group, t.active).where(t.site == site)
-                 .order_by(t.material_group.desc(), t.name))
+def haul_locations(s: Session, site: str) -> pd.DataFrame:
+    """PIT and disposal master of a site: kind (PIT | DISPOSAL), name, material_group, active."""
+    t = m.HaulLocation
+    return frame(s, select(t.kind, t.name, t.material_group, t.active).where(t.site == site)
+                 .order_by(t.kind.desc(), t.material_group.desc(), t.name))
 
 
-def haul_routes(s: Session, site: str) -> pd.DataFrame:
-    """Every route row of a site, history included: loader, destination, pit, dist_h, dist_v, valid_from."""
-    t = m.HaulRoute
-    return frame(s, select(t.loader, t.destination, t.pit, t.dist_h, t.dist_v, t.valid_from).where(t.site == site)
-                 .order_by(t.loader, t.destination, t.valid_from))
-
-
-def save_haul_setup(s: Session, site: str, destinations: pd.DataFrame | None = None,
-                    routes: pd.DataFrame | None = None) -> dict[str, int]:
-    """Replace the destinations and/or the route rows of a site (None leaves that part as it is). A destination
-    used by a route is kept: it is set inactive instead of being dropped, so older routes still resolve."""
-    out = {}
-    if destinations is not None:
-        used = set(haul_routes(s, site)["destination"]) if routes is None else set(routes["destination"])
-        keep = destinations.copy()
-        gone = haul_destinations(s, site)
-        gone = gone[~gone["name"].str.upper().isin(set(keep["name"].str.upper())) & gone["name"].isin(used)]
-        if len(gone):
-            keep = pd.concat([keep, gone.assign(active=False)], ignore_index=True)
-        out["destinations"] = replace_site_rows(s, m.HaulDestination, site, keep, ["name", "material_group",
-                                                                                   "active"])
-    if routes is not None:
-        out["routes"] = replace_site_rows(s, m.HaulRoute, site, routes,
-                                          ["loader", "destination", "pit", "dist_h", "dist_v", "valid_from"])
-    return out
+def save_haul_locations(s: Session, site: str, locations: pd.DataFrame) -> int:
+    """Replace the PIT and disposal master of a site (edited as a whole). Shift lines keep the names they were
+    saved with, so removing one never changes older shifts."""
+    return replace_site_rows(s, m.HaulLocation, site, locations, ["kind", "name", "material_group", "active"])
 
 
 def replace_site_rows(s: Session, model, site: str, df: pd.DataFrame, cols: list[str]) -> int:
