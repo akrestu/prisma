@@ -15,6 +15,7 @@ PAGE_ROWS = 2_000    # rows sent to the browser per page
 user = require("data_explorer")
 sites = sites_for(user)
 st.title("Data explorer")
+st.caption("Browse, filter and download the stored data tables.")
 
 with session_scope() as s:
     pub = repo.published_versions(s, sites)

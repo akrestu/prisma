@@ -15,6 +15,7 @@ from db.engine import session_scope
 
 user = require("users_roles")
 st.title("Users & roles")
+st.caption("Add users, set their role and the sites they may see.")
 all_sites = [x for x in sites_for(user) if x != UNMAPPED]
 
 msg = st.session_state.pop("users_msg", None)

@@ -9,6 +9,7 @@ from core.ui import fmt_num, fmt_pct
 
 c = dash.context("overview", title="Overview")
 st.title("Overview")
+st.caption("The month at a glance per site: production, equipment availability and fuel.")
 
 k = metrics.kpis(c.ev).iloc[0]
 rel = metrics.reliability(c.ev, c.st).iloc[0]

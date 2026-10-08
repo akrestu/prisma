@@ -8,6 +8,7 @@ from db.engine import session_scope
 
 user = require("account")
 st.title("Change password")
+st.caption("Change the password you sign in with.")
 if user.must_change_password:
     st.warning("This is your first sign-in. Change your password to continue.")
 

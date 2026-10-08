@@ -14,7 +14,7 @@ from db.engine import session_scope
 
 user = require("shift_approval")
 sites = sites_for(user)
-st.title("Shift approval")
+st.title("Approve hourly shifts")
 st.caption("Hourly Production shifts become official once you approve them. A change to an approved or closed "
            "shift (closing: 09:00 WIB the day after) arrives here as a change request.")
 

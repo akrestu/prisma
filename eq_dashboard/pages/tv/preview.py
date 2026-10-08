@@ -9,6 +9,7 @@ from pages.tv.screen import SCREENS, show, show_hourly, theme_picker
 user = require("preview_tv")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
 st.title("TV preview")
+st.caption("See the site TV screens from here, live or for a past shift.")
 if not sites:
     st.info("No sites yet.")
     st.stop()

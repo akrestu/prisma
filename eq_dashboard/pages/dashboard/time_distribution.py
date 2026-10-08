@@ -8,6 +8,7 @@ from core.ui import excel_download, fmt_num
 
 c = dash.context("time_distribution", title="Time distribution")
 st.title("Time distribution")
+st.caption("Where equipment hours go: working, standby, delay and breakdown.")
 
 b = metrics.time_buckets(c.ev).iloc[0]
 client_codes = dash.client_standby_codes()

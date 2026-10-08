@@ -5,6 +5,7 @@ from auth.access import can_review
 from core import dash, metrics
 from core import ingest as ing
 from core.ui import fmt_num, fmt_pct, require, sites_for
+from core.validate import PRODUCTION_DATA
 from db import models as m
 from db import repo
 from db.engine import session_scope
@@ -84,7 +85,8 @@ def _approve_all(rows) -> None:
 
 user = require("approval")
 sites = sites_for(user)
-st.title("Data approval")
+st.title(f"Approve {PRODUCTION_DATA}")
+st.caption("Review each site's uploaded Production Data (KPIs and data checks), then approve or reject it.")
 
 with session_scope() as s:
     queue = repo.upload_sites(s, sites, [ing.PENDING])

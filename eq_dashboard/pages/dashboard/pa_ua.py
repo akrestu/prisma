@@ -9,6 +9,8 @@ from core.ui import excel_download, fmt_pct
 
 c = dash.context("pa_ua", title="PA & UoA")
 st.title("PA & UoA")
+st.caption("Physical availability (PA) and use of availability (UoA) per site, model and unit, against "
+           "target.")
 
 k = metrics.kpis(c.ev).iloc[0]
 t = dash.targets_for(c)

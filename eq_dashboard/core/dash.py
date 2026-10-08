@@ -207,7 +207,7 @@ def context(page: str, unit_filter: bool = True, title: str | None = None) -> Ct
         if user.role in ("admin", "site_manager"):
             msg += " Open **Approval** to approve pending uploads."
         elif user.role == "data_officer":
-            msg += " Import a workbook in **Input & upload → Production Data**, then wait for Site Manager approval."
+            msg += " Import a workbook in **Input & upload → Upload Production Data**, then wait for Site Manager approval."
         halt(st.info, msg)
     _seed_filters(user)
 

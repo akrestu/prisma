@@ -8,6 +8,7 @@ from core.ui import excel_download, fmt_num
 
 c = dash.context("reliability", title="Reliability")
 st.title("Reliability")
+st.caption("Breakdowns: how often units stop (MTBS) and how long repairs take (MTTR).")
 
 rel = metrics.reliability(c.ev, c.st).iloc[0]
 iv = dash.pm_intervals()

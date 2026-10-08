@@ -195,12 +195,12 @@ RULES = [
     "and each site × month is approved on its own. Upload a month again to replace it; old versions are kept.",
     f"Do not rename sheets or column headers. Headers are in row 1, except '{TRIPS}' where they are in row 2. "
     "Files with the old sheet names (Eq.Event, Ritasi Unit, Data Timbangan, Fuel Consume, Fuel Receipt) still work.",
-    "Units and their sites come from the separate Unit Population workbook (Input & upload → Unit Population).",
+    "Units and their sites come from the separate Unit Population workbook (Input & upload → Upload Unit Population).",
     "Extra columns are allowed and ignored. Empty rows are skipped.",
     "Dates must be real Excel dates, times real Excel times (hover a header to see its description and an example).",
     f"Save as .xlsx or .xlsb and name it {file_stem(DATASET)}_YYYY-MM.xlsx (one month, e.g. "
     f"{file_stem(DATASET)}_2026-09.xlsx) or {file_stem(DATASET)}_YYYY.xlsx (a whole year).",
-    f"Upload it in PRISMA → Input & upload → {DATASET} → Import. Structure and data quality are checked before "
+    f"Upload it in PRISMA → Input & upload → Upload {DATASET} → Import. Structure and data quality are checked before "
     "anything is saved. Small corrections can also be made in the Edit tab without Excel.",
 ]
 

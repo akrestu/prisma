@@ -11,6 +11,7 @@ from db.engine import session_scope
 user = require("upload_history")
 sites = sites_for(user)
 st.title("Upload history")
+st.caption("Every upload with its status, who sent it and who reviewed it.")
 
 with session_scope() as s:
     df = repo.upload_sites(s, sites)

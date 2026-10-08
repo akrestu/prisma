@@ -19,7 +19,9 @@ INK = T.INK   # target lines and neutral labels follow light/dark (Streamlit swa
 
 user = require("hourly")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
-st.title("Hourly dashboard")
+st.title("Hourly production")
+st.caption("Flash production per hour for any site and shift: the TV screen, plus charts per hour, fleet, "
+           "hauler and operator.")
 if not sites:
     st.info("No site access.")
     st.stop()
@@ -197,7 +199,7 @@ with t_ops:
                                          loaders=("loader", lambda x: ", ".join(sorted(set(map(str, x))))))
                .assign(tph=lambda x: x["trips"] / x["hours"]).sort_values("tph", ascending=False))
         st.caption("Trips per working hour of each hauler operator this shift: the starting point for operator "
-                   "KPIs. Operators are identified by NRP from Hourly Production setup → Operators.")
+                   "KPIs. Operators are identified by NRP from Setup → Operators.")
         fig = go.Figure(go.Bar(
             x=ops.index, y=ops["tph"], marker_color=COLOR[group],
             customdata=ops[["trips", "volume", "hours", "haulers", "loaders"]].values,

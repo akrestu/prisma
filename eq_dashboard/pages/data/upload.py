@@ -23,7 +23,7 @@ log = logging.getLogger("wanpis.import")
 user = require("upload")
 sites = sites_for(user)
 can_import = user.role in (ADMIN, DATA_OFFICER)
-st.title(DATASET)
+st.title(f"Upload {DATASET}")
 st.caption("Equipment events, hauler trips, coal weighbridge and fuel. Import one month or a whole year (split by "
            "month), or correct a month in the Edit tab. Every import or edit becomes a new version per site × month "
            "that a Site Manager approves; the previous version is kept.")
@@ -402,7 +402,7 @@ with t_tpl:
                        file_name=f"{file_stem(DATASET)}_template_v{TEMPLATE_VERSION}.xlsx", type="primary",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", on_click="ignore")
     st.caption("Units and their sites are not part of Production Data: keep them in the Unit Population workbook "
-               "(Input & upload → Unit Population).")
+               "(Input & upload → Upload Unit Population).")
     st.caption("Your existing files keep working: the old sheet names (Eq.Event, Ritasi Unit, Data Timbangan, "
                "Fuel Consume, Fuel Receipt) and Data_Prod file names are still read. The template only fixes names "
                "and formats, it does not change how data is calculated.")

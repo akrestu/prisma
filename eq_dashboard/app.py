@@ -3,11 +3,11 @@ import streamlit as st
 
 from core import brand
 from core import theme as T
-from core.validate import HOURLY_PRODUCTION, PRODUCTION_DATA, UNIT_POPULATION
+from core.validate import PRODUCTION_DATA, UNIT_POPULATION
 
 st.set_page_config(page_title=brand.NAME, page_icon=brand.FAVICON, layout="wide")
 
-from auth.access import PAGE_ROLES, ROLE_LABEL  # noqa: E402
+from auth.access import DATA_OFFICER, PAGE_ROLES, ROLE_LABEL, SITE_MANAGER  # noqa: E402
 from auth.authenticator import authenticate  # noqa: E402
 from db import repo  # noqa: E402
 from db.engine import session_scope  # noqa: E402
@@ -62,13 +62,15 @@ if user is None:
 st.session_state["user"] = user
 
 
-def P(path, title, icon, **kw):
-    return st.Page(path, title=title, icon=f":material/{icon}:", **kw)
+def P(path, title, icon):
+    """Page spec (path, title, icon); the st.Page objects are made once the landing page and the waiting
+    counts of this user are known."""
+    return path, title, icon
 
 
 DASH = {
-    "overview": P("pages/dashboard/overview.py", "Overview", "dashboard", default=True),
-    "hourly": P("pages/dashboard/hourly.py", "Hourly dashboard", "timer"),
+    "overview": P("pages/dashboard/overview.py", "Overview", "dashboard"),
+    "hourly": P("pages/dashboard/hourly.py", "Hourly production", "timer"),
     "pa_ua": P("pages/dashboard/pa_ua.py", "PA & UoA", "speed"),
     "time_distribution": P("pages/dashboard/time_distribution.py", "Time distribution", "donut_large"),
     "reliability": P("pages/dashboard/reliability.py", "Reliability", "build"),
@@ -80,16 +82,16 @@ DASH = {
 }
 OTHER = {
     "preview_tv": P("pages/tv/preview.py", "TV preview", "tv"),
-    "upload": P("pages/data/upload.py", PRODUCTION_DATA, "upload_file"),
-    "approval": P("pages/data/approval.py", "Approval", "fact_check"),
-    "shift_approval": P("pages/data/shift_approval.py", "Shift approval", "task_alt"),
+    "upload": P("pages/data/upload.py", f"Upload {PRODUCTION_DATA}", "upload_file"),
+    "approval": P("pages/data/approval.py", f"Approve {PRODUCTION_DATA}", "fact_check"),
+    "shift_approval": P("pages/data/shift_approval.py", "Approve hourly shifts", "task_alt"),
     "upload_history": P("pages/data/upload_history.py", "Upload history", "history"),
     "data_explorer": P("pages/data/explorer.py", "Data explorer", "table_view"),
-    "hourly_input": P("pages/data/hourly_input.py", HOURLY_PRODUCTION, "schedule_send"),
+    "hourly_input": P("pages/data/hourly_input.py", "Input hourly production", "schedule_send"),
     "hourly_setup": P("pages/admin/hourly_setup.py", "Load factors", "scale"),
     "haul_routes": P("pages/admin/pit_disposal.py", "PIT & disposals", "alt_route"),
     "operators": P("pages/admin/operators.py", "Operators", "badge"),
-    "unit_population": P("pages/admin/unit_population.py", UNIT_POPULATION, "precision_manufacturing"),
+    "unit_population": P("pages/admin/unit_population.py", f"Upload {UNIT_POPULATION}", "precision_manufacturing"),
     "delete_data": P("pages/admin/delete_data.py", "Delete data", "delete_forever"),
     "users_roles": P("pages/admin/users_roles.py", "Users & roles", "group"),
     "targets_plan": P("pages/admin/targets_plan.py", "Production targets", "flag"),
@@ -110,36 +112,44 @@ def allowed(key: str) -> bool:
 if st.session_state.pop("password_updated", False):
     st.toast("Password updated.")
 if user.must_change_password:
-    nav = st.navigation([OTHER["account"]])
+    path, title, icon = OTHER["account"]
+    nav = st.navigation([st.Page(path, title=title, icon=f":material/{icon}:")])
 else:
+    n = n_sh = 0
     if allowed("approval"):
         from core.ui import sites_for
 
         with session_scope() as s:
             n = repo.pending_count(s, sites_for(user))
             n_sh = repo.hourly_waiting_count(s, sites_for(user))
-        if n:
-            OTHER["approval"] = P("pages/data/approval.py", f"Approval ({n} waiting)", "fact_check")
-        if n_sh:
-            OTHER["shift_approval"] = P("pages/data/shift_approval.py", f"Shift approval ({n_sh} waiting)", "task_alt")
+    # the page a user lands on: their daily task (data officer: hourly input; approver: what waits for them)
+    if user.role == SITE_MANAGER:
+        landing = "shift_approval" if n_sh else "approval" if n else "overview"
     else:
-        n = 0
-    pick = lambda keys, src=OTHER: [src[k] for k in keys if allowed(k)]  # noqa: E731
-    # grouped by task: look at results, dig deeper, bring data in, approve, run the TVs, configure
+        landing = "hourly_input" if user.role == DATA_OFFICER else "overview"
+    waiting = {"approval": n, "shift_approval": n_sh}
+
+    def page(key: str, src: dict) -> st.Page:
+        path, title, icon = src[key]
+        title += f" ({waiting[key]} waiting)" if waiting.get(key) else ""
+        return st.Page(path, title=title, icon=f":material/{icon}:", default=key == landing)
+
+    pick = lambda keys, src=OTHER: [page(k, src) for k in keys if allowed(k)]  # noqa: E731
+    # grouped by task: production results, equipment results, deeper analysis, bring data in, approve, run the
+    # TVs, configure (the rarely used setup pages last)
     sections = {
-        "Dashboard": pick(["overview", "hourly", "pa_ua", "reliability", "production_ob", "coal_getting", "fuel"], DASH),
-        "Analysis": pick(["loader_fleet", "time_distribution", "data_quality"], DASH) + pick(["data_explorer"]),
+        "Production": pick(["overview", "hourly", "production_ob", "coal_getting", "fuel"], DASH),
+        "Equipment": pick(["pa_ua", "reliability", "time_distribution", "loader_fleet"], DASH),
+        "Analysis": pick(["data_quality"], DASH) + pick(["data_explorer", "home"]),
         # the three datasets in the order they are needed: units first, then production, then hourly
-        "Input & upload": pick(["home", "unit_population", "upload", "hourly_input", "upload_history"]),
+        "Input & upload": pick(["unit_population", "upload", "hourly_input", "upload_history"]),
         "Approval": pick(["approval", "shift_approval"]),
         "TV": pick(["preview_tv", "display_devices"]),
-        # setup per dataset: what Production Data is measured against, what Hourly Production needs to run
-        f"{PRODUCTION_DATA} setup": pick(["targets_plan", "pm_interval"]),
-        f"{HOURLY_PRODUCTION} setup": pick(["hourly_targets", "hourly_setup", "haul_routes", "operators"]),
-        "Settings": pick(["sites_mapping", "users_roles", "audit_log", "delete_data"]),
+        "Setup": pick(["targets_plan", "hourly_targets", "hourly_setup", "haul_routes", "operators", "sites_mapping",
+                       "users_roles", "pm_interval", "audit_log", "delete_data"]),
         "Account": pick(["account"]),
     }
-    if n:  # something waits for this approver: put it first
+    if n or n_sh:  # something waits for this approver: put it first
         sections = {"Approval": sections.pop("Approval"), **sections}
     # expanded: every section stays visible (by default Streamlit folds all but ~10 links into "View N more",
     # which hid Input & upload, Approval and the setup pages)

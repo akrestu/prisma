@@ -13,6 +13,7 @@ from core.validate import HOUR_SLOTS
 
 c = dash.context("production_ob", unit_filter=False, title="OB production")
 st.title("OB production")
+st.caption("Overburden volume (BCM) against plan, per day and per fleet.")
 ob = c.rit[c.rit["material_group"] == "OB"] if len(c.rit) else c.rit
 if ob.empty:
     st.info("No OB trips for this selection.")

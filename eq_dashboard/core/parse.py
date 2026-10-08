@@ -105,7 +105,7 @@ def parse_frames(frames: dict[str, pd.DataFrame], alias: dict[str, str] | None =
     if units is None or len(units) == 0 or weak:
         if "Unit Population" not in frames:
             raise StructureError([f"No unit population applies to {month:%B %Y}. Import a Unit Population workbook "
-                                  "(Input & upload → Unit Population) with an effective date on or before this month."])
+                                  "(Input & upload → Upload Unit Population) with an effective date on or before this month."])
         units, source = clean.clean_units(frames["Unit Population"]), "sheet 'Unit Population' in this file"
     events = clean.clean_events(frames["Equipment Events"], units)
     if events.empty:

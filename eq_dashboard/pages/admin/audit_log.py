@@ -13,6 +13,7 @@ from db.engine import session_scope
 
 user = require("audit_log")
 st.title("Audit log")
+st.caption("Who changed what and when: uploads, approvals, setup changes and deletions.")
 a, b, c = st.columns(3)
 days = a.selectbox("Period", [1, 7, 30, 90, 365], index=2, format_func=lambda d: f"last {d} days")
 since = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)

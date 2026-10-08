@@ -9,6 +9,7 @@ from core.ui import excel_download
 SEV = {"critical": "critical", "warn": "to check", "info": "info (handled automatically)"}
 c = dash.context("data_quality", unit_filter=False, title="Data quality")
 st.title("Data quality")
+st.caption("Problems found in the uploaded data, per site and month, to fix in the source workbook.")
 dq = c.dq()
 if dq.empty:
     st.success("No data quality findings.")

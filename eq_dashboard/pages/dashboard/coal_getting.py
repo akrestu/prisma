@@ -10,6 +10,7 @@ from core.ui import excel_download, fmt_num
 
 c = dash.context("coal_getting", unit_filter=False, title="Coal getting")
 st.title("Coal getting")
+st.caption("Coal getting tonnes against plan, per day and per fleet.")
 t = c.coal
 if t.empty:
     st.info("No weighbridge data for this selection.")

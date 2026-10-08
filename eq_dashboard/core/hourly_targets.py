@@ -1,5 +1,5 @@
 """Hourly Production targets workbook of one site: targets per excavator model (internal and client) and unit
-overrides. Download pre-filled, edit in Excel, upload back; the grids in Hourly Production setup → Hourly
+overrides. Download pre-filled, edit in Excel, upload back; the grids in Setup → Hourly
 targets do the same.
 No Streamlit or database here."""
 from __future__ import annotations

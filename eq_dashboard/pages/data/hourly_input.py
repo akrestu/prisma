@@ -19,7 +19,7 @@ from db.engine import session_scope
 
 user = require("hourly_input")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
-st.title(H.DATASET)
+st.title("Input hourly production")
 st.caption("Trips per hauler per production hour, entered here in the grid or uploaded with the Excel template of "
            "the shift. Saved lines show on the hourly TV within a minute; submit the shift for the Site Manager's "
            "approval before closing (09:00 WIB the next day).")
@@ -60,7 +60,7 @@ with session_scope() as s:
     flow = SF.state(sh.status if sh else None, date, SF.now(), cr is not None)
     review = (sh.reviewed_by, sh.reviewed_at, sh.review_note) if sh and sh.reviewed_by else None
 if lf.empty:
-    st.warning(f"No load factors for {site} yet. An Admin or Site Manager sets them in **Hourly Production setup → Load factors**.")
+    st.warning(f"No load factors for {site} yet. An Admin or Site Manager sets them in **Setup → Load factors**.")
     st.stop()
 
 site_units = units[units["site"] == site] if units is not None else pd.DataFrame(columns=["unit_id", "type"])
@@ -234,7 +234,7 @@ with t_web:
                           help="Shown in the header of the hourly TV screen")
     ver = st.session_state.get("hi_ver", 0)
     if ops.empty:
-        st.caption("⚠ No operators for this site yet: add them in **Hourly Production setup → Operators** to pick them by NRP.")
+        st.caption("⚠ No operators for this site yet: add them in **Setup → Operators** to pick them by NRP.")
     cfg = {
         "loader": st.column_config.SelectboxColumn("Excavator", options=loaders, required=True),
         "loader_nrp": st.column_config.SelectboxColumn("Operator", options=list(op_label.values()),
@@ -272,8 +272,8 @@ with t_web:
     st.caption("One row per hauler and disposal. When a hauler goes to a second disposal, or its operator "
                "changes during the shift, add a second row for the same hauler.")
     if not pit_names or not disp_names:
-        st.caption("⚠ No PIT or disposal for this site yet: an Admin or Site Manager adds them in **Hourly "
-                   "Production setup → PIT & disposals**.")
+        st.caption("⚠ No PIT or disposal for this site yet: an Admin or Site Manager adds them in "
+                   "**Setup → PIT & disposals**.")
 
     edits = st.session_state.get(gkey) or {}
     dirty = any(edits.get(k) for k in ("edited_rows", "added_rows", "deleted_rows")) \
@@ -417,5 +417,5 @@ with t_xls:
             st.session_state["hi_msg"] = (
                 f"{hf.site} {hf.date:%d %b %Y} {hf.shift} saved from {f.name}: {len(rf.rows)} lines, "
                 f"{lg['rit'].sum():,.0f} trips, OB {vol.get('OB', 0):,.0f} BCM, coal {vol.get('CG', 0):,.0f} t. "
-                "It is shown below; on the TV and in Dashboard → Hourly dashboard pick this date and shift.")
+                "It is shown below; on the TV and in Production → Hourly production pick this date and shift.")
             st.rerun()

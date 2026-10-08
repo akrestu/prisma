@@ -142,7 +142,7 @@ def build_template(sites: list[str], units: pd.DataFrame | None = None, effectiv
         "One row per unit. Equipment (unit ID) must be unique; spaces are removed on import.",
         "Units without a Site stay UNMAPPED until an Admin maps them. Extra columns are ignored.",
         f"Name the file {file_name(dt.date(2026, 9, 1))} (the effective date).",
-        "Upload it in PRISMA → Input & upload → Unit Population."], sheets=(POPULATION,))
+        "Upload it in PRISMA → Input & upload → Upload Unit Population."], sheets=(POPULATION,))
     lists = dataprod._lists(wb, sites)
     rows = dataprod._unit_rows(units) if units is not None and len(units) else None
     dataprod._sheet(wb, POPULATION, rows, lists)

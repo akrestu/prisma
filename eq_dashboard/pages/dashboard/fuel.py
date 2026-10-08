@@ -10,6 +10,7 @@ from core.ui import excel_download, fmt_num
 
 c = dash.context("fuel", title="Fuel")
 st.title("Fuel")
+st.caption("Fuel use per site, model and unit.")
 f = c.fuel
 if f.empty:
     st.info("No fuel data for this selection.")
