@@ -256,9 +256,10 @@ def _board(g: str, d: HourlyTv, p: dict) -> str:
     tot = d.totals.get(g, {})
     now = d.slot if d.live else None
     labels = SLOTS[d.shift]
-    cols = ('<col style="width:1.6%"><col style="width:4.6%"><col style="width:8.4%"><col style="width:4.4%">'
-            '<col style="width:10%"><col style="width:6.6%"><col style="width:8%"><col style="width:3%">'
-            + '<col style="width:3.6%">' * 12 + '<col style="width:4.4%"><col>')
+    # haulers keep their full width (a wrapped hauler list makes every row taller); operator names wrap instead
+    cols = ('<col style="width:1.6%"><col style="width:4.6%"><col style="width:6.4%"><col style="width:4%">'
+            '<col style="width:13%"><col style="width:6.4%"><col style="width:8%"><col style="width:3%">'
+            + '<col style="width:3.5%">' * 12 + '<col style="width:4.4%"><col>')
     th = ("<tr><th class='l'>#</th><th class='l'>Loader</th><th class='l'>Operator</th><th class='l'>Model</th>"
           "<th class='l'>Haulers</th><th class='l'>Material</th><th class='l'>PIT → disposal</th><th>Target</th>"
           + "".join(f"<th class='{'now' if i == now else ''}'>{lab}</th>" for i, lab in enumerate(labels, 1))
@@ -354,10 +355,12 @@ def _events(d: HourlyTv, g: str, p: dict) -> str:
 
 # When everything does not fit on the screen, the browser shrinks the remark text step by step (down to a readable
 # minimum) instead of cutting the legend off. Nothing moves; it is measured again on every redraw.
+# Still too tall at the smallest remark size: switch to the dense layout (smaller rows) and fit again.
 FIT_SCRIPT = ("<script>(function(){const hv=document.currentScript.parentElement;"
-              "const fit=()=>{let f=0.88;hv.style.setProperty('--ef',f+'cqw');"
-              "while(f>0.56&&hv.scrollHeight>hv.clientHeight+1){f=Math.round((f-0.04)*100)/100;"
-              "hv.style.setProperty('--ef',f+'cqw')}};"
+              "const over=()=>hv.scrollHeight>hv.clientHeight+1;"
+              "const shrink=()=>{let f=0.88;hv.style.setProperty('--ef',f+'cqw');"
+              "while(f>0.56&&over()){f=Math.round((f-0.04)*100)/100;hv.style.setProperty('--ef',f+'cqw')}};"
+              "const fit=()=>{shrink();if(over()&&!hv.classList.contains('dense')){hv.classList.add('dense');shrink()}};"
               "(document.fonts?document.fonts.ready:Promise.resolve()).then(()=>requestAnimationFrame(fit))})()</script>")
 
 
