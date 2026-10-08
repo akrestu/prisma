@@ -172,3 +172,22 @@ def test_remarks_go_under_their_own_board(db_session):
     ob_total, cg_title, cg_total = html.index("Total BCM"), html.index("<h3>Coal</h3>"), html.index("Total t")
     assert ob_total < html.index("catatan OB") < cg_title < cg_total < html.index("catatan coal")
 
+
+
+def test_day_pace_mtd_up_to_now_and_outlook_coloured_by_pace(db_session):
+    _seed(db_session)
+    s = db_session
+    s.add(m.PlanProduction(site="WBK-BAU", year=2026, month=9, date=None, ob_bcm=300_000.0, coal_ton=None))
+    s.commit()
+    d = hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))   # DS, hour 6 of 24 passed
+    frac = d.slot / 24
+    a, t, ach = d.summary["Daily"]["OB"]
+    assert t == pytest.approx(10_000)                                   # 300,000 ÷ 30 days
+    assert ach == pytest.approx(a / (10_000 * frac))                    # actual vs the plan of the hours passed
+    _, t_mtd, _ = d.summary["MTD"]["OB"]
+    assert t_mtd == pytest.approx(25 * 10_000 + 10_000 * frac)          # 25 full days + the part of the 26th
+    left, t_m, done = d.summary["Outlook"]["OB"]
+    assert t_m == pytest.approx(300_000) and done == pytest.approx((300_000 - left) / 300_000)
+    assert d.month_pace["OB"] == pytest.approx(d.month_runrate["OB"] / 300_000)
+    html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
+    assert " so far</div>" in html and " done</div>" in html

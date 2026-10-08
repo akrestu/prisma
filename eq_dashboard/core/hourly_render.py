@@ -134,10 +134,12 @@ def _tone(ach, p: dict | None = None) -> str:
     return p["OKT"] if ach >= 1 else (p["NOWT"] if ach >= .9 else p["MISST"])
 
 
-def _bar(ach, p: dict | None = None) -> str:
+def _bar(ach, p: dict | None = None, tone=None) -> str:
+    """Bar as long as `ach` (max 100%); coloured by `tone` (a ratio) when given, else by `ach` itself."""
     if ach is None or pd.isna(ach):
         return '<div class="bar"></div>'
-    return f'<div class="bar"><i style="width:{min(ach, 1) * 100:.0f}%;background:{_tone(ach, p)}"></i></div>'
+    color = _tone(ach if tone is None else tone, p)
+    return f'<div class="bar"><i style="width:{min(ach, 1) * 100:.0f}%;background:{color}"></i></div>'
 
 
 # ------------------------------------------------------------------ burn-up chart (SVG image)
@@ -232,17 +234,17 @@ def _kpi(d: HourlyTv, p: dict) -> str:
         body += f'<tr><td class="m">{name} <span style="font-size:.7cqw">{unit}</span></td>'
         for blk, _ in cols:
             a, t, ach = d.summary.get(blk, {}).get(key, (None, None, None))
-            extra = ""
-            if blk == "Daily" and key in d.daily_outlook:
-                out = d.daily_outlook[key]
-                ach = out / t if t else ach
-                extra = f'<div class="s">outlook <b>{_n(out, dec)}</b></div>'
-            elif blk == "Outlook" and key in d.month_runrate:
+            extra, tone, word = "", ach, ""
+            if blk == "Daily" and key in d.daily_outlook:      # % = actual vs the plan of the hours passed
+                extra = f'<div class="s">outlook <b>{_n(d.daily_outlook[key], dec)}</b></div>'
+                word = " so far" if ach is not None else ""
+            elif blk == "Outlook" and key in d.month_runrate:  # % = share done; colour = on pace or not
                 state = "" if a is None else ("still to go · " if a > 0 else "ahead of plan · ")
                 extra = f'<div class="s">{state}run rate <b>{_n(d.month_runrate[key], dec)}</b></div>'
                 a = abs(a) if a is not None else a
+                tone, word = d.month_pace.get(key), (" done" if ach is not None else "")
             body += (f'<td><div class="a">{_n(a, dec)}</div><div class="s">target {_n(t, dec)} · '
-                     f'<b style="color:{_tone(ach, p)}">{_pct(ach)}</b></div>{extra}{_bar(ach, p)}</td>')
+                     f'<b style="color:{_tone(tone, p)}">{_pct(ach)}</b>{word}</div>{extra}{_bar(ach, p, tone)}</td>')
         body += "</tr>"
     return f'<table class="kpi">{head}{body}</table>'
 
