@@ -53,7 +53,7 @@ def _defuse(v):
 def excel_bytes(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
     safe = df.copy()
-    for c in safe.columns[safe.dtypes == object]:
+    for c in safe.select_dtypes(include="object").columns:
         safe[c] = safe[c].map(_defuse)
     safe.columns = [_defuse(c) for c in safe.columns]
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
