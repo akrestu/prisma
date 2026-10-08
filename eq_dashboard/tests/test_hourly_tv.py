@@ -133,9 +133,9 @@ def test_remarks_show_in_their_hour_and_in_the_list(db_session):
     assert r["m4"] == "302" and r["m2"] == "402" and r["m1"] == ""
     assert d.events["hours"].tolist() == ["07-08", "09-10"]
     html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
-    assert "class='rk'" in html and "Events this shift" not in html     # tags under the hours, no events panel
-    assert "<i class='rc delay'>RAIN</i>" in html and "<i class='rc down'>BD-H</i>" in html
-    assert " mk down" in html and ">NOW<" not in html                   # 09-10 is past
+    assert "class='rk'" not in html and "class='rc" not in html         # no badge row or badges any more
+    assert "<i class='dot delay'></i></td>" in html and "<i class='dot down'></i></td>" in html   # a dot in the hour
+    assert ">NOW<" not in html                                          # 09-10 is past
     assert "<b>Rain</b>" in html and "WHT026" in html and "— ban" in html
     ev = html.index("class=\"ev\"")                                     # full text under the fleet's table
     assert html.count("class=\"ev\"") == 1 and loader in html[ev:] and "09-10" in html[ev:]

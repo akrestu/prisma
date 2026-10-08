@@ -435,7 +435,8 @@ def client_standby_codes() -> set[int]:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def plan_daily(sites: tuple[str, ...], month: dt.date) -> pd.DataFrame:
-    """Daily plan per date (all selected sites). A monthly plan is spread evenly over calendar days."""
+    """Daily plan per date (all selected sites): each site's monthly plan spread evenly over the calendar days
+    (rows with a date, from the former daily plan, are ignored)."""
     days = calendar.monthrange(month.year, month.month)[1]
     dates = [dt.date(month.year, month.month, d) for d in range(1, days + 1)]
     with session_scope() as s:
@@ -446,14 +447,11 @@ def plan_daily(sites: tuple[str, ...], month: dt.date) -> pd.DataFrame:
     out = pd.DataFrame({"date": dates, "ob_plan": 0.0, "coal_plan": 0.0})
     if rows.empty:
         return out.assign(ob_plan=np.nan, coal_plan=np.nan)
-    for _site, g in rows.groupby("site"):
-        daily = g[g["date"].notna()].set_index("date")
-        monthly = g[g["date"].isna()]
-        for col, src in (("ob_plan", "ob_bcm"), ("coal_plan", "coal_ton")):
-            v = out["date"].map(daily[src]) if len(daily) else pd.Series(np.nan, index=out.index)
-            if len(monthly) and monthly[src].notna().any():
-                v = v.fillna(monthly[src].sum() / days)
-            out[col] = out[col] + v.fillna(0)
+    monthly = rows[rows["date"].isna()]
+    if monthly.empty:
+        return out.assign(ob_plan=np.nan, coal_plan=np.nan)
+    for col, src in (("ob_plan", "ob_bcm"), ("coal_plan", "coal_ton")):
+        out[col] = monthly[src].sum() / days if monthly[src].notna().any() else np.nan
     return out
 
 

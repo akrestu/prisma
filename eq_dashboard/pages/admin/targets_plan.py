@@ -86,48 +86,48 @@ with tab_t:
         st.success("Targets saved.")
 
 with tab_p:
-    a, b, c = st.columns(3)
+    import calendar
+    if msg := st.session_state.pop("plan_msg", None):
+        st.success(msg)
+    a, b = st.columns(2)
     site_p = a.selectbox("Site", sites, key="plan_site")
-    year_p = b.number_input("Year", 2018, 2100, today_wib().year, key="plan_year")
-    month_p = c.selectbox("Month", range(1, 13), index=today_wib().month - 1, key="plan_month",
-                          format_func=lambda x: dt.date(2000, x, 1).strftime("%B"))
+    year_p = int(b.number_input("Year", 2018, 2100, today_wib().year, key="plan_year"))
     with session_scope() as s:
-        rows = repo.frame(s, select(m.PlanProduction.date, m.PlanProduction.ob_bcm, m.PlanProduction.coal_ton)
+        rows = repo.frame(s, select(m.PlanProduction.month, m.PlanProduction.ob_bcm, m.PlanProduction.coal_ton)
                           .where(m.PlanProduction.site == site_p, m.PlanProduction.year == year_p,
-                                 m.PlanProduction.month == month_p))
-    monthly = rows[rows["date"].isna()] if len(rows) else rows
-
-    def first(col):
-        return float(monthly[col].iloc[0]) if len(monthly) and pd.notna(monthly[col].iloc[0]) else 0.0
-
-    st.markdown("**Monthly plan** (spread evenly over calendar days unless a daily plan is set)")
-    x, y = st.columns(2)
-    ob_m = x.number_input("OB (BCM)", 0.0, value=first("ob_bcm"), step=1000.0)
-    coal_m = y.number_input("Coal (t)", 0.0, value=first("coal_ton"), step=100.0)
-    st.markdown("**Daily plan** (optional, overrides the monthly plan on the dates entered)")
-    daily = rows[rows["date"].notna()] if len(rows) else pd.DataFrame(columns=["date", "ob_bcm", "coal_ton"])
-    ed = st.data_editor(daily.reset_index(drop=True), num_rows="dynamic", hide_index=True, width="stretch",
-                        key=f"plan_{site_p}_{year_p}_{month_p}",
-                        column_config={"date": st.column_config.DateColumn("Date", required=True),
-                                       "ob_bcm": st.column_config.NumberColumn("OB (BCM)", min_value=0),
-                                       "coal_ton": st.column_config.NumberColumn("Coal (t)", min_value=0)})
-    if st.button("Save plan", type="primary"):
-        ed = ed.dropna(subset=["date"])
-        bad = [d for d in ed["date"] if pd.Timestamp(d).year != year_p or pd.Timestamp(d).month != month_p]
-        if bad:
-            st.error("All daily plan dates must be in the selected month.")
-        else:
-            with session_scope() as s:
-                s.execute(delete(m.PlanProduction).where(m.PlanProduction.site == site_p,
-                                                         m.PlanProduction.year == year_p,
-                                                         m.PlanProduction.month == month_p))
-                if ob_m or coal_m:
-                    s.add(m.PlanProduction(site=site_p, year=year_p, month=month_p, date=None,
-                                           ob_bcm=ob_m or None, coal_ton=coal_m or None))
-                for r in ed.itertuples():
-                    s.add(m.PlanProduction(site=site_p, year=year_p, month=month_p, date=pd.Timestamp(r.date).date(),
-                                           ob_bcm=None if pd.isna(r.ob_bcm) else r.ob_bcm,
-                                           coal_ton=None if pd.isna(r.coal_ton) else r.coal_ton))
-                audit(s, user.username, "edit_plan", site_p, f"{year_p}-{month_p:02d}")
-            refresh("plan")
-            st.success("Plan saved.")
+                                 m.PlanProduction.date.is_(None)))
+    have = rows.groupby("month")[["ob_bcm", "coal_ton"]].sum(min_count=1) if len(rows) else pd.DataFrame()
+    grid = pd.DataFrame({"month": range(1, 13)})
+    grid["Month"] = [dt.date(year_p, mo, 1).strftime("%B") for mo in grid["month"]]
+    grid["days"] = [calendar.monthrange(year_p, mo)[1] for mo in grid["month"]]
+    for col in ("ob_bcm", "coal_ton"):
+        grid[col] = grid["month"].map(have[col]).astype(float) if len(have) else float("nan")
+    grid["ob_day"] = grid["ob_bcm"] / grid["days"]
+    grid["coal_day"] = grid["coal_ton"] / grid["days"]
+    st.caption("Enter the OB and coal target of each month. The daily target is the month's target divided "
+               "evenly over its calendar days, used by every dashboard and TV. Empty month = no target.")
+    num = lambda lbl, fmt="%.0f": st.column_config.NumberColumn(lbl, min_value=0, format=fmt)  # noqa: E731
+    ed = st.data_editor(grid, hide_index=True, width="stretch", key=f"plan_{site_p}_{year_p}",
+                        column_order=["Month", "ob_bcm", "coal_ton", "days", "ob_day", "coal_day"],
+                        disabled=["Month", "days", "ob_day", "coal_day"],
+                        column_config={"ob_bcm": num("OB month (BCM)"), "coal_ton": num("Coal month (t)"),
+                                       "days": st.column_config.NumberColumn("Days"),
+                                       "ob_day": num("OB per day (BCM)"), "coal_day": num("Coal per day (t)", "%.1f")})
+    st.caption("The per-day columns show the split of the values saved; they update after saving.")
+    if st.button("Save plan", type="primary", key="plan_save"):
+        with session_scope() as s:
+            # the whole year of the site is replaced; daily plans entered before are dropped (monthly only now)
+            s.execute(delete(m.PlanProduction).where(m.PlanProduction.site == site_p,
+                                                     m.PlanProduction.year == year_p))
+            n = 0
+            for r in ed.itertuples():
+                ob = None if pd.isna(r.ob_bcm) or not r.ob_bcm else float(r.ob_bcm)
+                coal = None if pd.isna(r.coal_ton) or not r.coal_ton else float(r.coal_ton)
+                if ob or coal:
+                    s.add(m.PlanProduction(site=site_p, year=year_p, month=int(r.month), date=None,
+                                           ob_bcm=ob, coal_ton=coal))
+                    n += 1
+            audit(s, user.username, "edit_plan", site_p, f"{year_p}: {n} month(s)")
+        refresh("plan")
+        st.session_state["plan_msg"] = f"Plan of {site_p} {year_p} saved: {n} month(s)."
+        st.rerun()

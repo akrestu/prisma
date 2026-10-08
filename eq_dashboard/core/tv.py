@@ -141,14 +141,8 @@ def _plan_daily(s: Session, site: str, months: list[dt.date]) -> pd.DataFrame:
         d = pd.DataFrame({"date": [dt.date(mo.year, mo.month, i) for i in range(1, days + 1)]})
         r = rows[(rows["year"] == mo.year) & (rows["month"] == mo.month)] if len(rows) else rows
         for col, src in (("ob_plan", "ob_bcm"), ("coal_plan", "coal_ton")):
-            v = pd.Series(np.nan, index=d.index)
-            if len(r):
-                daily = r[r["date"].notna()].set_index("date")[src]
-                v = d["date"].map(daily)
-                monthly = r[r["date"].isna()][src]
-                if monthly.notna().any():
-                    v = v.fillna(monthly.sum() / days)
-            d[col] = v
+            monthly = r[r["date"].isna()][src] if len(r) else pd.Series(dtype=float)   # monthly plan only
+            d[col] = monthly.sum() / days if monthly.notna().any() else np.nan
         parts.append(d)
     return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=["date", "ob_plan", "coal_plan"])
 

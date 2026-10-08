@@ -15,7 +15,7 @@ import pandas as pd
 from core import brand
 from core import theme as T
 from core.config import WIB
-from core.hourly import REMARKS, SLOTS, remark_category, remark_tag
+from core.hourly import REMARKS, SLOTS, remark_category
 from core.hourly_tv import GROUPS, HourlyTv
 from core.tv_render import FONT, KIOSK_CSS, _svg
 
@@ -28,11 +28,12 @@ THEMES = ("dark", "light")
 PALETTE = {
     "dark": {**T.DARK, "NOW": NOW, "NOWT": NOW, "ONNOW": T.BG, "OK": OK, "MISS": MISS, "OKT": OK, "MISST": MISS,
              "OB": T.ACCENT, "CG": T.READY, "IDLE": T.IDLE, "OKBG": "rgba(79,193,166,.30)",
-             "MISSBG": "rgba(240,138,60,.36)", "RDOWN": "#FF6B6B", "RDELAY": "#7FB3E0", "RMAINT": "#C08BE0"},
+             "MISSBG": "rgba(240,138,60,.36)", "RDOWN": "#FF6B6B", "RDELAY": "#7FB3E0", "RMAINT": "#C08BE0",
+             "DOTNOTE": "#C9C6BE"},
     "light": {**T.LIGHT, "NOW": NOW, "NOWT": "#8A6A00", "ONNOW": "#141517", "OK": OK, "MISS": MISS,
               "OKT": "#1E7F67", "MISST": "#B4520F", "OB": "#B88A00", "CG": "#2F78B5", "IDLE": "#7FA9CC",
               "OKBG": "rgba(79,193,166,.28)", "MISSBG": "rgba(240,138,60,.30)", "RDOWN": "#C62828",
-              "RDELAY": "#2F6EA8", "RMAINT": "#8A3FB0"},
+              "RDELAY": "#2F6EA8", "RMAINT": "#8A3FB0", "DOTNOTE": "#6B6964"},
 }
 
 CSS_TEMPLATE = """
@@ -92,20 +93,15 @@ CSS_TEMPLATE = """
  border-left:.3cqw solid var(--c);border-bottom:.05cqw solid %(LINE)s;font-size:1em;line-height:1.5}
 .ev .fl .u{font-weight:700}
 .ev .it{margin-right:1.3cqw}.ev .it .hd{white-space:nowrap}.ev .it .t{color:%(MUTED)s;font-weight:600;margin-right:.35cqw}
-.ev .it b{font-weight:600}.ev .it .n{color:%(MUTED)s}.ev .it .rc{margin-right:.35cqw;font-size:.8em}
+.ev .it b{font-weight:600}.ev .it .n{color:%(MUTED)s}
 .ev .it.on{background:color-mix(in srgb,%(NOW)s 18%%,%(BG)s);border-radius:.2cqw;padding:0 .25cqw}
 .ev .it .now{font-size:.68em;font-weight:700;letter-spacing:.06em;color:%(ONNOW)s;background:%(NOW)s;padding:.02cqw .25cqw;
  border-radius:.15cqw;margin-right:.35cqw;vertical-align:.1cqw}
-.rc{display:inline-block;font-style:normal;font-weight:700;font-size:.72cqw;line-height:1.15;letter-spacing:.04em;
- color:var(--k);border:.09cqw solid var(--k);background:color-mix(in srgb,var(--k) 22%%,%(BG)s);
- padding:.03cqw .28cqw;border-radius:.6cqw;vertical-align:.06cqw;text-transform:uppercase}
-.rc.down,.mk.down{--k:%(RDOWN)s}.rc.delay,.mk.delay{--k:%(RDELAY)s}
-.rc.maint,.mk.maint{--k:%(RMAINT)s}.rc.info,.rc.note,.mk.info,.mk.note{--k:%(MUTED)s}
-.ft td.mk{box-shadow:inset 0 -.26cqw 0 var(--k)}.ft td.mk.now{box-shadow:inset 0 0 0 .12cqw %(NOW)s,inset 0 -.38cqw 0 var(--k)}
-.ft tr.hk td{border-bottom:none}
-.ft tr.rk td{text-align:center;padding:0 .1cqw .14cqw;overflow:visible}
-.ft tr.rk td.rkl{text-align:right;font-size:.6cqw;color:%(DIM)s;padding-right:.4cqw}
-.ft tr.rk .rc sup{font-size:.85em;margin-left:.15cqw;vertical-align:0;letter-spacing:0;opacity:.85}
+.dot{display:inline-block;width:.5cqw;height:.5cqw;border-radius:50%%;background:var(--k);
+ box-shadow:0 0 0 .1cqw %(BG)s;font-style:normal}
+.dot.down{--k:%(RDOWN)s}.dot.delay{--k:%(RDELAY)s}.dot.maint{--k:%(RMAINT)s}.dot.info,.dot.note{--k:%(DOTNOTE)s}
+.ft td.h{position:relative}.ft td.h .dot{position:absolute;top:.22cqw;left:.25cqw}
+.ev .it .dot{margin-right:.4cqw;vertical-align:.08cqw}
 .ft td.hl{color:%(MUTED)s;font-size:.72cqw;white-space:normal;line-height:1.25;overflow:visible}.ft td.hl b{color:%(TEXT)s;font-weight:600}
 .ft td.op{font-weight:600;color:%(TEXT)s;font-size:.76cqw;white-space:normal;line-height:1.2;overflow:visible}
 .kpi td.m span{color:%(DIM)s}
@@ -114,6 +110,7 @@ CSS_TEMPLATE = """
 .none{font-size:.9cqw;color:%(DIM)s;padding:.3cqw 0}
 .fo{margin-top:auto;display:flex;gap:1.6cqw;font-size:.78cqw;color:%(DIM)s;align-items:center}
 .fo i{display:inline-block;width:.7cqw;height:.7cqw;margin-right:.3cqw;vertical-align:-.08cqw;border-radius:.1cqw}
+.fo i.dot{width:.55cqw;height:.55cqw;border-radius:50%%;margin:0 .2cqw 0 .5cqw;vertical-align:.02cqw}
 .hv.dense .ft td{font-size:.68cqw;padding:.04cqw .25cqw}.hv.dense .ft th{font-size:.62cqw}
 .hv.dense .top{height:15.5cqw}.hv.dense .hero .big{font-size:2.6cqw}
 """
@@ -266,7 +263,7 @@ def _board(g: str, d: HourlyTv, p: dict) -> str:
           + "<th>Total</th><th>Ach</th></tr>")
     rows = ""
     for i, r in enumerate(df.itertuples(index=False), 1):
-        cells, hours, tags = "", 0, []
+        cells, hours = "", 0
         for k in range(1, 13):
             v = getattr(r, f"s{k}")
             if now and k > now:
@@ -280,28 +277,19 @@ def _board(g: str, d: HourlyTv, p: dict) -> str:
                     cls.append("lo")
             if k == now:
                 cls.append("now")
-            first = (getattr(r, f"m{k}", "") or "").split()[:1]
-            if first:
-                cls += ["mk", remark_category(first[0])]
+            first = (getattr(r, f"m{k}", "") or "").split()[:1]      # the most serious remark of the hour
+            dot = f"<i class='dot {remark_category(first[0])}'></i>" if first else ""
             hours += 1
-            cells += f"<td class='{' '.join(cls)}'>{_n(v)}</td>"
-        for k in range(1, 13):
-            codes = (getattr(r, f"m{k}", "") or "").split()
-            tags.append((f"<i class='rc {remark_category(codes[0])}'>{escape(remark_tag(codes[0]))}"
-                         + (f"<sup>+{len(codes) - 1}</sup>" if len(codes) > 1 else "") + "</i>") if codes else "")
+            cells += f"<td class='{' '.join(cls)}'>{_n(v)}{dot}</td>"
         ach = r.total / (r.target * hours) if pd.notna(r.target) and r.target and hours else None
         route = " → ".join(x for x in (r.pit, r.disposal) if isinstance(x, str) and x)
-        has_tags = any(tags)
-        rows += (f"<tr{' class=hk' if has_tags else ''}><td class='l mu'>{i}</td><td class='l u'>{escape(str(r.loader))}</td>"
+        rows += (f"<tr><td class='l mu'>{i}</td><td class='l u'>{escape(str(r.loader))}</td>"
                  f"<td class='l op'>{escape(str(r.operator or '—'))}</td>"
                  f"<td class='l mu'>{escape(str(r.model or ''))}</td>"
                  f"<td class='l hl'><b>{r.haulers}</b> · {escape(r.hauler_ids or '')}</td>"
                  f"<td class='l mu'>{escape(str(r.material or ''))}</td>"
                  f"<td class='l mu'>{escape(route)}</td><td class='tg'>{_n(r.target)}{'*' if r.on_default else ''}</td>{cells}"
                  f"<td class='tot'>{_n(r.total)}</td><td class='ach'>{_bar(ach, p)}</td></tr>")
-        if has_tags:   # remarks get their own thin row under the trips: a marker must never look like a figure
-            rows += ("<tr class='rk'><td class='l rkl' colspan='8'>remarks ↑</td>"
-                     + "".join(f"<td>{t}</td>" for t in tags) + "<td></td><td></td></tr>")
     if df.empty:
         rows = (f"<tr><td class='l' colspan='22'><div class='none'>No {TITLE[g].lower()} input for this shift yet."
                 "</div></td></tr>")
@@ -319,18 +307,17 @@ def _board(g: str, d: HourlyTv, p: dict) -> str:
 
 
 def _event_item(d: HourlyTv, r) -> str:
-    """One remark inline: hour(s), tag, description, truck, note."""
+    """One remark inline: hour(s), coloured dot, description, truck, note."""
     has = isinstance(r.code, str) and r.code
     sl = SLOTS[d.shift]   # '09-10' for one hour, '09–12' for 09-10 … 11-12
     hrs = sl[r.slot_from - 1] if r.slot_from == r.slot_to else f"{sl[r.slot_from - 1][:2]}–{sl[r.slot_to - 1][-2:]}"
     on = bool(d.live and d.slot and r.slot_from <= d.slot <= r.slot_to)
-    tag = remark_tag(r.code if has else None)
     desc = REMARKS.get(str(r.code), str(r.code)) if has else ""
     truck = r.hauler if isinstance(r.hauler, str) and r.hauler else ""
     note = r.remark if isinstance(r.remark, str) and r.remark else ""
     return (f"<span class='it{' on' if on else ''}'><span class='hd'><span class='t'>{hrs}</span>"
             + ("<i class='now'>NOW</i>" if on else "")
-            + f"<i class='rc {remark_category(r.code if has else None)}'>{escape(tag)}</i></span>"
+            + f"<i class='dot {remark_category(r.code if has else None)}'></i></span>"
             + (f"<b>{escape(desc)}</b>" if desc else "") + (f" · {escape(truck)}" if truck else "")
             + (f" <span class='n'>{'— ' if desc or truck else ''}{escape(note)}</span>" if note else "") + "</span>")
 
@@ -390,6 +377,8 @@ def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None, the
     foot = (f'<div class="fo"><span><i style="background:rgba(79,193,166,.6)"></i>target met</span>'
             f'<span><i style="background:rgba(240,138,60,.7)"></i>below target</span>'
             f'<span><i style="box-shadow:inset 0 0 0 .12cqw {NOW}"></i>current hour</span>'
+            f'<span>remark: <i class="dot down"></i>breakdown <i class="dot delay"></i>delay '
+            f'<i class="dot maint"></i>maintenance <i class="dot note"></i>note</span>'
             f'<span>{"white" if theme == "dark" else "dark"} tick = hourly target · dashed = cumulative target · dotted = projection to shift end</span>'
             f'<span>MTD: {off} · SR = OB BCM per coal t · distance trip-weighted</span>'
             + ('<span>* target = old default (saved before site targets)</span>'
