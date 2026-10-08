@@ -74,6 +74,7 @@ CSS_TEMPLATE = """
 .kpi .a{font-size:1.25cqw;font-weight:600;line-height:1.05}
 .kpi .s{font-size:.72cqw;color:%(MUTED)s;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpi .s b{font-weight:600}
+.kpi .a small{font-size:.62em;font-weight:500;color:%(MUTED)s;margin-left:.3cqw}
 .bar{height:.22cqw;background:%(LINE)s;margin-top:.15cqw;border-radius:.1cqw;overflow:hidden}
 .bar i{display:block;height:100%%}
 .brd{display:flex;flex-direction:column}
@@ -235,16 +236,21 @@ def _kpi(d: HourlyTv, p: dict) -> str:
         body += f'<tr><td class="m">{name} <span style="font-size:.7cqw">{unit}</span></td>'
         for blk, _ in cols:
             a, t, ach = d.summary.get(blk, {}).get(key, (None, None, None))
-            extra, tone, word = "", ach, ""
+            extra, tone, label = "", ach, ""
+            line = f'target {_n(t, dec)} · <b style="color:{_tone(ach, p)}">{_pct(ach)}</b>'
             if blk == "Daily" and key in d.daily_outlook:      # % = actual ÷ the day's target
                 extra = f'<div class="s">outlook <b>{_n(d.daily_outlook[key], dec)}</b></div>'
             elif blk == "Outlook" and key in d.month_runrate:  # % = share done; colour = on pace or not
-                state = "" if a is None else ("still to go · " if a > 0 else "ahead of plan · ")
-                extra = f'<div class="s">{state}run rate <b>{_n(d.month_runrate[key], dec)}</b></div>'
+                # short lines: the cell is narrow and a cut figure is worse than a terse label
+                label = "" if a is None else ("to go" if a > 0 else "ahead")
                 a = abs(a) if a is not None else a
-                tone, word = d.month_pace.get(key), (" done" if ach is not None else "")
-            body += (f'<td><div class="a">{_n(a, dec)}</div><div class="s">target {_n(t, dec)} · '
-                     f'<b style="color:{_tone(tone, p)}">{_pct(ach)}</b>{word}</div>{extra}{_bar(ach, p, tone)}</td>')
+                tone = d.month_pace.get(key)
+                line = (f'<b style="color:{_tone(tone, p)}">{_pct(ach)}</b> done of {_n(t, dec)}' if t is not None
+                        else f'target {_n(t, dec)}')
+                extra = f'<div class="s">run rate <b>{_n(d.month_runrate[key], dec)}</b></div>'
+            small = f'<small>{label}</small>' if label else ""
+            body += (f'<td><div class="a">{_n(a, dec)}{small}</div><div class="s">{line}</div>{extra}'
+                     f'{_bar(ach, p, tone)}</td>')
         body += "</tr>"
     return f'<table class="kpi">{head}{body}</table>'
 
@@ -345,11 +351,15 @@ def _events(d: HourlyTv, g: str, p: dict) -> str:
 # When everything does not fit on the screen, the browser shrinks the remark text step by step (down to a readable
 # minimum) instead of cutting the legend off. Nothing moves; it is measured again on every redraw.
 # Still too tall at the smallest remark size: switch to the dense layout (smaller rows) and fit again.
+# A KPI line wider than its cell (very large figures) gets a smaller font until it fits: a figure is never cut.
 FIT_SCRIPT = ("<script>(function(){const hv=document.currentScript.parentElement;"
               "const over=()=>hv.scrollHeight>hv.clientHeight+1;"
               "const shrink=()=>{let f=0.88;hv.style.setProperty('--ef',f+'cqw');"
               "while(f>0.56&&over()){f=Math.round((f-0.04)*100)/100;hv.style.setProperty('--ef',f+'cqw')}};"
-              "const fit=()=>{shrink();if(over()&&!hv.classList.contains('dense')){hv.classList.add('dense');shrink()}};"
+              "const cells=()=>{for(const[s,lo,f0]of[['.kpi .s',.5,.72],['.kpi .a',.85,1.25]])"
+              "for(const e of hv.querySelectorAll(s)){let f=f0;e.style.fontSize='';"
+              "while(f>lo&&e.scrollWidth>e.clientWidth+1){f=Math.round((f-.02)*100)/100;e.style.fontSize=f+'cqw'}}};"
+              "const fit=()=>{cells();shrink();if(over()&&!hv.classList.contains('dense')){hv.classList.add('dense');shrink()}};"
               "(document.fonts?document.fonts.ready:Promise.resolve()).then(()=>requestAnimationFrame(fit))})()</script>")
 
 

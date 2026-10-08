@@ -188,4 +188,4 @@ def test_day_and_mtd_against_full_daily_plan_and_outlook_coloured_by_pace(db_ses
     assert t_m == pytest.approx(300_000) and done == pytest.approx((300_000 - left) / 300_000)
     assert d.month_pace["OB"] == pytest.approx(d.month_runrate["OB"] / 300_000)
     html = render(d, now=dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
-    assert " so far</div>" not in html and " done</div>" in html
+    assert " so far</div>" not in html and "</b> done of 300,000</div>" in html and "<small>to go</small>" in html
