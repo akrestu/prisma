@@ -37,14 +37,25 @@ def test_production_data_default_by_basis_and_material():
     assert PT.hauler_target("777E-KDP", "OB", HAULERS, "client") is None
 
 
-@pytest.mark.parametrize(("unit", "model", "basis", "want"), [
-    ("WEX015", "CAT6020B", "internal", (1000.0, PT.UNIT)),       # unit override first
-    ("WEX016", "CAT6020B", "internal", (900.0, PT.HOURLY)),      # then the site's hourly target of the model
-    ("WEX016", "CAT6020B", "client", (625.0, PT.DEFAULT)),       # then the Production Data default
-    ("WEX099", "PC2000", "internal", (None, None)),              # nothing anywhere
+@pytest.mark.parametrize(("unit", "model", "hourly", "want"), [
+    ("WEX015", "CAT6020B", HOURLY, (1000.0, PT.UNIT)),           # unit override first
+    ("WEX016", "CAT6020B", HOURLY, (900.0, PT.HOURLY)),          # then the site's hourly target of the model
+    ("WEX016", "CAT6020B", None, (800.0, PT.DEFAULT)),           # then the default: internal 800, not client 625
+    ("WEX099", "PC2000", HOURLY, (None, None)),                  # nothing anywhere
 ])
-def test_hourly_target_order(unit, model, basis, want):
-    assert PT.hourly_target(unit, model, "OB - FreeDig", basis, OVERRIDES, HOURLY, DEFAULTS) == want
+def test_hourly_target_order(unit, model, hourly, want):
+    assert PT.hourly_target(unit, model, "OB - FreeDig", OVERRIDES, hourly, DEFAULTS) == want
+
+
+def test_internal_first_client_where_internal_is_empty():
+    client_only = pd.DataFrame([("6020B", "client", 700.0, None, None)], columns=["model", "basis", "ob", "mud", "coal"])
+    both = pd.concat([client_only, HOURLY.assign(ob=850.0)], ignore_index=True)
+    assert PT.hourly_target("WEX016", "6020B", "OB - FreeDig", None, client_only, DEFAULTS) == (700.0, PT.HOURLY)
+    assert PT.hourly_target("WEX016", "6020B", "OB - FreeDig", None, both, DEFAULTS) == (850.0, PT.HOURLY)
+    client_unit = OVERRIDES.assign(basis="client", target_per_hour=640.0)
+    assert PT.hourly_target("WEX015", "6020B", "OB - FreeDig", client_unit, None, DEFAULTS) == (640.0, PT.UNIT)
+    assert PT.first_target(PT.hauler_target, "777E", "OB", HAULERS) == 160
+    assert PT.first_target(PT.model_target, "PC2000", "OB", DEFAULTS) is None
 
 
 def test_wide_long_round_trip():
@@ -64,11 +75,11 @@ def test_resolve_marks_default_targets():
                           "type": ["Loading", "Loading", "Hauling"], "site": ["WBK-BAU"] * 3})
     rows = pd.DataFrame({"loader": ["WEX015", "WEX016"], "hauler": ["WHT026", "WHT026"],
                          "material": ["OB - FreeDig"] * 2, "r1": [3, 2]})
-    res = H.resolve(rows, lf, OVERRIDES, units, model_targets=DEFAULTS, basis="client", hourly_models=HOURLY)
-    assert res.rows["target_per_hour"].tolist() == [625.0, 625.0]          # client: no override, no hourly target
+    res = H.resolve(rows, lf, OVERRIDES.iloc[0:0], units, model_targets=DEFAULTS)
+    assert res.rows["target_per_hour"].tolist() == [800.0, 800.0]          # no override, no hourly: internal default
     assert res.rows["target_source"].tolist() == ["default", "default"]
     assert any("Production Data default" in w for w in res.warnings)
-    res = H.resolve(rows, lf, OVERRIDES, units, model_targets=DEFAULTS, basis="internal", hourly_models=HOURLY)
+    res = H.resolve(rows, lf, OVERRIDES, units, model_targets=DEFAULTS, hourly_models=HOURLY)
     assert res.rows["target_source"].tolist() == ["unit", "hourly"]
 
 

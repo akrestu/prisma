@@ -5,6 +5,7 @@ Two separate sets, each with an internal (WBK) and a client (BAU) value:
   (OB BCM/h, coal t/h). It changes rarely and is the yardstick of the productivity dashboard.
 - Hourly Production target, per site: per excavator model, plus overrides for single units. Where a site has no
   hourly target for an excavator, the Production Data default is used and marked 'default'.
+The internal target counts first; the client target is used only where the internal one is empty.
 
 Model names are matched by prefix after dropping 'CAT': a target for '390FL' covers CAT390FL, 'SK520' covers
 SK520XDLC-10, '777E' covers 777E-KDP (the longest matching key wins).
@@ -16,6 +17,7 @@ import pandas as pd
 BASIS = {"WBK": "internal", "BAU": "client"}
 BASIS_LABEL = {"internal": "Internal target (WBK)", "client": "Client target (BAU)"}
 BASES = tuple(BASIS_LABEL)
+PRIORITY = ("internal", "client")       # internal first; client only where internal is empty
 # where an Hourly Production target came from
 UNIT, HOURLY, DEFAULT = "unit", "hourly", "default"
 SOURCE_LABEL = {UNIT: "unit override", HOURLY: "hourly target", DEFAULT: "Production Data default"}
@@ -79,27 +81,44 @@ def hauler_target(hauler_model, group: str, targets: pd.DataFrame, basis: str) -
     return None if r is None else _positive(r["pdty_coal" if group == "CG" else "pdty_ob"])
 
 
-def hourly_target(unit, model, material, basis: str, overrides: pd.DataFrame | None,
-                  hourly_models: pd.DataFrame | None, defaults: pd.DataFrame | None) -> tuple[float | None, str | None]:
-    """Hourly Production target of one excavator and its source: the unit override, else the site's hourly target
-    for the model, else the Production Data default (marked 'default'), else none."""
-    group = "CG" if material_class(material) == "CG" else "OB"
-    if overrides is not None and len(overrides):
-        o = overrides
-        if "basis" in o:
-            o = o[o["basis"] == basis]
-        hit = o[(o["unit_id"] == unit) & (o["material_group"] == group)]
-        if len(hit) and _positive(hit["target_per_hour"].iloc[0]):
-            return float(hit["target_per_hour"].iloc[0]), UNIT
-    r = _row(hourly_models, model, basis)
-    if r is not None:
-        cls = material_class(material)
-        v = _positive(r["mud"]) if cls in ("MUD", "MUDB") else _positive(r["coal"]) if cls == "CG" else None
-        v = v or _positive(r["ob"])
+def first_target(fn, *args) -> float | None:
+    """`fn(*args, basis)` for the internal basis, else for the client basis (the PRIORITY)."""
+    for basis in PRIORITY:
+        v = fn(*args, basis)
         if v:
-            return v, HOURLY
-    v = model_target(model, material, defaults, basis)
-    return (v, DEFAULT) if v else (None, None)
+            return v
+    return None
+
+
+def _override(unit, group: str, overrides: pd.DataFrame | None, basis: str) -> float | None:
+    if overrides is None or overrides.empty:
+        return None
+    o = overrides[overrides["basis"] == basis] if "basis" in overrides else overrides
+    hit = o[(o["unit_id"] == unit) & (o["material_group"] == group)]
+    return _positive(hit["target_per_hour"].iloc[0]) if len(hit) else None
+
+
+def _hourly_model(model, material, hourly_models: pd.DataFrame | None, basis: str) -> float | None:
+    r = _row(hourly_models, model, basis)
+    if r is None:
+        return None
+    cls = material_class(material)
+    v = _positive(r["mud"]) if cls in ("MUD", "MUDB") else _positive(r["coal"]) if cls == "CG" else None
+    return v or _positive(r["ob"])
+
+
+def hourly_target(unit, model, material, overrides: pd.DataFrame | None, hourly_models: pd.DataFrame | None,
+                  defaults: pd.DataFrame | None) -> tuple[float | None, str | None]:
+    """Hourly Production target of one excavator and its source: the unit override, else the site's hourly target
+    for the model, else the Production Data default (marked 'default'), else none. At each step the internal value
+    counts first and the client value only where the internal one is empty."""
+    group = "CG" if material_class(material) == "CG" else "OB"
+    for source, v in ((UNIT, first_target(_override, unit, group, overrides)),
+                      (HOURLY, first_target(_hourly_model, model, material, hourly_models)),
+                      (DEFAULT, first_target(model_target, model, material, defaults))):
+        if v:
+            return v, source
+    return None, None
 
 
 def wide(table: pd.DataFrame, values: dict[str, str]) -> pd.DataFrame:

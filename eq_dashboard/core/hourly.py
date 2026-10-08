@@ -299,7 +299,7 @@ def expand_to_population(load: pd.DataFrame, pop_models) -> tuple[pd.DataFrame, 
 
 def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units: pd.DataFrame | None = None,
             operators: pd.DataFrame | None = None, model_map: dict | None = None,
-            model_targets: pd.DataFrame | None = None, basis: str = "internal",
+            model_targets: pd.DataFrame | None = None,
             hourly_models: pd.DataFrame | None = None, locations: pd.DataFrame | None = None) -> Resolved:
     """Fill hauler model, load, material group, loader model, hourly target and operator names; check every line.
 
@@ -378,8 +378,6 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
 
     from core.prod_target import SOURCE_LABEL, hourly_target
     ov = targets
-    if ov is not None and len(ov) and "basis" in ov:
-        ov = ov[ov["basis"] == basis]
     unit_model = dict(zip(ov["unit_id"], ov["model"], strict=True)) if ov is not None and len(ov) else {}
     out["loader_model"] = out["loader"].map(unit_model)
     if models:
@@ -387,7 +385,7 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
         unknown = sorted(set(out["loader"].dropna()) - set(models))
         if unknown:
             warnings.append(f"Loader not in the unit population: {', '.join(unknown)}.")
-    hits = [hourly_target(u, mdl, mat, basis, ov, hourly_models, model_targets)
+    hits = [hourly_target(u, mdl, mat, ov, hourly_models, model_targets)
             for u, mdl, mat in zip(out["loader"], out["loader_model"], out["material"], strict=True)]
     out["target_per_hour"] = pd.array([h[0] for h in hits], dtype="Float64").astype(float)
     out["target_source"] = [h[1] for h in hits]

@@ -13,7 +13,6 @@ from core.config import UNMAPPED, today_wib
 from core.ingest import audit
 from core.ui import refresh, require, sites_for
 from core.validate import StructureError
-from db import models as m
 from db import repo
 from db.engine import session_scope
 
@@ -37,25 +36,14 @@ with session_scope() as s:
     models = repo.hourly_model_targets(s, site)
     over = repo.loader_targets(s, site)
     defaults = repo.model_targets(s)
-    basis = repo.site_basis(s, site)
     units = repo.population_for(s, today_wib())
 site_units = units[units["site"] == site] if units is not None else pd.DataFrame(columns=["unit_id", "type", "model"])
 loaders = site_units[site_units["type"].fillna("").str.contains("Load", case=False)] if len(site_units) \
     else site_units
 loader_models = sorted(loaders["model"].dropna().unique()) if len(loaders) else []
 
-with b:
-    new_basis = st.segmented_control("Target used for achievement", list(PT.BASIS_LABEL), default=basis,
-                                     format_func=PT.BASIS_LABEL.get, key=f"ht_basis_{site}") or basis
-    st.caption("Colours and achievement of this site (hourly input, TV, dashboards) use this basis; the other is "
-               "kept for comparison.")
-if new_basis != basis:
-    with session_scope() as s:
-        s.get(m.Site, site).target_basis = new_basis
-        audit(s, user.username, "target_basis", site, f"{basis} -> {new_basis}")
-    refresh("hourly")
-    st.session_state["ht_msg"] = f"{site} now uses the {PT.BASIS_LABEL[new_basis].lower()}."
-    st.rerun()
+b.caption("The internal target (WBK) counts first; the client target (BAU) is used only where the internal one is "
+          "empty.")
 
 
 def save(models_df=None, overrides_df=None, action="hourly_targets", note="") -> None:
@@ -80,19 +68,20 @@ with t_eff:
         for u in loaders.sort_values("unit_id").itertuples():
             row = {"Excavator": u.unit_id, "Model": u.model}
             for label, mat in (("OB", "OB - FreeDig"), ("Mud", "OB - MUD"), ("Coal", "CG - Coal Getting")):
-                v, src = PT.hourly_target(u.unit_id, u.model, mat, basis, over, models, defaults)
+                v, src = PT.hourly_target(u.unit_id, u.model, mat, over, models, defaults)
                 row[label] = v
                 row[f"{label} source"] = PT.SOURCE_LABEL.get(src, "none")
             rows.append(row)
         eff = pd.DataFrame(rows)
         n_def = int((eff[["OB source", "Coal source"]] == PT.SOURCE_LABEL[PT.DEFAULT]).any(axis=1).sum())
-        st.markdown(f"**Target per hour for each excavator of {site}** · {PT.BASIS_LABEL[basis].lower()}")
+        st.markdown(f"**Target per hour for each excavator of {site}** · internal, client where internal is empty")
         if n_def:
             st.warning(f"{n_def} excavator(s) use the Production Data default because no hourly target is set. "
                        "Add their model in **Per model** to give them an hourly target.")
         st.dataframe(eff, hide_index=True, width="stretch",
                      column_config={c: st.column_config.NumberColumn(c, format="%.0f") for c in ("OB", "Mud", "Coal")})
-        st.caption("Order: unit override → hourly target of the model → Production Data default. Shifts keep the "
+        st.caption("Order: unit override → hourly target of the model → Production Data default; at each step the "
+                   "internal value first, then the client value. Shifts keep the "
                    "target they were saved with; save a shift again to apply a new target to it.")
 
 # ------------------------------------------------------------------ per model
@@ -124,7 +113,7 @@ with t_unit:
                               "material_group": st.column_config.SelectboxColumn("Material", options=["OB", "CG"],
                                                                                  required=True, default="OB"),
                               "basis": st.column_config.SelectboxColumn("Basis", options=list(PT.BASES),
-                                                                        required=True, default=basis),
+                                                                        required=True, default="internal"),
                               "target_per_hour": st.column_config.NumberColumn("Target per hour", min_value=0,
                                                                                format="%.0f", required=True)})
     if st.button("Save unit overrides", type="primary", key="ht_units_save"):

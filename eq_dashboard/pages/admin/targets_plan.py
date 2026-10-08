@@ -46,8 +46,6 @@ with tab_d:
     with session_scope() as s:
         ld_t, hl_t = repo.model_targets(s), repo.hauler_targets(s)
         units = repo.population_for(s, today_wib())
-        bases = repo.frame(s, select(m.Site.code, m.Site.target_basis).where(m.Site.code.in_(sites))
-                           .order_by(m.Site.code))
     u = units if units is not None else pd.DataFrame(columns=["type", "model"])
     is_loader = u["type"].fillna("").str.contains("Load", case=False)
     pop_loaders = sorted(u.loc[is_loader, "model"].dropna().unique()) if len(u) else []
@@ -84,22 +82,8 @@ with tab_d:
     ed_h = editor(hl_t, HAULER_VALUES, pop_haulers, "pd_haulers")
     if can_edit and st.button("Save hauler defaults", type="primary", key="pd_haulers_save"):
         save_defaults(haulers=PT.long(ed_h, HAULER_VALUES))
-
-    st.markdown("**Target basis per site** · which value counts for achievement on dashboards and TVs")
-    bases["target_basis"] = bases["target_basis"].fillna("internal")
-    ed_b = st.data_editor(bases, hide_index=True, width="content", key="pd_bases", disabled=["code"],
-                          column_config={"code": st.column_config.TextColumn("Site"),
-                                         "target_basis": st.column_config.SelectboxColumn(
-                                             "Basis", options=list(PT.BASES), required=True,
-                                             help="internal = WBK target, client = BAU target")})
-    if st.button("Save target basis", key="pd_bases_save"):
-        with session_scope() as s:
-            for r in ed_b.itertuples():
-                s.get(m.Site, r.code).target_basis = r.target_basis
-            audit(s, user.username, "target_basis", None,
-                  ", ".join(f"{r.code} {r.target_basis}" for r in ed_b.itertuples()))
-        refresh("plan")
-        st.success("Target basis saved.")
+    st.caption("Achievement uses the internal target (WBK) first; the client target (BAU) only where the internal "
+               "one is empty.")
 
 
 with tab_t:

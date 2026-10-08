@@ -30,12 +30,12 @@ st.caption("Productivity of each loader and its haulers against target.")
 
 with session_scope() as s:
     ld_def, hl_def = repo.model_targets(s), repo.hauler_targets(s)
-    site_basis = repo.site_basis(s, c.sites[0])
 a, b, bb = st.columns([3, 2, 2])
-basis = bb.segmented_control("Target", list(PT.BASES), default=site_basis, key="prod_basis",
+basis = bb.segmented_control("Target", list(PT.BASES), default="internal", key="prod_basis",
                              format_func=lambda x: "Internal (WBK)" if x == "internal" else "Client (BAU)",
-                             help="Production Data default productivity per model (Setup → Production targets)"
-                             ) or site_basis
+                             help="Production Data default productivity per model (Setup → Production targets). "
+                                  "Internal uses the client value where the internal one is empty."
+                             ) or "internal"
 period = a.segmented_control("Granularity", PERIODS, default="daily", format_func=PERIOD_LABEL.get,
                              key="prod_period") or "daily"
 group = b.segmented_control("Material", ["OB", "CG"], default="OB", key="prod_group",
@@ -90,6 +90,9 @@ material = "OB" if group == "OB" else "CG - Coal Getting"
 
 
 def target_of(role: str, model) -> float | None:
+    if basis == "internal":                     # internal first, client where the internal value is empty
+        return (PT.first_target(PT.model_target, model, material, ld_def) if role == "loader"
+                else PT.first_target(PT.hauler_target, model, group, hl_def))
     return (PT.model_target(model, material, ld_def, basis) if role == "loader"
             else PT.hauler_target(model, group, hl_def, basis))
 
@@ -185,7 +188,8 @@ with t2:
         st.dataframe(th, hide_index=True, width="stretch", height=420, column_config=cfg(th.columns[2:]))
         excel_download(th, f"hauler_productivity_{group}_{period}.xlsx", key="dl_hl")
 
-st.caption(f"Targets: Production Data default productivity per model, {PT.BASIS_LABEL[basis].lower()} "
+st.caption(f"Targets: Production Data default productivity per model, {PT.BASIS_LABEL[basis].lower()}"
+           f"{' (client where empty)' if basis == 'internal' else ''} "
            "(Setup → Production targets); a unit without a default has no target. "
            "Ready hours come from the Equipment Events sheet. A unit working on both OB and CG in the same "
            f"{'hour' if period == 'hourly' else 'day'} has its hours shared by its trip share. "

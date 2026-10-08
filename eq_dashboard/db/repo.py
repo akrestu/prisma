@@ -603,11 +603,11 @@ def recalc_hourly_targets(s: Session, site: str, d0, d1) -> dict[str, int]:
     r, h = m.HourlyRow, m.HourlyShift
     rows = s.execute(select(r.id, r.loader, r.loader_model, r.material, r.target_per_hour, r.target_source, r.shift_id)
                      .join(h, h.id == r.shift_id).where(h.site == site, h.date >= d0, h.date <= d1)).all()
-    basis, over = site_basis(s, site), loader_targets(s, site)
+    over = loader_targets(s, site)
     models, defaults = hourly_model_targets(s, site), model_targets(s)
     updates = []
     for row in rows:
-        value, source = hourly_target(row.loader, row.loader_model, row.material, basis, over, models, defaults)
+        value, source = hourly_target(row.loader, row.loader_model, row.material, over, models, defaults)
         if value != row.target_per_hour or source != row.target_source:
             updates.append({"id": row.id, "target_per_hour": value, "target_source": source})
     if updates:
@@ -667,10 +667,6 @@ def hauler_targets(s: Session) -> pd.DataFrame:
     """Production Data default productivity of hauler models (company-wide, both bases)."""
     t = m.HaulerModelTarget
     return frame(s, select(t.model, t.basis, t.pdty_ob, t.pdty_coal).order_by(t.model, t.basis))
-
-
-def site_basis(s: Session, site: str) -> str:
-    return s.scalar(select(m.Site.target_basis).where(m.Site.code == site)) or "internal"
 
 
 def _replace(s: Session, model, df: pd.DataFrame, cols: list[str], **where) -> int:
