@@ -54,6 +54,19 @@ if "tv" in st.query_params:
     st.navigation([st.Page(tv_screen, title=f"TV {site}", url_path="tv")], position="hidden").run()
     st.stop()
 
+def _asked_page() -> str | None:
+    """The page the browser asked for in this run ('' = the default page)."""
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+    ctx = get_script_run_ctx()
+    pm = getattr(ctx, "pages_manager", None)
+    return getattr(pm, "intended_page_name", None)
+
+
+# On a browser refresh the sign-in cookie is read in the first run, which then restarts the script before the page
+# list exists, and the restart forgets the page asked for (it opened the default page, Overview). Keep it here;
+# it is reopened below once signed in.
+if _asked_page() not in (None, "", "login"):
+    st.session_state["asked_page"] = _asked_page()
 user, auth = authenticate()
 if user is None:
     st.session_state.pop("user", None)
@@ -154,6 +167,10 @@ else:
     # expanded: every section stays visible (by default Streamlit folds all but ~10 links into "View N more",
     # which hid Input & upload, Approval and the setup pages)
     nav = st.navigation({k: v for k, v in sections.items() if v}, expanded=True)
+    asked = st.session_state.pop("asked_page", None)        # back to the page open before the refresh
+    target = next((p for ps in sections.values() for p in ps if p.url_path == asked), None) if asked else None
+    if target is not None and nav.url_path != asked:
+        st.switch_page(target)
 
 brand.sidebar_logo()
 st.html(T.css_vars())
