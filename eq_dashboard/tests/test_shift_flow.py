@@ -25,6 +25,7 @@ def test_states_and_closing_time():
     assert SF.closes_at(D) == AFTER
     s = SF.state(None, D, BEFORE)
     assert not s.locked and not s.can_submit                                  # nothing saved yet
+    assert not SF.state(None, D, AFTER).locked                                # backdated, never entered: open
     assert SF.state(SF.DRAFT, D, BEFORE).can_submit and not SF.state(SF.DRAFT, D, BEFORE).locked
     assert SF.state(SF.DRAFT, D, AFTER).locked and SF.state(SF.DRAFT, D, AFTER).can_submit   # late, still submittable
     assert SF.state(SF.SUBMITTED, D, AFTER).locked and not SF.state(SF.SUBMITTED, D, BEFORE).can_submit

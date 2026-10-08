@@ -47,7 +47,8 @@ def state(status: str | None, date: dt.date, now: dt.datetime, pending_change: b
     """What can be done with a shift (`status` None = nothing saved yet) at `now` (aware)."""
     st_ = status or DRAFT
     closed = now >= closes_at(date)
-    locked = st_ == APPROVED or (closed and st_ != REJECTED)
+    # a shift never saved is never locked: backdated shifts are entered late and lock after their first save
+    locked = st_ == APPROVED or (closed and status is not None and st_ != REJECTED)
     can_submit = status is not None and st_ in (DRAFT, REJECTED)
     return State(st_, closed, locked, can_submit, pending_change)
 
