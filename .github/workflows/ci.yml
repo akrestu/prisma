@@ -29,8 +29,8 @@ jobs:
       AUTH_COOKIE_KEY: ci-only-cookie-key-not-a-secret-0123456789abcdef
       STREAMLIT_SERVER_COOKIE_SECRET: ci-only-cookie-secret-not-a-secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           cache: pip
