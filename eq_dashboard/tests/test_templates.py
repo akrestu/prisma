@@ -19,15 +19,13 @@ LOAD = pd.DataFrame({"material": ["OB - FreeDig"], "material_group": ["OB"], "ha
 OVER = pd.DataFrame({"unit_id": ["WEX015"], "model": ["CAT6020B"], "material_group": ["OB"], "basis": ["internal"],
                      "target_per_hour": [900.0]})
 NO_MODELS = pd.DataFrame(columns=["model", "basis", "ob", "mud", "coal"])
-DEFAULTS = pd.DataFrame({"model": ["CAT6020B"], "basis": ["internal"], "pdty_ob": [800.0], "pdty_mud": [None],
-                         "pdty_coal": [None]})
 
 
 @pytest.mark.parametrize(("build", "dataset", "version"), [
     (lambda: dataprod.build_template(["WBK-BAU"]), "Production Data", str(TEMPLATE_VERSION)),
     (lambda: population.build_template(["WBK-BAU"], UNITS, dt.date(2026, 10, 1)), "Unit Population", "1"),
     (lambda: H.build_template("WBK-BAU", dt.date(2026, 10, 1), "DS", LOAD, OVER), "Hourly Production", "1"),
-    (lambda: HT.build_template("WBK-BAU", NO_MODELS, OVER, DEFAULTS, ["CAT6020B"]), "Hourly Production targets", "1"),
+    (lambda: HT.build_template("WBK-BAU", NO_MODELS, OVER, ["CAT6020B"]), "Productivity targets", "1"),
     (lambda: load_factors.build_template("WBK-BAU", LOAD, ["777E"]), "Load Factors", "1"),
     (lambda: targets.build_template("WBK-BAU", 2026, pd.DataFrame(columns=["month"])), "Production targets", "1"),
 ])

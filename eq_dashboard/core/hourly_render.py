@@ -392,7 +392,7 @@ def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None, the
             f'<span><i style="box-shadow:inset 0 0 0 .12cqw {NOW}"></i>current hour</span>'
             f'<span>{"white" if theme == "dark" else "dark"} tick = hourly target · dashed = cumulative target · dotted = projection to shift end</span>'
             f'<span>MTD: {off} · SR = OB BCM per coal t · distance trip-weighted</span>'
-            + ('<span>* target = Production Data default (no hourly target yet)</span>'
+            + ('<span>* target = old default (saved before site targets)</span>'
                if any(len(df) and df["on_default"].any() for df in d.fleets.values()) else '')
             + '</div>')
     lines = sum(len(d.fleets.get(g, pd.DataFrame())) for g in GROUPS)

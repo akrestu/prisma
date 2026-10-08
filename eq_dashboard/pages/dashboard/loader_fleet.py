@@ -1,5 +1,5 @@
 """Loader & hauler productivity for OB (BCM/h) and CG (t/h) with haul distance, hourly → yearly, against the
-Production Data default productivity per model (internal or client)."""
+site's productivity target per model (internal or client), Setup → Productivity targets."""
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -29,11 +29,11 @@ st.title("Loader & hauler productivity")
 st.caption("Productivity of each loader and its haulers against target.")
 
 with session_scope() as s:
-    ld_def, hl_def = repo.model_targets(s), repo.hauler_targets(s)
+    ld_def, hl_def = repo.productivity_targets(s, c.sites)
 a, b, bb = st.columns([3, 2, 2])
 basis = bb.segmented_control("Target", list(PT.BASES), default="internal", key="prod_basis",
                              format_func=lambda x: "Internal (WBK)" if x == "internal" else "Client (BAU)",
-                             help="Production Data default productivity per model (Setup → Production targets). "
+                             help="Productivity target per model of each unit's site (Setup → Productivity targets). "
                                   "Internal uses the client value where the internal one is empty."
                              ) or "internal"
 period = a.segmented_control("Granularity", PERIODS, default="daily", format_func=PERIOD_LABEL.get,
@@ -89,12 +89,18 @@ tot_l, tot_h = fleet_summary(ld, []), fleet_summary(hl, [])
 material = "OB" if group == "OB" else "CG - Coal Getting"
 
 
-def target_of(role: str, model) -> float | None:
+def target_of(role: str, model, site=None) -> float | None:
+    """Target of a model at the unit's site (Setup → Productivity targets)."""
+    tbl = ld_def if role == "loader" else hl_def
+    tbl = tbl[tbl["site"] == site] if site is not None and len(tbl) else tbl
+    fn, arg = (PT.model_target, material) if role == "loader" else (PT.hauler_target, group)
     if basis == "internal":                     # internal first, client where the internal value is empty
-        return (PT.first_target(PT.model_target, model, material, ld_def) if role == "loader"
-                else PT.first_target(PT.hauler_target, model, group, hl_def))
-    return (PT.model_target(model, material, ld_def, basis) if role == "loader"
-            else PT.hauler_target(model, group, hl_def, basis))
+        return PT.first_target(fn, model, arg, tbl)
+    return fn(model, arg, tbl, basis)
+
+
+unit_site = {r: rit.dropna(subset=[r]).groupby(r)["site"].first().to_dict() if "site" in rit else {}
+             for r in ("loader", "hauler")}
 
 
 def fleet_target(df: pd.DataFrame, role: str) -> float | None:
@@ -102,7 +108,7 @@ def fleet_target(df: pd.DataFrame, role: str) -> float | None:
     if df.empty:
         return None
     u = df.groupby("unit").agg(model=("model", "first"), h=("ready_h", "sum"))
-    u["t"] = [target_of(role, mo) for mo in u["model"]]
+    u["t"] = [target_of(role, mo, unit_site[role].get(un)) for un, mo in zip(u.index, u["model"], strict=True)]
     u = u.dropna(subset=["t"])
     return float((u["t"] * u["h"]).sum() / u["h"].sum()) if len(u) and u["h"].sum() else None
 
@@ -119,9 +125,9 @@ k = st.columns(6)
 k[0].metric(f"{group} volume ({unit})", fmt_num(tot_l["volume"].iloc[0]))   # unit in the label: six cards are narrow
 k[1].metric("Trips", fmt_num(tot_l["rit"].iloc[0]))
 dash.kpi(k[2], f"Loader {unit}/h", tot_l["per_hour"].iloc[0], tgt_l, kind="n1",
-         help="Volume / loader Ready hours; target = default per model weighted by Ready hours")
+         help="Volume / loader Ready hours; target = site target per model weighted by Ready hours")
 dash.kpi(k[3], f"Hauler {unit}/h", tot_h["per_hour"].iloc[0], tgt_h, kind="n1",
-         help="Volume / hauler Ready hours; target = default per model weighted by Ready hours")
+         help="Volume / hauler Ready hours; target = site target per model weighted by Ready hours")
 k[4].metric("Horizontal distance", f"{fmt_num(tot_l['dist_h'].iloc[0])} m", "trip-weighted", delta_color="off")
 k[5].metric("Vertical distance", f"{fmt_num(tot_l['dist_v'].iloc[0])} m", "trip-weighted", delta_color="off")
 
@@ -154,7 +160,7 @@ def unit_table(df: pd.DataFrame, role: str) -> pd.DataFrame:
     g["per_hour_work"] = g["volume"] / g["work_h"].where(g["work_h"] > 0)
     g["trips_per_hour"] = g["trips"] / g["ready_h"].where(g["ready_h"] > 0)
     g["dist_h"], g["dist_v"] = w["wh"] / g["trips"], w["wv"] / g["trips"]
-    g["target"] = [target_of(role, mo) for mo in g["model"]]
+    g["target"] = [target_of(role, mo, unit_site[role].get(un)) for un, mo in zip(g.index, g["model"], strict=True)]
     g["ach"] = g["per_hour"] / g["target"]
     g = g.reset_index().sort_values("volume", ascending=False)
     return g.rename(columns={"unit": role.title(), "model": "Model", "volume": f"Volume ({unit})", "trips": "Trips",
@@ -188,9 +194,9 @@ with t2:
         st.dataframe(th, hide_index=True, width="stretch", height=420, column_config=cfg(th.columns[2:]))
         excel_download(th, f"hauler_productivity_{group}_{period}.xlsx", key="dl_hl")
 
-st.caption(f"Targets: Production Data default productivity per model, {PT.BASIS_LABEL[basis].lower()}"
+st.caption(f"Targets: productivity target per model of each unit's site, {PT.BASIS_LABEL[basis].lower()}"
            f"{' (client where empty)' if basis == 'internal' else ''} "
-           "(Setup → Production targets); a unit without a default has no target. "
+           "(Setup → Productivity targets); a model without a target has none. "
            "Ready hours come from the Equipment Events sheet. A unit working on both OB and CG in the same "
            f"{'hour' if period == 'hourly' else 'day'} has its hours shared by its trip share. "
            "Distances are averages weighted by trips.")

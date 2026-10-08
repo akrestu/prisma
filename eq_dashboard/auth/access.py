@@ -26,7 +26,7 @@ PAGE_ROLES: dict[str, set[str]] = {
     "unit_population": {ADMIN, DATA_OFFICER},
     "hourly_input": {ADMIN, SITE_MANAGER, DATA_OFFICER},
     "hourly_setup": {ADMIN, SITE_MANAGER},
-    "hourly_targets": {ADMIN, SITE_MANAGER},
+    "hourly_targets": {ADMIN, SITE_MANAGER, DATA_OFFICER},   # Productivity targets: entered by the data officer too
     "haul_routes": {ADMIN, SITE_MANAGER},
     "operators": {ADMIN, SITE_MANAGER},
     "delete_data": {ADMIN},

@@ -299,13 +299,11 @@ def expand_to_population(load: pd.DataFrame, pop_models) -> tuple[pd.DataFrame, 
 
 def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units: pd.DataFrame | None = None,
             operators: pd.DataFrame | None = None, model_map: dict | None = None,
-            model_targets: pd.DataFrame | None = None,
             hourly_models: pd.DataFrame | None = None, locations: pd.DataFrame | None = None) -> Resolved:
     """Fill hauler model, load, material group, loader model, hourly target and operator names; check every line.
 
     Target of each excavator (core.prod_target.hourly_target): `targets` = unit overrides, `hourly_models` = the
-    site's Hourly Production targets per model, `model_targets` = the Production Data defaults (the fallback,
-    marked 'default' in target_source).
+    site's productivity targets per excavator model.
 
     `locations` (core.locations: kind PIT | DISPOSAL, name, material_group, active) of the site: when given, a line
     with trips needs an active PIT and an active disposal of its material. distance_m (horizontal) and dist_v are
@@ -376,7 +374,7 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
             problems.append(f"{line}: trips of one hauler in one hour must be between 0 and {MAX_TRIPS}.")
     _locations(out, locations, problems, warnings)
 
-    from core.prod_target import SOURCE_LABEL, hourly_target
+    from core.prod_target import hourly_target
     ov = targets
     unit_model = dict(zip(ov["unit_id"], ov["model"], strict=True)) if ov is not None and len(ov) else {}
     out["loader_model"] = out["loader"].map(unit_model)
@@ -385,16 +383,13 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
         unknown = sorted(set(out["loader"].dropna()) - set(models))
         if unknown:
             warnings.append(f"Loader not in the unit population: {', '.join(unknown)}.")
-    hits = [hourly_target(u, mdl, mat, ov, hourly_models, model_targets)
+    hits = [hourly_target(u, mdl, mat, ov, hourly_models)
             for u, mdl, mat in zip(out["loader"], out["loader_model"], out["material"], strict=True)]
     out["target_per_hour"] = pd.array([h[0] for h in hits], dtype="Float64").astype(float)
     out["target_source"] = [h[1] for h in hits]
     no_target = sorted(set(out.loc[out["target_per_hour"].isna(), "loader"].dropna()))
     if no_target:
-        warnings.append(f"No target for: {', '.join(no_target)} (Setup → Hourly targets).")
-    on_default = sorted(set(out.loc[out["target_source"] == "default", "loader"].dropna()))
-    if on_default:
-        warnings.append(f"Using the {SOURCE_LABEL['default']} (no hourly target yet): {', '.join(on_default)}.")
+        warnings.append(f"No target for: {', '.join(no_target)} (Setup → Productivity targets).")
 
     names = dict(zip(operators["nrp"], operators["name"], strict=True)) if operators is not None and len(operators) \
         else {}

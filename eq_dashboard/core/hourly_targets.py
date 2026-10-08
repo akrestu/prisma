@@ -1,5 +1,5 @@
-"""Hourly Production targets workbook of one site: targets per excavator model (internal and client) and unit
-overrides. Download pre-filled, edit in Excel, upload back; the grids in Setup → Hourly
+"""Productivity targets workbook of one site: targets per excavator model and per hauler model (internal and
+client) and excavator overrides. Download pre-filled, edit in Excel, upload back; the grids in Setup → Productivity
 targets do the same.
 No Streamlit or database here."""
 from __future__ import annotations
@@ -15,26 +15,27 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from core import prod_target as PT
 from core.clean import _ids
 from core.io import frame, read_workbook
-from core.validate import HOURLY_PRODUCTION, StructureError, file_stem
+from core.validate import StructureError, file_stem
 
-DATASET = f"{HOURLY_PRODUCTION} targets"
-MODELS, UNITS = "Model Targets", "Unit Overrides"
+DATASET = "Productivity targets"
+MODELS, HAULERS, UNITS = "Model Targets", "Hauler Targets", "Unit Overrides"
 MODEL_VALUES = {"ob": "OB BCM/h", "mud": "Mud BCM/h", "coal": "Coal t/h"}
+HAULER_VALUES = {"ob": "OB BCM/h", "coal": "Coal t/h"}
 UNIT_COLS = ["Excavator", "Model", "Material", "Basis", "Target per hour"]
 SITE_CELL = "B2"
 HEADER_ROW = 4          # Excel row of the model table header
 
 
 def file_name(site: str) -> str:
-    """Hourly_Production_targets_WBK-BAU.xlsx"""
+    """Productivity_targets_WBK-BAU.xlsx"""
     return f"{file_stem(DATASET)}_{site}.xlsx"
 
 
-def build_template(site: str, models: pd.DataFrame, overrides: pd.DataFrame, defaults: pd.DataFrame,
-                   site_models: list[str]) -> bytes:
-    """`models`: hourly targets (model, basis, ob, mud, coal); every excavator model of the site gets a row, with
-    the Production Data default shown next to it for reference. `overrides`: unit_id, model, material_group,
-    basis, target_per_hour."""
+def build_template(site: str, models: pd.DataFrame, overrides: pd.DataFrame, site_models: list[str],
+                   haulers: pd.DataFrame | None = None, hauler_models: list[str] | None = None) -> bytes:
+    """`models`: excavator targets (model, basis, ob, mud, coal); every excavator model of the site gets a row.
+    `haulers`: hauler targets (model, basis, ob, coal), a row per hauler model of the site. `overrides`: unit_id,
+    model, material_group, basis, target_per_hour."""
     from core import dataprod
     wb = Workbook()
     ws = wb.active
@@ -43,30 +44,16 @@ def build_template(site: str, models: pd.DataFrame, overrides: pd.DataFrame, def
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"], ws[SITE_CELL] = "Site", site
     ws["A2"].font = Font(bold=True)
-    ws["D2"] = ("Empty cell = no hourly target: the Production Data default (grey columns) is used and marked "
-                "'default'. Mud is used for mud and mud blending; empty Coal = the OB value.")
+    ws["D2"] = ("Internal counts first, client where internal is empty. Mud is used for mud and mud blending; "
+                "empty Mud or Coal = the OB value. A model without any value has no target.")
     ws["D2"].font = Font(italic=True, color="55595F")
-    grid = PT.wide(models, MODEL_VALUES)
-    names = sorted(set(grid["model"]) | {m for m in site_models if PT.match(m, grid["model"]) is None})
-    grid = grid.set_index("model").reindex(names).reset_index()
-    heads = list(grid.columns) + [f"Default OB · {b}" for b in PT.BASES]
-    for j, h in enumerate(heads, start=1):
-        c = ws.cell(HEADER_ROW, j, "Model" if h == "model" else h)
-        c.fill, c.font = dataprod.HEAD_FILL, dataprod.HEAD_FONT
-        c.alignment = Alignment(horizontal="center", wrap_text=True)
-        ws.column_dimensions[c.column_letter].width = 18 if h == "model" else 14
-    grey = Font(color="8A8880")
-    for i, r in enumerate(grid.itertuples(index=False), start=HEADER_ROW + 1):
-        for j, v in enumerate(r, start=1):
-            ws.cell(i, j, None if pd.isna(v) else v)
-        for k, b in enumerate(PT.BASES):
-            c = ws.cell(i, len(grid.columns) + 1 + k, PT.model_target(r[0], "OB", defaults, b))
-            c.font = grey
-    dv = DataValidation(type="decimal", operator="between", formula1="0", formula2="100000", allow_blank=True)
-    dv.error, dv.errorTitle = "Enter a number ≥ 0", "Target"
-    dv.add(f"B{HEADER_ROW + 1}:{chr(ord('A') + len(grid.columns) - 1)}{HEADER_ROW + 300}")
-    ws.add_data_validation(dv)
-    ws.freeze_panes = ws.cell(HEADER_ROW + 1, 2)
+    _model_sheet(ws, models, MODEL_VALUES, site_models)
+    wh = wb.create_sheet(HAULERS)
+    wh["A1"] = f"PRISMA · {DATASET} · per hauler model"
+    wh["A1"].font = Font(bold=True, size=14)
+    wh["A2"], wh[SITE_CELL] = "Site", site
+    wh["A2"].font = Font(bold=True)
+    _model_sheet(wh, haulers, HAULER_VALUES, hauler_models or [])
 
     wu = wb.create_sheet(UNITS)
     for j, h in enumerate(UNIT_COLS, start=1):
@@ -86,12 +73,47 @@ def build_template(site: str, models: pd.DataFrame, overrides: pd.DataFrame, def
     return buf.getvalue()
 
 
+def _model_sheet(ws, table: pd.DataFrame | None, values: dict[str, str], site_models: list[str]) -> None:
+    """Model table from HEADER_ROW: model, then each value per basis; a row for every model of the site."""
+    from core import dataprod
+    grid = PT.wide(table, values)
+    names = sorted(set(grid["model"]) | {m for m in site_models if PT.match(m, grid["model"]) is None})
+    grid = grid.set_index("model").reindex(names).reset_index()
+    for j, h in enumerate(grid.columns, start=1):
+        c = ws.cell(HEADER_ROW, j, "Model" if h == "model" else h)
+        c.fill, c.font = dataprod.HEAD_FILL, dataprod.HEAD_FONT
+        c.alignment = Alignment(horizontal="center", wrap_text=True)
+        ws.column_dimensions[c.column_letter].width = 18 if h == "model" else 14
+    for i, r in enumerate(grid.itertuples(index=False), start=HEADER_ROW + 1):
+        for j, v in enumerate(r, start=1):
+            ws.cell(i, j, None if pd.isna(v) else v)
+    dv = DataValidation(type="decimal", operator="between", formula1="0", formula2="100000", allow_blank=True)
+    dv.error, dv.errorTitle = "Enter a number ≥ 0", "Target"
+    dv.add(f"B{HEADER_ROW + 1}:{chr(ord('A') + len(grid.columns) - 1)}{HEADER_ROW + 300}")
+    ws.add_data_validation(dv)
+    ws.freeze_panes = ws.cell(HEADER_ROW + 1, 2)
+
+
 @dataclass
 class TargetFile:
     site: str
     models: pd.DataFrame                      # model, basis, ob, mud, coal
     overrides: pd.DataFrame                   # unit_id, model, material_group, basis, target_per_hour
     problems: list[str] = field(default_factory=list)
+    haulers: pd.DataFrame | None = None       # model, basis, ob, coal (None: older file without the sheet)
+
+
+def _read_models(x: pd.DataFrame, sheet: str, values: dict[str, str]) -> pd.DataFrame:
+    if len(x) < HEADER_ROW:
+        raise StructureError([f"'{sheet}': the table header belongs in row {HEADER_ROW}."])
+    g = frame(x, HEADER_ROW - 1).rename(columns={"Model": "model"})
+    want = [f"{lbl} · {b}" for b in PT.BASES for lbl in values.values()]
+    missing = [c for c in ["model", *want] if c not in g.columns]
+    if missing:
+        raise StructureError([f"'{sheet}' (row {HEADER_ROW}) is missing columns: {', '.join(missing)}."])
+    for c in want:
+        g[c] = pd.to_numeric(g[c], errors="coerce")
+    return PT.long(g[["model", *want]], values)
 
 
 def parse_template(data: bytes) -> TargetFile:
@@ -102,16 +124,8 @@ def parse_template(data: bytes) -> TargetFile:
     site = str(x.iloc[1, 1]).strip() if len(x) > 1 and x.shape[1] > 1 and pd.notna(x.iloc[1, 1]) else ""
     if not site:
         raise StructureError([f"'{MODELS}': the site (cell {SITE_CELL}) is empty."])
-    if len(x) < HEADER_ROW:
-        raise StructureError([f"'{MODELS}': the table header belongs in row {HEADER_ROW}."])
-    g = frame(x, HEADER_ROW - 1).rename(columns={"Model": "model"})
-    want = [f"{lbl} · {b}" for b in PT.BASES for lbl in MODEL_VALUES.values()]
-    missing = [c for c in ["model", *want] if c not in g.columns]
-    if missing:
-        raise StructureError([f"'{MODELS}' (row {HEADER_ROW}) is missing columns: {', '.join(missing)}."])
-    for c in want:
-        g[c] = pd.to_numeric(g[c], errors="coerce")
-    models = PT.long(g[["model", *want]], MODEL_VALUES)
+    models = _read_models(x, MODELS, MODEL_VALUES)
+    haulers = _read_models(raw[HAULERS], HAULERS, HAULER_VALUES) if HAULERS in raw else None
     problems = []
     over = pd.DataFrame(columns=["unit_id", "model", "material_group", "basis", "target_per_hour"])
     if UNITS in raw and len(raw[UNITS]):
@@ -137,4 +151,4 @@ def parse_template(data: bytes) -> TargetFile:
             problems.append(f"'{UNITS}': more than one target for {', '.join(sorted(set(dup['unit_id'])))} "
                             "with the same material and basis.")
         over = over.drop(columns="_row")
-    return TargetFile(site, models, over.reset_index(drop=True), problems)
+    return TargetFile(site, models, over.reset_index(drop=True), problems, haulers)

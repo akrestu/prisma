@@ -1,10 +1,9 @@
-"""Productivity targets: the rules shared by Production Data and Hourly Production. No Streamlit or database.
+"""Productivity targets per site: the rules shared by Hourly Production and the productivity dashboard. No Streamlit
+or database.
 
-Two separate sets, each with an internal (WBK) and a client (BAU) value:
-- Production Data default, company-wide per equipment model: excavators (OB, mud BCM/h; coal t/h) and haulers
-  (OB BCM/h, coal t/h). It changes rarely and is the yardstick of the productivity dashboard.
-- Hourly Production target, per site: per excavator model, plus overrides for single units. Where a site has no
-  hourly target for an excavator, the Production Data default is used and marked 'default'.
+One set per site, each value with an internal (WBK) and a client (BAU) side:
+- excavator models: BCM/h for OB and mud, t/h for coal; plus overrides for single excavators;
+- hauler models: BCM/h for OB, t/h for coal.
 The internal target counts first; the client target is used only where the internal one is empty.
 
 Model names are matched by prefix after dropping 'CAT': a target for '390FL' covers CAT390FL, 'SK520' covers
@@ -18,13 +17,18 @@ BASIS = {"WBK": "internal", "BAU": "client"}
 BASIS_LABEL = {"internal": "Internal target (WBK)", "client": "Client target (BAU)"}
 BASES = tuple(BASIS_LABEL)
 PRIORITY = ("internal", "client")       # internal first; client only where internal is empty
-# where an Hourly Production target came from
-UNIT, HOURLY, DEFAULT = "unit", "hourly", "default"
-SOURCE_LABEL = {UNIT: "unit override", HOURLY: "hourly target", DEFAULT: "Production Data default"}
+# where an excavator's target came from
+UNIT, HOURLY = "unit", "hourly"
+SOURCE_LABEL = {UNIT: "unit override", HOURLY: "model target"}
+
+
+def _str(v) -> str:
+    """Text of a cell; '' for None / NaN / pd.NA (an empty grid cell)."""
+    return "" if v is None or (not isinstance(v, str) and pd.isna(v)) else str(v)
 
 
 def norm(model) -> str:
-    s = str(model or "").strip().upper().replace(" ", "")
+    s = _str(model).strip().upper().replace(" ", "")
     return s[3:] if s.startswith("CAT") else s
 
 
@@ -39,7 +43,7 @@ def match(model, keys) -> str | None:
 
 def material_class(material) -> str:
     """OB | MUDB (mud blending) | MUD | CG, from the material name ('OB - Mud Blending', 'OB - MUD', 'CG - …')."""
-    s = str(material or "").upper()
+    s = _str(material).upper()
     if s.startswith("CG"):
         return "CG"
     if "MUD" in s and ("BLEND" in s or "BLAND" in s):
@@ -61,24 +65,21 @@ def _row(table: pd.DataFrame | None, model, basis: str) -> pd.Series | None:
     return None if key is None else t[t["model"] == key].iloc[0]
 
 
-def model_target(loader_model, material, targets: pd.DataFrame, basis: str) -> float | None:
-    """Production Data default of an excavator for a material: mud value for mud and mud blending, coal value for
-    coal (the OB value when no coal value is set), OB value otherwise."""
+def model_target(loader_model, material, targets: pd.DataFrame | None, basis: str) -> float | None:
+    """Target of an excavator model for a material (columns ob, mud, coal): mud for mud and mud blending, coal for
+    coal; an empty mud or coal value falls back to the OB value."""
     r = _row(targets, loader_model, basis)
     if r is None:
         return None
     cls = material_class(material)
-    if cls in ("MUD", "MUDB"):
-        return _positive(r["pdty_mud"])
-    if cls == "CG":
-        return _positive(r.get("pdty_coal")) or _positive(r["pdty_ob"])
-    return _positive(r["pdty_ob"])
+    v = _positive(r["mud"]) if cls in ("MUD", "MUDB") else _positive(r["coal"]) if cls == "CG" else None
+    return v or _positive(r["ob"])
 
 
-def hauler_target(hauler_model, group: str, targets: pd.DataFrame, basis: str) -> float | None:
-    """Production Data default of a hauler model: BCM/h for OB, t/h for coal."""
+def hauler_target(hauler_model, group: str, targets: pd.DataFrame | None, basis: str) -> float | None:
+    """Target of a hauler model (columns ob, coal): BCM/h for OB, t/h for coal."""
     r = _row(targets, hauler_model, basis)
-    return None if r is None else _positive(r["pdty_coal" if group == "CG" else "pdty_ob"])
+    return None if r is None else _positive(r["coal" if group == "CG" else "ob"])
 
 
 def first_target(fn, *args) -> float | None:
@@ -98,24 +99,14 @@ def _override(unit, group: str, overrides: pd.DataFrame | None, basis: str) -> f
     return _positive(hit["target_per_hour"].iloc[0]) if len(hit) else None
 
 
-def _hourly_model(model, material, hourly_models: pd.DataFrame | None, basis: str) -> float | None:
-    r = _row(hourly_models, model, basis)
-    if r is None:
-        return None
-    cls = material_class(material)
-    v = _positive(r["mud"]) if cls in ("MUD", "MUDB") else _positive(r["coal"]) if cls == "CG" else None
-    return v or _positive(r["ob"])
-
-
-def hourly_target(unit, model, material, overrides: pd.DataFrame | None, hourly_models: pd.DataFrame | None,
-                  defaults: pd.DataFrame | None) -> tuple[float | None, str | None]:
-    """Hourly Production target of one excavator and its source: the unit override, else the site's hourly target
-    for the model, else the Production Data default (marked 'default'), else none. At each step the internal value
-    counts first and the client value only where the internal one is empty."""
+def hourly_target(unit, model, material, overrides: pd.DataFrame | None,
+                  models: pd.DataFrame | None) -> tuple[float | None, str | None]:
+    """Target per hour of one excavator and its source: the unit override, else the site's target for the model,
+    else none. At each step the internal value counts first, the client value only where the internal one is
+    empty."""
     group = "CG" if material_class(material) == "CG" else "OB"
     for source, v in ((UNIT, first_target(_override, unit, group, overrides)),
-                      (HOURLY, first_target(_hourly_model, model, material, hourly_models)),
-                      (DEFAULT, first_target(model_target, model, material, defaults))):
+                      (HOURLY, first_target(model_target, model, material, models))):
         if v:
             return v, source
     return None, None

@@ -51,7 +51,7 @@ with session_scope() as s:
     prev = repo.previous_lines(s, site, date, shift) if sh is None else None
     units = repo.population_for(s, date)
     ops = repo.operators(s, site)
-    mtg, hmt = repo.model_targets(s), repo.hourly_model_targets(s, site)
+    hmt = repo.hourly_model_targets(s, site)
     locs = repo.haul_locations(s, site)
     coord_now = sh.coordinator if sh else ""
     stamp = f"{sh.updated_by} · {sh.updated_at.astimezone(WIB):%d %b %H:%M} WIB" if sh else ""
@@ -236,12 +236,13 @@ with t_web:
     if ops.empty:
         st.caption("⚠ No operators for this site yet: add them in **Setup → Operators** to pick them by NRP.")
     cfg = {
-        "loader": st.column_config.SelectboxColumn("Excavator", options=loaders, required=True),
+        # not 'required': Streamlit holds a new row back until every required cell is filled, so the hauler model
+        # could not fill in as soon as the Hauler ID is picked; empty cells are flagged by the check on save
+        "loader": st.column_config.SelectboxColumn("Excavator", options=loaders),
         "loader_nrp": st.column_config.SelectboxColumn("Operator", options=list(op_label.values()),
                                                        width="medium"),
-        "material": st.column_config.SelectboxColumn("Material", options=sorted(lf["material"].unique()),
-                                                     required=True),
-        "hauler": st.column_config.SelectboxColumn("Hauler ID", options=haulers, required=True),
+        "material": st.column_config.SelectboxColumn("Material", options=sorted(lf["material"].unique())),
+        "hauler": st.column_config.SelectboxColumn("Hauler ID", options=haulers),
         "hauler_model": st.column_config.TextColumn("Hauler model", disabled=True,
                                                     help="Filled from the unit population when the Hauler ID is "
                                                          "picked; not typed"),
@@ -267,7 +268,7 @@ with t_web:
     grid = st.data_editor(work, num_rows="dynamic", hide_index=True, width="stretch", column_config=cfg,
                           key=gkey, height=min(600, 38 * (len(work) + 3) + 40), on_change=fill_model,
                           args=(gkey, wkey))
-    res = H.resolve(from_grid(grid), lf, tg, units, ops, model_targets=mtg, hourly_models=hmt,
+    res = H.resolve(from_grid(grid), lf, tg, units, ops, hourly_models=hmt,
                     locations=locs)
     st.caption("One row per hauler and disposal. When a hauler goes to a second disposal, or its operator "
                "changes during the shift, add a second row for the same hauler.")
@@ -360,10 +361,9 @@ with t_xls:
             flow_f = SF.state(exists.status if exists else None, hf.date, SF.now())
             units_f = repo.population_for(s, hf.date)
             ops_f = repo.operators(s, hf.site)
-            mtg_f = repo.model_targets(s)
             hmt_f = repo.hourly_model_targets(s, hf.site)
             locs_f = repo.haul_locations(s, hf.site)
-        rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f, model_targets=mtg_f, hourly_models=hmt_f,
+        rf = H.resolve(hf.rows, lf_f, tg_f, units_f, ops_f, hourly_models=hmt_f,
                        locations=locs_f)
         rm_f, rm_problems = H.clean_remarks(hf.remarks, hf.shift, sorted(set(rf.rows["loader"].dropna()))
                                             if len(rf.rows) else None)

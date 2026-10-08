@@ -604,10 +604,10 @@ def recalc_hourly_targets(s: Session, site: str, d0, d1) -> dict[str, int]:
     rows = s.execute(select(r.id, r.loader, r.loader_model, r.material, r.target_per_hour, r.target_source, r.shift_id)
                      .join(h, h.id == r.shift_id).where(h.site == site, h.date >= d0, h.date <= d1)).all()
     over = loader_targets(s, site)
-    models, defaults = hourly_model_targets(s, site), model_targets(s)
+    models = hourly_model_targets(s, site)
     updates = []
     for row in rows:
-        value, source = hourly_target(row.loader, row.loader_model, row.material, over, models, defaults)
+        value, source = hourly_target(row.loader, row.loader_model, row.material, over, models)
         if value != row.target_per_hour or source != row.target_source:
             updates.append({"id": row.id, "target_per_hour": value, "target_source": source})
     if updates:
@@ -656,17 +656,17 @@ def hauler_model_map(s: Session, site: str) -> dict[str, str]:
     return dict(s.execute(select(t.unit_model, t.load_model).where(t.site == site)).all())
 
 
-# ---------------------------------------------------------------- Production Data default productivity
-def model_targets(s: Session) -> pd.DataFrame:
-    """Production Data default productivity of excavator models (company-wide, both bases)."""
-    t = m.LoaderModelTarget
-    return frame(s, select(t.model, t.basis, t.pdty_ob, t.pdty_mud, t.pdty_coal).order_by(t.model, t.basis))
+def site_hauler_targets(s: Session, site: str) -> pd.DataFrame:
+    """Productivity targets per hauler model of a site (both bases): model, basis, ob, coal."""
+    t = m.SiteHaulerTarget
+    return frame(s, select(t.model, t.basis, t.ob, t.coal).where(t.site == site).order_by(t.model, t.basis))
 
 
-def hauler_targets(s: Session) -> pd.DataFrame:
-    """Production Data default productivity of hauler models (company-wide, both bases)."""
-    t = m.HaulerModelTarget
-    return frame(s, select(t.model, t.basis, t.pdty_ob, t.pdty_coal).order_by(t.model, t.basis))
+def productivity_targets(s: Session, sites: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Excavator and hauler targets per model of several sites (with a site column), for the dashboards."""
+    lt, ht = m.HourlyModelTarget, m.SiteHaulerTarget
+    return (frame(s, select(lt.site, lt.model, lt.basis, lt.ob, lt.mud, lt.coal).where(lt.site.in_(sites))),
+            frame(s, select(ht.site, ht.model, ht.basis, ht.ob, ht.coal).where(ht.site.in_(sites))))
 
 
 def _replace(s: Session, model, df: pd.DataFrame, cols: list[str], **where) -> int:
@@ -683,24 +683,14 @@ def _replace(s: Session, model, df: pd.DataFrame, cols: list[str], **where) -> i
     return len(recs)
 
 
-def save_default_targets(s: Session, loaders: pd.DataFrame | None = None, haulers: pd.DataFrame | None = None
-                         ) -> dict[str, int]:
-    """Replace the Production Data defaults (a table passed as None is left as it is)."""
-    out = {}
-    if loaders is not None:
-        out["loaders"] = _replace(s, m.LoaderModelTarget, loaders, ["model", "basis", "pdty_ob", "pdty_mud",
-                                                                    "pdty_coal"])
-    if haulers is not None:
-        out["haulers"] = _replace(s, m.HaulerModelTarget, haulers, ["model", "basis", "pdty_ob", "pdty_coal"])
-    return out
-
-
 def save_hourly_targets(s: Session, site: str, models: pd.DataFrame | None = None,
-                        overrides: pd.DataFrame | None = None) -> dict[str, int]:
-    """Replace a site's Hourly Production targets per model and/or its unit overrides."""
+                        overrides: pd.DataFrame | None = None, haulers: pd.DataFrame | None = None) -> dict[str, int]:
+    """Replace a site's productivity targets: excavator models, unit overrides and/or hauler models (None = keep)."""
     out = {}
     if models is not None:
         out["models"] = _replace(s, m.HourlyModelTarget, models, ["model", "basis", "ob", "mud", "coal"], site=site)
+    if haulers is not None:
+        out["haulers"] = _replace(s, m.SiteHaulerTarget, haulers, ["model", "basis", "ob", "coal"], site=site)
     if overrides is not None:
         out["overrides"] = _replace(s, m.LoaderTarget, overrides,
                                     ["unit_id", "model", "material_group", "basis", "target_per_hour"], site=site)

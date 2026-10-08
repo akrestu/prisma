@@ -97,7 +97,7 @@ def build_template(site: str, year: int, current: pd.DataFrame) -> bytes:
             if c in PCT:
                 cell.number_format = "0.0%"
     note = ws.cell(1, len(cols) + 2, "Percent targets as percentages (85%), MTBS/MTTR in hours, SR in BCM per t, "
-                                     "Distance in m. Empty cell = no target. Import: Production targets → "
+                                     "Distance in m. Empty cell = no target. Import: Setup → Plan & KPI targets → "
                                      "Availability & reliability.")
     note.font = Font(italic=True, color="55595F")
     ws.freeze_panes = "A2"
