@@ -227,7 +227,8 @@ METRICS = [("OB", "OB", "BCM", 0), ("Coal", "Coal", "t", 0), ("SR", "SR", "BCM/t
 def _kpi(d: HourlyTv, p: dict) -> str:
     hour = SLOTS[d.shift][d.slot - 1] if d.slot else "—"
     cols = [("Hour", f"Hour {hour}" if d.live else f"Last hour {hour}"),
-            ("Daily", f"Day · {d.date.day} {d.date:%b}"), ("MTD", "Month to date"), ("Outlook", "Month outlook")]
+            ("Daily", f"Day · {d.date.day} {d.date:%b}"), ("MTD", "Cumulative " + (f"1–{d.date.day} {d.date:%b}" if d.date.day > 1 else f"1 {d.date:%b}")),
+            ("Outlook", "Month outlook")]
     head = "<tr><th></th>" + "".join(f"<th>{escape(t)}</th>" for _, t in cols) + "</tr>"
     body = ""
     for key, name, unit, dec in METRICS:
@@ -381,7 +382,7 @@ def render(d: HourlyTv, kiosk: bool = False, now: dt.datetime | None = None, the
             f'<span>remark: <i class="dot down"></i>breakdown <i class="dot delay"></i>delay '
             f'<i class="dot maint"></i>maintenance <i class="dot note"></i>note</span>'
             f'<span>{"white" if theme == "dark" else "dark"} tick = hourly target · dashed = cumulative target · dotted = projection to shift end</span>'
-            f'<span>MTD: {off} · SR = OB BCM per coal t · distance trip-weighted</span>'
+            f'<span>Cumulative: {off} · SR = OB BCM per coal t · distance trip-weighted</span>'
             + ('<span>* target = old default (saved before site targets)</span>'
                if any(len(df) and df["on_default"].any() for df in d.fleets.values()) else '')
             + '</div>')
