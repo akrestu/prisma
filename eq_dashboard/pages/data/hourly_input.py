@@ -86,6 +86,32 @@ def to_grid(df: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
+def apply_edits(g: pd.DataFrame, edits: dict) -> pd.DataFrame:
+    """The grid as the data editor shows it: `g` with the editor's edited / added / deleted rows applied."""
+    g = g.copy()
+    for i, change in (edits.get("edited_rows") or {}).items():
+        for c, v in change.items():
+            g.loc[int(i), c] = v
+    g = g.drop(index=[int(i) for i in edits.get("deleted_rows") or []], errors="ignore")
+    added = [r for r in edits.get("added_rows") or [] if r]
+    if added:
+        g = pd.concat([g, pd.DataFrame(added).reindex(columns=g.columns)], ignore_index=True)
+    return g.reset_index(drop=True)
+
+
+def fill_model(gkey: str, wkey: str) -> None:
+    """Hauler ID picked or changed: put its model from the unit population in the grid straight away. The editor is
+    rebuilt (new key) on the edited rows, so the change shows before saving."""
+    edits = st.session_state.get(gkey) or {}
+    touched = any("hauler" in ch for ch in (edits.get("edited_rows") or {}).values())         or any(r.get("hauler") for r in edits.get("added_rows") or [])
+    if not touched:
+        return
+    g = apply_edits(st.session_state[wkey], edits)
+    g["hauler_model"] = g["hauler"].map(unit_model).where(g["hauler"].notna(), g["hauler_model"])  # old model lines kept
+    st.session_state[wkey] = g
+    st.session_state[f"{wkey}_n"] = st.session_state.get(f"{wkey}_n", 0) + 1
+
+
 def from_grid(g: pd.DataFrame) -> pd.DataFrame:
     return g.assign(remark_code=None, remark=None)     # remarks are entered per hour in their own table
 
@@ -217,23 +243,29 @@ with t_web:
                                                      required=True),
         "hauler": st.column_config.SelectboxColumn("Hauler ID", options=haulers, required=True),
         "hauler_model": st.column_config.TextColumn("Hauler model", disabled=True,
-                                                    help="From the unit population after saving; not typed"),
+                                                    help="Filled from the unit population when the Hauler ID is "
+                                                         "picked; not typed"),
         "hauler_nrp": st.column_config.SelectboxColumn("Hauler operator", options=list(op_label.values()),
                                                        width="medium"),
         "disposal": st.column_config.SelectboxColumn("Destination", options=dest_names, width="medium",
-                                                     help="Where the hauler unloads; pit and distances follow from "
-                                                          "the route of this loader + destination"),
+                                                     help="Where the hauler unloads; pit follows from the "
+                                                          "route of this loader + destination"),
         "pit": st.column_config.TextColumn("PIT", disabled=True, help="From the route after saving; not typed"),
-        "distance_m": st.column_config.NumberColumn("Horizontal (m)", disabled=True, format="%.0f",
-                                                    help="From the route after saving; not typed"),
-        "dist_v": st.column_config.NumberColumn("Vertical (m)", disabled=True, format="%.0f",
-                                                help="From the route after saving; not typed"),
+        "distance_m": st.column_config.NumberColumn("H distance (m)", format="%.0f",
+                                                    help="Horizontal distance, typed by the engineering checker"),
+        "dist_v": st.column_config.NumberColumn("V distance (m)", format="%.0f",
+                                                help="Vertical distance, typed by the engineering checker"),
         **{r: st.column_config.NumberColumn(lbl, min_value=0, max_value=20, step=1, format="%d", width="small")
            for r, lbl in zip(H.R, slots, strict=True)},
     }
-    gkey = f"hi_grid_{site}_{date}_{shift}_{ver}"
-    grid = st.data_editor(to_grid(base), num_rows="dynamic", hide_index=True, width="stretch", column_config=cfg,
-                          key=gkey, height=min(600, 38 * (len(base) + 3) + 40))
+    wkey = f"hi_work_{site}_{date}_{shift}_{ver}"            # the rows the editor starts from (models filled in)
+    if wkey not in st.session_state:
+        st.session_state[wkey] = to_grid(base).reset_index(drop=True)
+    work = st.session_state[wkey]
+    gkey = f"hi_grid_{site}_{date}_{shift}_{ver}_{st.session_state.get(f'{wkey}_n', 0)}"
+    grid = st.data_editor(work, num_rows="dynamic", hide_index=True, width="stretch", column_config=cfg,
+                          key=gkey, height=min(600, 38 * (len(work) + 3) + 40), on_change=fill_model,
+                          args=(gkey, wkey))
     res = H.resolve(from_grid(grid), lf, tg, units, ops, model_targets=mtg, basis=basis, hourly_models=hmt,
                     destinations=dest, routes=rts)
     st.caption("One row per hauler and destination. When a hauler goes to a second destination, or its operator "
@@ -244,7 +276,7 @@ with t_web:
 
     edits = st.session_state.get(gkey) or {}
     dirty = any(edits.get(k) for k in ("edited_rows", "added_rows", "deleted_rows")) \
-        or coord != coord_now or (sh is None and len(base) > 0)   # lines copied from the previous shift: not saved yet
+        or st.session_state.get(f"{wkey}_n", 0) > 0         or coord != coord_now or (sh is None and len(base) > 0)   # lines copied from the previous shift: not saved yet
     if dirty:
         st.warning("Unsaved changes. Changing the site, date or shift discards them: press **Save shift** first.")
     if res.problems:

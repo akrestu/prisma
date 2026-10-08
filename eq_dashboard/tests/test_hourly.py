@@ -159,8 +159,9 @@ def test_template_only_asks_what_the_officer_knows():
                            "hauler_model": "777E"}])                      # old per-model line → blank truck row
     tpl = H.build_template("WBK-BAU", dt.date(2026, 9, 28), "NS", LF, TG, pd.concat([lines, spare]), "", UNITS, OPS)
     ws = load_workbook(_io.BytesIO(tpl))["Hourly Production"]
-    heads = [c.value for c in ws[H.HEADER_ROW]][:6]
-    assert heads == ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "Destination"]
+    heads = [c.value for c in ws[H.HEADER_ROW]][:8]
+    assert heads == ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "Destination",
+                     "H distance (m)", "V distance (m)"]
     assert "Hauler model" not in [c.value for c in ws[H.HEADER_ROW]]
     hf = H.parse_template(tpl)
     res = H.resolve(hf.rows.assign(r1=[3, None]), LF, TG, UNITS, OPS)   # the spare row stays unused

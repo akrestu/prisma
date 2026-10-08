@@ -4,7 +4,7 @@ import streamlit as st
 from core.config import UNMAPPED
 from core.periods import PERIOD_LABEL, PERIODS
 from core.ui import require, sites_for
-from pages.tv.screen import SCREENS, show, show_hourly
+from pages.tv.screen import SCREENS, show, show_hourly, theme_picker
 
 user = require("preview_tv")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
@@ -29,7 +29,8 @@ if screen == "hourly":
     live = (day, sh) == (p_date, p_shift)
     st.caption("The shift running now, as the TV shows it (refreshed every minute on the TV)." if live else
                f"{day:%d %b %Y} {sh}: a past shift. To keep it on a TV, set it in TV → TV devices.")
-    show_hourly(site, kiosk=False, date=None if live else day, shift=None if live else sh)
+    theme = theme_picker(st, "tv_h_theme")
+    show_hourly(site, kiosk=False, date=None if live else day, shift=None if live else sh, theme=theme)
 else:
     from core.config import today_wib
     with c:

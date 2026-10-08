@@ -58,15 +58,15 @@ def test_workbook_round_trip():
     assert len(f.routes) == 3 and f.routes.loc[1, "valid_from"] == dt.date(2026, 10, 10)
 
 
-def test_shift_lines_take_pit_and_distances_from_the_route():
+def test_shift_lines_take_pit_from_the_route_and_keep_typed_distances():
     lines = hauler_rows({"hauler": "WHT026", "disposal": "ipd atas", "pit": "typed", "distance_m": 1, "r1": 2},
                         {"hauler": "WHT027", "disposal": "IPD Atas", "loader": "WEX010", "r1": 1})
     res = H.resolve(lines, LF, TG, UNITS, OPS, destinations=DEST, routes=RT.routes_at(ROUTES, D))
     assert not res.problems, res.problems
     r = res.rows.set_index("hauler")
-    assert (r.loc["WHT026", "disposal"], r.loc["WHT026", "pit"], r.loc["WHT026", "distance_m"],
-            r.loc["WHT026", "dist_v"]) == ("IPD Atas", "TKM", 2600, 40)
-    assert pd.isna(r.loc["WHT027", "distance_m"]) and pd.isna(r.loc["WHT027", "pit"])    # no route: no stale copy
+    assert (r.loc["WHT026", "disposal"], r.loc["WHT026", "pit"], r.loc["WHT026", "distance_m"]) ==         ("IPD Atas", "TKM", 1)                                           # typed distance kept, not the route's
+    assert pd.isna(r.loc["WHT026", "dist_v"]) and pd.isna(r.loc["WHT027", "pit"])    # no route: no stale pit
+    assert any("no H or V distance" in w for w in res.warnings)
     assert any("No route yet for: WEX010 → IPD Atas" in w for w in res.warnings)
 
 
@@ -94,8 +94,9 @@ def test_hauler_to_two_destinations_in_one_hour():
 def test_new_template_asks_destination_and_old_template_still_reads():
     lines = H.resolve(hauler_rows({"hauler": "WHT026", "disposal": "IPD Atas"}), LF, TG, UNITS, OPS,
                       destinations=DEST, routes=RT.routes_at(ROUTES, D)).rows
+    lines = lines.assign(distance_m=2450.0, dist_v=35.0)
     hf = H.parse_template(H.build_template("WBK-BAU", D, "DS", LF, TG, lines, "", UNITS, OPS, destinations=DEST))
-    assert hf.rows.loc[0, "disposal"] == "IPD Atas" and "distance_m" not in hf.rows
+    assert (hf.rows.loc[0, "disposal"], hf.rows.loc[0, "distance_m"], hf.rows.loc[0, "dist_v"]) ==         ("IPD Atas", 2450, 35)
     wb = Workbook()                                                      # a template made before destinations
     ws = wb.active
     ws.title = H.SHEET
@@ -120,7 +121,7 @@ def test_save_keeps_a_used_destination_as_inactive(db_session):
     s.commit()
     got = repo.haul_destinations(s, "WBK-BAU").set_index("name")
     assert not got.loc["ROM A", "active"] and len(repo.haul_routes(s, "WBK-BAU")) == 3
-    rows = H.resolve(hauler_rows({"hauler": "WHT026", "disposal": "IPD Atas", "r1": 2}), LF, TG, UNITS, OPS,
+    rows = H.resolve(hauler_rows({"hauler": "WHT026", "disposal": "IPD Atas", "dist_v": 40, "r1": 2}), LF, TG, UNITS, OPS,
                      destinations=got.reset_index(), routes=RT.routes_at(repo.haul_routes(s, "WBK-BAU"), D)).rows
     repo.save_hourly(s, "WBK-BAU", D, "DS", "", rows, "op1")
     s.commit()

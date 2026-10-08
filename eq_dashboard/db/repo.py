@@ -393,7 +393,8 @@ def previous_lines(s: Session, site: str, date, shift: str) -> pd.DataFrame:
     if prev is None:
         return pd.DataFrame(columns=HOURLY_ROW_COLS)
     _, rows = hourly_shift(s, site, prev.date, prev.shift)
-    return rows.assign(**{f"r{i}": None for i in range(1, 13)}, remark_code=None, remark=None)
+    return rows.assign(**{f"r{i}": None for i in range(1, 13)}, remark_code=None, remark=None,
+                       distance_m=None, dist_v=None)          # distances are typed again by the checker each shift
 
 
 def save_hourly(s: Session, site: str, date, shift: str, coordinator: str, rows: pd.DataFrame, username: str,

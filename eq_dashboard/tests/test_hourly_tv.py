@@ -66,6 +66,16 @@ def test_render_has_both_tables_and_current_hour(db_session):
     assert html.lower().count("<script") == 1 and "--ef" in html          # only the shrink-to-fit script
 
 
+def test_render_shows_loader_operator_and_light_theme(db_session):
+    _seed(db_session)
+    d = hourly_tv.build(db_session, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB))
+    ops = [o for df in d.fleets.values() if len(df) for o in df["operator"] if o]
+    dark, light = (render(d, theme=k) for k in ("dark", "light"))
+    assert "<th class='l'>Operator</th>" in dark and all(o in dark for o in ops)
+    assert "#F7F6F2" in light and "#F7F6F2" not in dark and " light\"" in light
+    assert render(d, theme="nope") == render(d, theme="dark") or "#F7F6F2" not in render(d, theme="nope")
+
+
 def test_empty_shift_renders(db_session):
     d = hourly_tv.build(db_session, "WBK-MAS", dt.datetime(2026, 9, 26, 8, 0, tzinfo=WIB))
     assert d.empty and "No overburden input" in render(d)
@@ -82,7 +92,7 @@ def world_published(db_session, sample_bytes):
     return s
 
 
-def test_tv_shows_shift_boss_but_no_operator_names(db_session):
+def test_tv_shows_shift_boss_and_loader_operator_names(db_session):
     _seed(db_session)
     s = db_session
     rows = repo.hourly_shift(s, "WBK-BAU", dt.date(2026, 9, 26), "DS")[1].assign(operator="Budi Santoso")
@@ -90,7 +100,7 @@ def test_tv_shows_shift_boss_but_no_operator_names(db_session):
     s.commit()
     html = render(hourly_tv.build(s, "WBK-BAU", dt.datetime(2026, 9, 26, 11, 40, tzinfo=WIB)))
     assert "Shift boss <b>Andi Shiftboss</b>" in html
-    assert "Budi Santoso" not in html and ">Operator<" not in html
+    assert "Budi Santoso" in html and ">Operator<" in html                # shared with the loader operators
 
 
 def test_tv_lists_hauler_ids_per_fleet_and_hides_nan_boss(db_session):

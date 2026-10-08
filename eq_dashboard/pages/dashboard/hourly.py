@@ -11,7 +11,7 @@ from core.config import UNMAPPED, now_wib
 from core.ui import excel_download, fmt_num, require, sites_for
 from db import repo
 from db.engine import session_scope
-from pages.tv.screen import show_hourly
+from pages.tv.screen import show_hourly, theme_picker
 
 UNIT = {"OB": "BCM", "CG": "t"}
 COLOR = {"OB": T.ACCENT, "CG": T.READY}
@@ -49,7 +49,8 @@ t_tv, t_pace, t_fleet, t_ops, t_month, t_lines = st.tabs(
     ["TV screen", "Pace", "Fleets", "Haulers & operators", "Month", "Lines"])
 
 with t_tv:
-    show_hourly(site, kiosk=False, date=None if live else date, shift=None if live else shift)
+    theme = theme_picker(st, "hp_theme")
+    show_hourly(site, kiosk=False, date=None if live else date, shift=None if live else shift, theme=theme)
 
 
 def no_data():

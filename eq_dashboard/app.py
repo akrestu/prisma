@@ -46,7 +46,8 @@ if "tv" in st.query_params:
             st.error("This TV link has been revoked.")
             return
         if screen == "hourly":
-            show_hourly(site, kiosk=True, date=h_date, shift=h_shift if h_date else None)
+            show_hourly(site, kiosk=True, date=h_date, shift=h_shift if h_date else None,
+                        theme=st.query_params.get("theme", "dark"))     # &theme=light on the TV link
         else:
             show(site, kiosk=True, period=period, review=review)
 

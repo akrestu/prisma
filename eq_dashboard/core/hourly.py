@@ -29,9 +29,12 @@ SHEET = HOURLY_PRODUCTION                                    # "Hourly Productio
 SHEET_NAMES = (SHEET, "Hourly")
 HEADER_ROW = 7                                               # Excel row of the table header in the template
 # the order follows the work: excavator and its operator, material, then each truck it loads and where it goes. Only
-# what the data officer knows goes in the file; hauler model and load come from the unit population, pit and
-# distances from the route (loader + destination) on upload.
-INPUT_COLS = ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "Destination"]
+# what the data officer knows goes in the file; hauler model and load come from the unit population, pit from the
+# route (loader + destination) on upload. Distances change with the front and the dump, so the engineering checker
+# types them per line (they are not locked to the destination).
+INPUT_COLS = ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "Destination", "H distance (m)",
+              "V distance (m)"]
+INPUT_COLS_V2 = ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "Destination"]
 INPUT_COLS_V1 = ["Loader", "Operator", "Material", "Hauler ID", "Hauler operator", "PIT", "Disposal", "Distance (m)"]
 MAX_TRIPS = 20                                               # trips of one hauler in one hour, all its lines together
 TAIL_COLS = ["Remark code", "Remark"]                       # old templates only: one remark per line (ignored now)
@@ -305,10 +308,11 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
 
     `destinations` (name, material_group, active) of the site: when given, a line with trips needs one of them in
     `disposal` (the destination). `routes` (core.routes.routes_at for the shift date: loader, destination, pit,
-    dist_h, dist_v) then fill pit, distance_m (horizontal) and dist_v; a missing route only warns.
+    dist_h, dist_v) then fill pit; a missing route only warns. distance_m (horizontal) and dist_v are typed per line
+    by the engineering checker and kept as typed (a line with trips but no distance only warns).
 
     rows: loader, loader_nrp, hauler, hauler_nrp, material, disposal (destination), r1..r12, remark_code, remark;
-    pit / distance_m typed on older templates are kept when no route applies (legacy lines without a hauler ID may
+    pit typed on older templates is kept when no route applies (legacy lines without a hauler ID may
     give hauler_model instead). One line = one hauler for one loader and one destination; the same hauler may
     appear on several lines (another destination, or its operator changed)."""
     out = rows.copy()
@@ -425,7 +429,7 @@ def resolve(rows: pd.DataFrame, load: pd.DataFrame, targets: pd.DataFrame, units
 
 def _destinations(out: pd.DataFrame, destinations: pd.DataFrame | None, routes: pd.DataFrame | None,
                   problems: list[str], warnings: list[str]) -> None:
-    """Check the destination of each line and fill pit and distances from the route (in place)."""
+    """Check the destination of each line and fill pit from the route (in place); distances stay as typed."""
     if destinations is None or destinations.empty or out.empty:
         return
     act = destinations[destinations["active"].astype(bool)] if "active" in destinations else destinations
@@ -457,12 +461,15 @@ def _destinations(out: pd.DataFrame, destinations: pd.DataFrame | None, routes: 
         hit = by.get((str(r["loader"]).upper(), str(r["disposal"]).upper()))
         if hit is None:
             missing.add(f"{r['loader']} → {r['disposal']}")
-            out.loc[i, ["pit", "distance_m", "dist_v"]] = [None, np.nan, np.nan]   # never a stale copied distance
+            out.loc[i, "pit"] = None                                    # never a stale copied pit
             continue
-        out.loc[i, ["pit", "distance_m", "dist_v"]] = [None if pd.isna(x) else x for x in hit]
+        out.loc[i, "pit"] = None if pd.isna(hit[0]) else hit[0]
     if missing:
-        warnings.append(f"No route yet for: {', '.join(sorted(missing))}. The lines are saved without pit and "
-                        "distance (Hourly Production setup → Destinations & routes).")
+        warnings.append(f"No route yet for: {', '.join(sorted(missing))}. The lines are saved without pit "
+                        "(Hourly Production setup → Destinations & routes).")
+    no_dist = int((has_trips & (out["distance_m"].isna() | out["dist_v"].isna())).sum())
+    if no_dist:
+        warnings.append(f"{no_dist} line(s) with trips but no H or V distance: the engineering checker types them.")
 
 
 def to_long(rows: pd.DataFrame) -> pd.DataFrame:
@@ -536,14 +543,14 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
     ws["B3"].number_format = "yyyy-mm-dd"
     for r, tip in enumerate(["How to fill: one row per truck and destination. Pick Loader, Operator, Material, Hauler "
                              "ID and Destination from the drop-downs, then type the trips per hour.",
-                             "Truck model, load, pit and distances are added automatically. Rows without a Hauler ID "
-                             "and without trips are ignored.",
+                             "Truck model, load and pit are added automatically. H and V distance (m) are typed per row "
+                             "by the engineering checker. Rows without a Hauler ID and without trips are ignored.",
                              "Truck went to two destinations, or its operator changed? Add a second row for the same "
                              "truck."], start=2):
         ws.cell(r, 4, tip).font = Font(italic=True, color="55595F")
     heads = INPUT_COLS + SLOTS[shift]
     widths = {"Loader": 11, "Hauler ID": 11, "Operator": 24, "Hauler operator": 24, "Material": 18, "Remark": 28,
-              "Destination": 22}
+              "Destination": 22, "H distance (m)": 13, "V distance (m)": 13}
     for j, h in enumerate(heads, start=1):
         c = ws.cell(HEADER_ROW, j, h)
         c.fill, c.font = dataprod.HEAD_FILL, dataprod.HEAD_FONT
@@ -581,12 +588,19 @@ def build_template(site: str, date: dt.date, shift: str, load: pd.DataFrame, tar
     dv.error, dv.errorTitle = "Trips of one hauler per hour: whole number 0–20", "Trips"
     dv.add(f"{first}{HEADER_ROW + 1}:{lastc}{last}")
     ws.add_data_validation(dv)
+    dv = DataValidation(type="decimal", operator="greaterThanOrEqual", formula1="0", allow_blank=True,
+                        errorStyle="warning")
+    dv.error, dv.errorTitle = "Distance in metres, usually 0 or more", "Distance"
+    for h in ("H distance (m)", "V distance (m)"):
+        dv.add(f"{pos[h]}{HEADER_ROW + 1}:{pos[h]}{last}")
+    ws.add_data_validation(dv)
     recs = lines.to_dict("records") if lines is not None else []
     for i, r in enumerate(recs, start=HEADER_ROW + 1):
         name = r.get("operator") if isinstance(r.get("operator"), str) else None
         vals = {"Loader": r.get("loader"), "Operator": _label(r.get("loader_nrp"), names) or name,
                 "Material": r.get("material"), "Hauler ID": r.get("hauler"),
-                "Hauler operator": _label(r.get("hauler_nrp"), names), "Destination": r.get("disposal")}
+                "Hauler operator": _label(r.get("hauler_nrp"), names), "Destination": r.get("disposal"),
+                "H distance (m)": r.get("distance_m"), "V distance (m)": r.get("dist_v")}
         for h, v in vals.items():
             ws[f"{pos[h]}{i}"] = None if v is None or (isinstance(v, float) and pd.isna(v)) else v
     ws.freeze_panes = ws.cell(HEADER_ROW + 1, 5)          # loader, operator, material and truck stay visible
@@ -665,7 +679,11 @@ def parse_template(data: bytes) -> HourlyFile:
     hdr = [str(v).strip() if pd.notna(v) else "" for v in x.iloc[HEADER_ROW - 1]]
     expected = INPUT_COLS + SLOTS[shift]
     v1 = INPUT_COLS_V1 + SLOTS[shift]                    # templates before destinations: pit/distance typed
+    v2 = INPUT_COLS_V2 + SLOTS[shift]                    # destination without typed distances
     if hdr[:len(expected)] == expected:
+        names = ["loader", "loader_nrp", "material", "hauler", "hauler_nrp", "disposal", "distance_m", "dist_v", *R]
+    elif hdr[:len(v2)] == v2:
+        expected = v2
         names = ["loader", "loader_nrp", "material", "hauler", "hauler_nrp", "disposal", *R]
     elif hdr[:len(v1)] == v1:
         expected = v1

@@ -51,6 +51,13 @@ def show(site: str, kiosk: bool, period: str = "daily", review: tuple | None = N
 
 
 # ------------------------------------------------------------------ hourly production screen
+THEME_LABEL = {"dark": "Dark", "light": "Light"}
+
+
+def theme_picker(container, key: str) -> str:
+    """Dark (site TV) or Light (screenshots for chat groups) for the hourly screen; remembered per session."""
+    return container.segmented_control("Theme", list(THEME_LABEL), default="dark", format_func=THEME_LABEL.get,
+                                       key=key) or "dark"
 SCREENS = {"equipment": "Equipment & monthly", "hourly": "Hourly Production"}
 
 
@@ -73,9 +80,9 @@ def _hourly_stamp(site: str) -> str:
     return f"{last}|{tuple(cfg)}|{hashlib.sha1(repr(tg).encode(), usedforsecurity=False).hexdigest()}"
 
 
-def show_hourly(site: str, kiosk: bool, date=None, shift: str | None = None) -> None:
+def show_hourly(site: str, kiosk: bool, date=None, shift: str | None = None, theme: str = "dark") -> None:
     from core.config import now_wib
     from core.hourly_render import render as render_hourly
     now = now_wib()
     d = _hourly_payload(site, date, shift, now.strftime("%Y%m%d%H%M"), _hourly_stamp(site))
-    st.html(render_hourly(d, kiosk=kiosk, now=now), unsafe_allow_javascript=True)   # remark text shrinks to fit
+    st.html(render_hourly(d, kiosk=kiosk, now=now, theme=theme), unsafe_allow_javascript=True)   # remark text shrinks to fit
