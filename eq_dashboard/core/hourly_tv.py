@@ -2,10 +2,10 @@
 
 Figures, all for OB (BCM), Coal (t), SR (BCM per t) and Distance (m, trip-weighted):
 - Hour: the current production hour; target = hourly targets of the fleets working that hour.
-- Daily: the production date so far; target = daily plan (month plan ÷ calendar days); achievement = actual ÷ the
-  plan for the hours passed (pace); outlook = run rate per elapsed hour × 24.
-- MTD: approved Production Data trips up to its last date, then flash data for the days after; target = plan up to
-  now (the days before plus the part of today passed).
+- Daily: the production date so far; target = daily plan (month plan ÷ calendar days); achievement = actual ÷ daily
+  plan; outlook = run rate per elapsed hour × 24.
+- MTD: approved Production Data trips up to its last date, then flash data for the days after; target = the daily
+  plan added up from the 1st to the production date shown; achievement = MTD ÷ that target.
 - Outlook: OB / Coal = the month's plan − MTD (volume still to go, < 0 when ahead); target = the month's plan,
   achievement = MTD ÷ month plan (share done). The run rate (MTD per elapsed day × days in the month) is in
   month_runrate and its ratio to the plan in month_pace, which colours the outlook (on pace or not).
@@ -132,10 +132,7 @@ def build(s: Session, site: str, now: dt.datetime, date: dt.date | None = None, 
     d_cg = float(ld.loc[ld["material_group"] == "CG", "volume"].sum()) if len(ld) else 0.0
     elapsed = (slot if shift == "DS" else 12 + slot) if live else 24
     k = 24 / elapsed if elapsed else np.nan
-    frac = elapsed / 24                                  # share of the production day passed
     tv.summary["Daily"] = _triple(d_ob, d_cg, _dist(ld) if len(ld) else np.nan, p_ob, p_cg, t_sr, t_dist)
-    for key, act, plan_d in (("OB", d_ob, p_ob), ("Coal", d_cg, p_cg)):   # pace: against the plan of the hours passed
-        tv.summary["Daily"][key] = (act, plan_d, _ach(act, plan_d * frac if plan_d is not None else None))
     tv.daily_outlook = {"OB": d_ob * k, "Coal": d_cg * k}
 
     # ---- month to date: official Production Data first, flash for the days after it
@@ -152,10 +149,9 @@ def build(s: Session, site: str, now: dt.datetime, date: dt.date | None = None, 
     mtd_cg = float(tot.loc["CG", "volume"]) if "CG" in tot.index else 0.0
     ob_rit = float(tot.loc["OB", "rit"]) if "OB" in tot.index else 0.0
     mtd_dist = float(tot.loc["OB", "dist_w"]) / ob_rit if ob_rit else np.nan
-    # plan up to now: the full days before the production date plus the part of it already passed
-    to_date = plan[plan["date"] < date]
-    t_ob_mtd = to_date["ob_plan"].sum(min_count=1) + (p_ob or 0) * frac if p_ob is not None else         to_date["ob_plan"].sum(min_count=1)
-    t_cg_mtd = to_date["coal_plan"].sum(min_count=1) + (p_cg or 0) * frac if p_cg is not None else         to_date["coal_plan"].sum(min_count=1)
+    to_date = plan[plan["date"] <= date]                  # daily plan added up from the 1st to the date shown
+    t_ob_mtd = to_date["ob_plan"].sum(min_count=1)
+    t_cg_mtd = to_date["coal_plan"].sum(min_count=1)
     tv.summary["MTD"] = _triple(mtd_ob, mtd_cg, mtd_dist, None if pd.isna(t_ob_mtd) else float(t_ob_mtd),
                                 None if pd.isna(t_cg_mtd) else float(t_cg_mtd), t_sr, t_dist)
     days_done = (date - month).days + (elapsed / 24)

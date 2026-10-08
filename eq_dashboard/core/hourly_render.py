@@ -235,9 +235,8 @@ def _kpi(d: HourlyTv, p: dict) -> str:
         for blk, _ in cols:
             a, t, ach = d.summary.get(blk, {}).get(key, (None, None, None))
             extra, tone, word = "", ach, ""
-            if blk == "Daily" and key in d.daily_outlook:      # % = actual vs the plan of the hours passed
+            if blk == "Daily" and key in d.daily_outlook:      # % = actual ÷ the day's target
                 extra = f'<div class="s">outlook <b>{_n(d.daily_outlook[key], dec)}</b></div>'
-                word = " so far" if ach is not None else ""
             elif blk == "Outlook" and key in d.month_runrate:  # % = share done; colour = on pace or not
                 state = "" if a is None else ("still to go · " if a > 0 else "ahead of plan · ")
                 extra = f'<div class="s">{state}run rate <b>{_n(d.month_runrate[key], dec)}</b></div>'
