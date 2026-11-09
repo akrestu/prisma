@@ -5,11 +5,12 @@ import streamlit as st
 from auth.access import ADMIN, DATA_OFFICER, SITE_MANAGER, can_review
 from core import dash
 from core import ingest as ing
-from core.ui import excel_download, fmt_num, require, sites_for
+from core.ui import excel_bytes, fmt_num, require, sites_for
 from db import repo
 from db.engine import session_scope
 
 EXCEL_MAX = 100_000  # bigger results download as CSV only (Excel gets slow and heavy)
+DOWNLOAD_MAX = 200_000
 PAGE_ROWS = 2_000    # rows sent to the browser per page
 
 user = require("data_explorer")
@@ -58,66 +59,78 @@ if not versions:
     st.info("Choose at least one site and month.")
     st.stop()
 
-@st.cache_data(ttl=600, max_entries=20, show_spinner=False)
-def _rows(table: str, versions: tuple[tuple[int, str], ...]) -> pd.DataFrame:
-    """Cached per table × versions (never per user: `versions` is already limited to what this user may see),
-    so typing in the search boxes does not query the database again."""
+@st.cache_data(ttl=600, max_entries=60, show_spinner=False)
+def _dates(table: str, versions: tuple[tuple[int, str], ...]) -> tuple | None:
     with session_scope() as s:
-        return repo.explorer_rows(s, table, list(versions))
+        return repo.explorer_dates(s, table, list(versions))
 
 
-with st.spinner(f"Loading {table.lower()}…"):
-    df = _rows(table, tuple(sorted(versions)))
-if "row_ref" in df.columns:   # source row in the Excel sheet: find the original line quickly
-    df = df[["row_ref", *[c for c in df.columns if c != "row_ref"]]].rename(columns={"row_ref": "Excel row"})
-    if df["Excel row"].isna().all() and table != "Data quality findings":
-        st.caption("Excel row numbers are stored for files imported from 28 Sep 2026 on; import older months "
-                   "again to fill them in.")
+@st.cache_data(ttl=600, max_entries=60, show_spinner=False)
+def _count(table: str, versions: tuple[tuple[int, str], ...], d0, d1, unit: str, search: str) -> int:
+    with session_scope() as s:
+        return repo.explorer_count(s, table, list(versions), d0, d1, unit, search)
 
-date_col = repo.EXPLORER_TABLES[table][1]
+
+@st.cache_data(ttl=600, max_entries=60, show_spinner=False)
+def _page(table: str, versions: tuple[tuple[int, str], ...], d0, d1, unit: str, search: str, offset: int) -> pd.DataFrame:
+    """One page of rows, cached per table × versions × filters (never per user: `versions` is already limited to what
+    this user may see). The filters run in the database; only the page shown leaves it."""
+    with session_scope() as s:
+        return repo.explorer_rows(s, table, list(versions), d0, d1, PAGE_ROWS, unit, search, offset)
+
+
+def tidy(rows: pd.DataFrame) -> pd.DataFrame:
+    """Source row in the Excel sheet first: find the original line quickly."""
+    if "row_ref" not in rows.columns:
+        return rows
+    return rows[["row_ref", *[c for c in rows.columns if c != "row_ref"]]].rename(columns={"row_ref": "Excel row"})
+
+
+def everything() -> pd.DataFrame:
+    """Every filtered row, read only when a download button is pressed."""
+    with session_scope() as s:
+        return tidy(repo.explorer_rows(s, table, list(key_versions), d0, d1, DOWNLOAD_MAX, units, text))
+
+
+key_versions = tuple(sorted(versions))
 f1, f2, f3 = st.columns([1.3, 1, 1.7])
-if date_col and len(df) and df[date_col].notna().any():
-    dmin, dmax = pd.to_datetime(df[date_col]).min().date(), pd.to_datetime(df[date_col]).max().date()
-    rng = f1.date_input("Dates", (dmin, dmax), min_value=dmin, max_value=dmax, key=f"dx_dates_{table}_{label}")
+d0 = d1 = None
+bounds = _dates(table, key_versions)
+if bounds:
+    rng = f1.date_input("Dates", bounds, min_value=bounds[0], max_value=bounds[1], key=f"dx_dates_{table}_{label}")
     if isinstance(rng, (tuple, list)) and len(rng) == 2:
-        d = pd.to_datetime(df[date_col]).dt.date
-        df = df[(d >= rng[0]) & (d <= rng[1]) | d.isna()]
-unit_cols = [c for c in ("unit_id", "hauler", "loader", "dt_unit", "unit") if c in df.columns]
-units = f2.text_input("Unit ID", key="dx_unit", placeholder="e.g. WEX019").strip().upper()
-if units and unit_cols:
-    hit = pd.Series(False, index=df.index)
-    for c in unit_cols:
-        hit |= df[c].astype(str).str.upper().str.contains(units, regex=False, na=False)
-    df = df[hit]
+        d0, d1 = rng
+units = f2.text_input("Unit ID", key="dx_unit", placeholder="e.g. WEX019").strip()
 text = f3.text_input("Search all columns", key="dx_text", placeholder="reason, material, ticket, seam…").strip()
-if text:
-    txt_cols = [c for c in df.columns if df[c].dtype == object]
-    hit = pd.Series(False, index=df.index)
-    for c in txt_cols:
-        hit |= df[c].astype(str).str.contains(text, case=False, regex=False, na=False)
-    df = df[hit]
+total = _count(table, key_versions, d0, d1, units, text)
 
-dash.summary(f"{fmt_num(len(df))} rows of {table.lower()}", label,
-             f"{len({s_ for _, s_ in versions})} site(s)")
-if len(df) >= 200_000:
-    st.warning("Showing the first 200,000 rows. Narrow the months or sites to see everything.")
-
-# only one page of rows goes to the browser; downloads always contain every filtered row
-pages = max(1, -(-len(df) // PAGE_ROWS))
+# only one page of rows goes to the browser; downloads read every filtered row when pressed
+pages = max(1, -(-total // PAGE_ROWS))
 page = 1
+dash.summary(f"{fmt_num(total)} rows of {table.lower()}", label,
+             f"{len({s_ for _, s_ in versions})} site(s)")
+if total > DOWNLOAD_MAX:
+    st.warning(f"Downloads hold the first {DOWNLOAD_MAX:,} rows. Narrow the months or sites to download everything.")
 if pages > 1:
     p1, p2 = st.columns([1, 5])
     page = int(p1.number_input("Page", 1, pages, 1, key=f"dx_page_{table}_{label}"))
-    p2.caption(f"Rows {(page - 1) * PAGE_ROWS + 1:,}–{min(page * PAGE_ROWS, len(df)):,} of {len(df):,}")
-st.dataframe(df.iloc[(page - 1) * PAGE_ROWS: page * PAGE_ROWS], hide_index=True, width="stretch", height=560)
+    p2.caption(f"Rows {(page - 1) * PAGE_ROWS + 1:,}–{min(page * PAGE_ROWS, total):,} of {total:,}")
+with st.spinner(f"Loading {table.lower()}…"):
+    df = tidy(_page(table, key_versions, d0, d1, units, text, (page - 1) * PAGE_ROWS))
+if "Excel row" in df.columns and len(df) and df["Excel row"].isna().all() and table != "Data quality findings":
+    st.caption("Excel row numbers are stored for files imported from 28 Sep 2026 on; import older months "
+               "again to fill them in.")
+
+st.dataframe(df, hide_index=True, width="stretch", height=560)
 
 fname = table.split(" (")[0].lower().replace(" ", "_")
 c1, c2, _ = st.columns([1, 1, 4])
-c1.download_button("Download CSV", lambda: df.to_csv(index=False).encode("utf-8-sig"), f"{fname}.csv", "text/csv",
+c1.download_button("Download CSV", lambda: everything().to_csv(index=False).encode("utf-8-sig"), f"{fname}.csv", "text/csv",
                    key="dx_csv", on_click="ignore")
 with c2:
-    if len(df) <= EXCEL_MAX:
-        excel_download(df, f"{fname}.xlsx", key="dx_xlsx")
+    if total <= EXCEL_MAX:
+        st.download_button("Download Excel", lambda: excel_bytes(everything()), file_name=f"{fname}.xlsx", key="dx_xlsx",
+                           on_click="ignore", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.caption(f"Excel download up to {EXCEL_MAX:,} rows; use CSV.")
 st.caption("Read-only. To correct data, use Production Data → Edit (or export, fix in Excel and import again); "

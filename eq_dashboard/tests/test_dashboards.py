@@ -1,6 +1,8 @@
 """Setiap halaman dashboard & admin berjalan tanpa error dengan data asli, dan hak akses dihormati."""
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -208,6 +210,88 @@ def test_compare_shows_change_against_previous_period(world):
     assert at.toggle(key="f_cmp").value is True
     assert any("compared with" in x.value for x in at.markdown)
     assert any("vs previous" in c.value for c in at.caption)
+
+
+def _earlier_month(s, site="WBK-BAU"):
+    """A copy of one site's month, one month earlier, published: a date range now crosses two months."""
+    from sqlalchemy import text
+    us = s.query(m.UploadSite).filter(m.UploadSite.site_code == site).first()
+    month = (us.month - dt.timedelta(days=1)).replace(day=1)
+    new = m.Upload(filename="prev", sha256="p" * 64, month=month, summary={})
+    s.add(new)
+    s.flush()
+    for model in (m.FactEvent, m.FactRitase, m.FactCoalTicket, m.FactFuel):
+        cols = [c.key for c in model.__table__.columns if c.key not in ("id", "upload_id", "month", "date")]
+        names = ",".join(f'"{c}"' for c in cols)
+        s.execute(text(f'insert into {model.__tablename__} (upload_id,month,"date",{names}) '
+                       f'select :u,:m,("date" - interval \'1 month\')::date,{names} from {model.__tablename__} '
+                       "where upload_id=:o and site=:s"), {"u": new.id, "m": month, "o": us.upload_id, "s": site})
+    s.add(m.UploadSite(upload_id=new.id, site_code=site, month=month, status="PUBLISHED", summary={}, dq_summary={}))
+    s.commit()
+
+
+def test_ob_production_opens_on_a_range_across_months(world):
+    _earlier_month(world)
+    at = AppTest.from_file(str(APP_DIR / "pages/dashboard/production_ob.py"), default_timeout=180)
+    at.session_state["user"] = load_user(world, "adm")
+    at.query_params["site"] = "WBK-BAU"
+    at.query_params["period"] = "ytd"
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+
+
+def test_plan_target_is_hidden_with_shift_or_week_filter(world):
+    us = world.query(m.UploadSite).filter(m.UploadSite.site_code == "WBK-BAU").first()
+    world.add(m.PlanProduction(site="WBK-BAU", year=us.month.year, month=us.month.month, ob_bcm=3e6, coal_ton=3e5))
+    world.commit()
+    at = AppTest.from_file(str(APP_DIR / "pages/dashboard/overview.py"), default_timeout=180)
+    at.session_state["user"] = load_user(world, "adm")
+    at.query_params["site"] = "WBK-BAU"
+    at.run()
+    card = lambda: next(x for x in at.metric if x.label == "OB (BCM)")  # noqa: E731
+    assert "vs target" in card().delta
+    at.segmented_control(key="f_shift").set_value(["DS"]).run()
+    assert "vs target" not in card().delta and "hidden" in card().delta
+    at.segmented_control(key="f_shift").set_value(["DS", "NS"])
+    at.multiselect(key="f_week").set_value(["Week 1"]).run()
+    assert "vs target" not in card().delta and "hidden" in card().delta
+    at.multiselect(key="f_week").set_value([]).run()
+    assert "vs target" in card().delta
+
+
+def test_fuel_ratio_not_shown_with_a_unit_filter(world):
+    at = AppTest.from_file(str(APP_DIR / "pages/dashboard/overview.py"), default_timeout=180)
+    at.session_state["user"] = load_user(world, "adm")
+    at.run()
+    ratio = lambda: next(x for x in at.metric if x.label == "Fuel ratio").value  # noqa: E731
+    assert "L/BCM" in ratio()
+    at.multiselect(key="f_type").set_value([at.multiselect(key="f_type").options[0]]).run()
+    assert ratio() == "—"
+
+
+def test_explorer_filters_run_before_the_row_limit(world):
+    us = world.query(m.UploadSite).filter(m.UploadSite.site_code == "WBK-BAU").first()
+    versions = [(us.upload_id, "WBK-BAU")]
+    last_unit = sorted(repo.explorer_rows(world, "Events", versions)["unit_id"])[-1]
+    found = repo.explorer_rows(world, "Events", versions, limit=5, unit=last_unit.lower())
+    assert len(found) == 5 and set(found["unit_id"]) == {last_unit}
+    assert len(repo.explorer_rows(world, "Events", versions, search="no such text 100%")) == 0
+    first, last = repo.explorer_dates(world, "Events", versions)
+    one_day = repo.explorer_rows(world, "Events", versions, last, last)
+    assert first < last and set(one_day["date"]) == {last}
+
+
+def test_weighted_by_matches_weighted():
+    import numpy as np
+    import pandas as pd
+
+    from core.periods import weighted, weighted_by
+    df = pd.DataFrame({"u": list("aabbcc"), "d": [100.0, np.nan, 50.0, 70.0, 10.0, 20.0],
+                       "rit": [2.0, 5.0, 1.0, 3.0, 0.0, 0.0]})
+    out = weighted_by(df, ["u"], "d")
+    assert out["a"] == pytest.approx(weighted(df[df["u"] == "a"], "d"))
+    assert out["b"] == pytest.approx(weighted(df[df["u"] == "b"], "d"))
+    assert np.isnan(out["c"]) and np.isnan(weighted(df[df["u"] == "c"], "d"))
 
 
 def test_system_health_for_admin_only(world):

@@ -31,11 +31,14 @@ dash.kpi(r1[1], "UoA (%)", k["UoA"], t["uoa"], prev=pv.get("UoA"))
 dash.kpi(r1[2], "MTBS (hrs)", rel["MTBS"], t["mtbs"], "h", prev=pv.get("MTBS"))
 dash.kpi(r1[3], "MTTR (hrs)", rel["MTTR"], t["mttr"], "h", higher_better=False, prev=pv.get("MTTR"))
 r2 = st.columns(4)
-plan = dash.plan_range(c.sites, c.date_from, c.date_to)
-dash.kpi(r2[0], "OB (BCM)", ob, plan["ob_plan"].sum(min_count=1), "n", prev=pv.get("OB"))
-dash.kpi(r2[1], "Coal (t)", coal, plan["coal_plan"].sum(min_count=1), "n1", prev=pv.get("coal"))
+plan = dash.plan_for(c)
+no_target = dash.PLAN_HIDDEN if c.plan_hidden else "no target"
+dash.kpi(r2[0], "OB (BCM)", ob, plan["ob_plan"].sum(min_count=1), "n", prev=pv.get("OB"), no_target=no_target)
+dash.kpi(r2[1], "Coal (t)", coal, plan["coal_plan"].sum(min_count=1), "n1", prev=pv.get("coal"), no_target=no_target)
 dash.kpi(r2[2], "Fuel (L)", fuel, None, "n", higher_better=False, prev=pv.get("fuel"))
-r2[3].metric("Fuel ratio", f"{fmt_num(fuel / ob, 2)} L/BCM" if ob else "—")
+# ritase has no unit filter: fuel of some units over the OB of all units would not be a ratio
+r2[3].metric("Fuel ratio", f"{fmt_num(fuel / ob, 2)} L/BCM" if ob and not c.unit_filtered else "—",
+             help="Not shown while a Type, Model or Unit filter is on." if c.unit_filtered else None)
 
 left, right = st.columns(2)
 with left:

@@ -7,7 +7,7 @@ import streamlit as st
 
 from core import dash
 from core import theme as T
-from core.periods import weighted
+from core.periods import weighted, weighted_by
 from core.ui import excel_download, fmt_num
 from core.validate import HOUR_SLOTS
 
@@ -20,10 +20,10 @@ if ob.empty:
     st.stop()
 
 daily = ob.groupby("date")["volume"].sum()
-plan = dash.plan_range(c.sites, c.date_from, c.date_to).set_index("date")["ob_plan"]
+plan = dash.plan_for(c).set_index("date")["ob_plan"]
 plan_mtd = plan.reindex(daily.index).sum(min_count=1)
 # a month-end projection only makes sense while looking at the current month to date
-projectable = c.preset == "mtd"
+projectable = c.preset == "mtd" and not c.plan_hidden   # a run rate of some weeks or one shift is not the month's
 days_in_month = calendar.monthrange(c.month.year, c.month.month)[1]
 proj = daily.mean() * days_in_month
 top_pit = ob.groupby("pit")["volume"].sum().sort_values(ascending=False)
@@ -38,7 +38,7 @@ r[2].metric("Trips", fmt_num(ob["rit"].sum()))
 if pd.notna(plan_mtd) and plan_mtd:
     r[3].metric("Achievement", f"{daily.sum() / plan_mtd:.1%}", f"plan {fmt_num(plan_mtd)} BCM", delta_color="off")
 else:
-    r[3].metric("Achievement", "—", "no plan set", delta_color="off")
+    r[3].metric("Achievement", "—", dash.PLAN_HIDDEN if c.plan_hidden else "no plan set", delta_color="off")
 if projectable:
     r[4].metric("Month-end projection", f"{fmt_num(proj)} BCM", "run rate × calendar days", delta_color="off")
 else:
@@ -63,8 +63,7 @@ with a:
     fig.update_layout(title="Hourly trip profile (average per day)", xaxis=dict(type="category"))
     dash.plot(fig, 340)
 with b:
-    dd = ob.groupby("date").apply(lambda g: pd.Series({"H": weighted(g, "dist_h"), "V": weighted(g, "dist_v")}),
-                                  include_groups=False)
+    dd = pd.DataFrame({"H": weighted_by(ob, ["date"], "dist_h"), "V": weighted_by(ob, ["date"], "dist_v")})
     fig = go.Figure()
     fig.add_scatter(x=dd.index, y=dd["H"], name="Horizontal (m)", line=dict(color=T.PA_COLOR, width=3))
     fig.add_scatter(x=dd.index, y=dd["V"], name="Vertical (m)", yaxis="y2", line=dict(color=T.ACCENT, width=3))
@@ -84,9 +83,11 @@ with cc:
                  T.ACCENT, pct=False, top=12)
 
 st.subheader("Haul distance by route (loading location → disposal)")
-route = (ob.groupby(["pit", "disposal"]).apply(lambda g: pd.Series({
-    "BCM": g["volume"].sum(), "Trips": g["rit"].sum(), "Horizontal (m)": weighted(g, "dist_h"),
-    "Vertical (m)": weighted(g, "dist_v")}), include_groups=False).reset_index().sort_values("BCM", ascending=False))
+route_keys = ["pit", "disposal"]
+route = ob.groupby(route_keys).agg(BCM=("volume", "sum"), Trips=("rit", "sum"))
+route["Horizontal (m)"] = weighted_by(ob, route_keys, "dist_h")
+route["Vertical (m)"] = weighted_by(ob, route_keys, "dist_v")
+route = route.reset_index().sort_values("BCM", ascending=False)
 route = route.rename(columns={"pit": "Loading location", "disposal": "Disposal"})
 st.dataframe(route, hide_index=True, width="stretch", height=300,
              column_config={x: st.column_config.NumberColumn(format="%,.0f") for x in
@@ -94,7 +95,7 @@ st.dataframe(route, hide_index=True, width="stretch", height=300,
 
 st.subheader("Loader × date (BCM)")
 lt = ob.pivot_table(index="loader", columns="date", values="volume", aggfunc="sum", fill_value=0)
-lt.columns = [f"{d:%d}" for d in lt.columns]
+lt.columns = [f"{d:%d}" if c.single_month else f"{d:%d %b %y}" for d in lt.columns]   # day numbers repeat across months
 lt["Total"] = lt.sum(axis=1)
 lt = lt.sort_values("Total", ascending=False)
 st.dataframe(lt.round(0), width="stretch")

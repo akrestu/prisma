@@ -81,6 +81,14 @@ def weighted(df: pd.DataFrame, col: str, w: str = "rit") -> float:
     return float(np.average(d[col], weights=d[w])) if len(d) and d[w].sum() > 0 else np.nan
 
 
+def weighted_by(df: pd.DataFrame, keys: list[str], col: str, w: str = "rit") -> pd.Series:
+    """weighted() per group, without a Python call per group (loader × date has tens of thousands of groups)."""
+    d = df[df[col].notna() & df[w].notna()]
+    groups = [d[k] for k in keys]
+    num, den = (d[col] * d[w]).groupby(groups).sum(), d[w].groupby(groups).sum()
+    return (num / den.where(den > 0)).astype(float)
+
+
 def productivity(rit: pd.DataFrame, ev_hourly_or_daily: pd.DataFrame, role: str, by: list[str],
                  group: str) -> pd.DataFrame:
     """Productivity of loaders or haulers for one material group (OB or CG).
@@ -99,8 +107,8 @@ def productivity(rit: pd.DataFrame, ev_hourly_or_daily: pd.DataFrame, role: str,
         return pd.DataFrame()
     agg = g.groupby(keys).agg(volume=("volume", "sum"), rit=("rit", "sum"),
                               model=(f"{role}_model", "first")).join(tot)
-    agg["dist_h"] = g.groupby(keys).apply(lambda x: weighted(x, "dist_h"), include_groups=False)
-    agg["dist_v"] = g.groupby(keys).apply(lambda x: weighted(x, "dist_v"), include_groups=False)
+    agg["dist_h"] = weighted_by(g, keys, "dist_h")
+    agg["dist_v"] = weighted_by(g, keys, "dist_v")
     ev = ev_hourly_or_daily.rename(columns={"unit_id": "unit"})
     hrs = ev.pivot_table(index=keys, columns="category", values="hours", aggfunc="sum", fill_value=0.0)
     ready = hrs.get(READY, pd.Series(0.0, index=hrs.index))
@@ -118,10 +126,11 @@ def fleet_summary(prod: pd.DataFrame, by: list[str]) -> pd.DataFrame:
     """Fleet totals per bucket from productivity(): volume per Ready hour, rit-weighted distances."""
     if prod.empty:
         return pd.DataFrame()
-    g = prod.groupby(by) if by else prod.assign(_k=0).groupby("_k")
+    p, keys = (prod, by) if by else (prod.assign(_k=0), ["_k"])
+    g = p.groupby(keys)
     out = g.agg(volume=("volume", "sum"), rit=("rit", "sum"), ready_h=("ready_h", "sum"), work_h=("work_h", "sum"),
                 units=("unit", "nunique"))
     out["per_hour"] = out["volume"] / out["ready_h"].replace(0, np.nan)
-    out["dist_h"] = g.apply(lambda x: weighted(x, "dist_h"), include_groups=False)
-    out["dist_v"] = g.apply(lambda x: weighted(x, "dist_v"), include_groups=False)
+    out["dist_h"] = weighted_by(p, keys, "dist_h")
+    out["dist_v"] = weighted_by(p, keys, "dist_v")
     return out if by else out.reset_index(drop=True)

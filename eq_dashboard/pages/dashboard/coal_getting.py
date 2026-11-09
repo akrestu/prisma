@@ -5,7 +5,7 @@ import streamlit as st
 
 from core import dash
 from core import theme as T
-from core.periods import weighted
+from core.periods import weighted, weighted_by
 from core.ui import excel_download, fmt_num
 
 c = dash.context("coal_getting", unit_filter=False, title="Coal getting")
@@ -18,7 +18,7 @@ if t.empty:
 
 cg = c.rit[c.rit["material_group"] == "CG"] if len(c.rit) else c.rit
 daily = t.groupby("date")["ton"].sum()
-plan = dash.plan_range(c.sites, c.date_from, c.date_to).set_index("date")["coal_plan"]
+plan = dash.plan_for(c).set_index("date")["coal_plan"]
 plan_mtd = plan.reindex(daily.index).sum(min_count=1)
 dur = (pd.to_datetime(t["time_out"]) - pd.to_datetime(t["time_in"])).dt.total_seconds() / 60
 top_seam = t.groupby("seam")["ton"].sum().sort_values(ascending=False)
@@ -32,7 +32,7 @@ r[3].metric("Median in–out time", f"{fmt_num(dur.median(), 1)} min")
 if pd.notna(plan_mtd) and plan_mtd:
     r[4].metric("Achievement", f"{daily.sum() / plan_mtd:.1%}", f"plan {fmt_num(plan_mtd)} t", delta_color="off")
 else:
-    r[4].metric("Achievement", "—", "no plan set", delta_color="off")
+    r[4].metric("Achievement", "—", dash.PLAN_HIDDEN if c.plan_hidden else "no plan set", delta_color="off")
 if len(cg):
     r[5].metric("CG haul distance", f"{fmt_num(weighted(cg, 'dist_h'))} m H", f"{fmt_num(weighted(cg, 'dist_v'))} m V",
                 delta_color="off", help="Trip-weighted, from CG ritase")
@@ -56,8 +56,7 @@ if len(cgd):
 if len(cg):
     a, b = st.columns(2)
     with a:
-        dd = cg.groupby("date").apply(lambda g: pd.Series({"H": weighted(g, "dist_h"), "V": weighted(g, "dist_v")}),
-                                      include_groups=False)
+        dd = pd.DataFrame({"H": weighted_by(cg, ["date"], "dist_h"), "V": weighted_by(cg, ["date"], "dist_v")})
         fig = go.Figure()
         fig.add_scatter(x=dd.index, y=dd["H"], name="Horizontal (m)", line=dict(color=T.PA_COLOR, width=3))
         fig.add_scatter(x=dd.index, y=dd["V"], name="Vertical (m)", yaxis="y2", line=dict(color=T.ACCENT, width=3))
@@ -65,10 +64,12 @@ if len(cg):
                           yaxis2=dict(overlaying="y", side="right", title="vertical (m)"))
         dash.plot(fig, 340)
     with b:
-        route = (cg.groupby(["pit", "disposal"]).apply(lambda g: pd.Series({
-            "t (ritase)": g["volume"].sum(), "Trips": g["rit"].sum(), "Horizontal (m)": weighted(g, "dist_h"),
-            "Vertical (m)": weighted(g, "dist_v")}), include_groups=False).reset_index()
-            .sort_values("t (ritase)", ascending=False).rename(columns={"pit": "Loading location", "disposal": "Destination"}))
+        route_keys = ["pit", "disposal"]
+        route = cg.groupby(route_keys).agg(**{"t (ritase)": ("volume", "sum"), "Trips": ("rit", "sum")})
+        route["Horizontal (m)"] = weighted_by(cg, route_keys, "dist_h")
+        route["Vertical (m)"] = weighted_by(cg, route_keys, "dist_v")
+        route = (route.reset_index().sort_values("t (ritase)", ascending=False)
+                 .rename(columns={"pit": "Loading location", "disposal": "Destination"}))
         st.markdown("**CG routes**")
         st.dataframe(route, hide_index=True, width="stretch", height=300,
                      column_config={x: st.column_config.NumberColumn(format="%,.0f") for x in

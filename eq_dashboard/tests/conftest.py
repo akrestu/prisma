@@ -69,11 +69,14 @@ def test_engine():
 def db_session(test_engine):
     """An empty test database for every test: one TRUNCATE instead of dropping and creating every table. Pages run
     with AppTest use their own connections, so the data is committed for real (no rollback-only transaction)."""
+    import streamlit as st
     from sqlalchemy import text
     from sqlalchemy.orm import sessionmaker
 
     from db.models import Base
 
+    st.cache_data.clear()       # ids restart with every test: a cached upload #1 belongs to the previous test
+    st.cache_resource.clear()
     names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     with test_engine.begin() as c:
         c.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))

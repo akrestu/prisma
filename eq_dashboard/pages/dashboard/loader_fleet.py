@@ -1,10 +1,11 @@
 """Loader & hauler productivity for OB (BCM/h) and CG (t/h) with haul distance, hourly → yearly, against the
 site's productivity target per model (internal or client), Setup → Productivity targets."""
+from functools import cache
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from auth.access import scope_filter
 from core import dash
 from core import prod_target as PT
 from core import theme as T
@@ -55,8 +56,7 @@ with st.spinner(f"Calculating {group} productivity ({PERIOD_LABEL[period].lower(
         ev, rit = c.ev, c.rit
     else:
         vers = c.versions_for(scope)
-        ev = scope_filter(dash.combine("events", vers), c.allowed)
-        rit = dash.ritase(vers, c.allowed)
+        ev, rit = dash.wide_data(vers, c.allowed)
     if rit.empty or rit[rit["material_group"] == group].empty:
         st.info(f"No {group} trips for this selection.")
         st.stop()
@@ -89,6 +89,7 @@ tot_l, tot_h = fleet_summary(ld, []), fleet_summary(hl, [])
 material = "OB" if group == "OB" else "CG - Coal Getting"
 
 
+@cache    # one lookup per role × model × site in this run, not one per unit
 def target_of(role: str, model, site=None) -> float | None:
     """Target of a model at the unit's site (Setup → Productivity targets)."""
     tbl = ld_def if role == "loader" else hl_def

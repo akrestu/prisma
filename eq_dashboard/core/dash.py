@@ -47,8 +47,10 @@ TABLES = {
 }
 
 
-# bounded caches: without max_entries memory grows with every month × site × table ever opened
-@st.cache_data(ttl=3600, max_entries=240, show_spinner=False)
+# bounded caches: without max_entries memory grows with every month × site × table ever opened. These frames are shared,
+# not copied per call (cache_data unpickles a full copy every time): anything leaving this module is a shallow copy, so
+# with pandas copy-on-write a page can change its own frame without touching the cached one.
+@st.cache_resource(ttl=3600, max_entries=600, show_spinner=False)
 def _table(name: str, upload_id: int, site: str) -> pd.DataFrame:
     """Cached per table × upload × site (never per user). Access is filtered afterwards."""
     model, cols = TABLES[name]
@@ -94,6 +96,94 @@ def ritase(versions: pd.DataFrame, allowed: list[str]) -> pd.DataFrame:
     return H.official_ritase(imported, hourly, cut)
 
 
+def _version_key(versions: pd.DataFrame) -> tuple:
+    return tuple(sorted((int(r.upload_id), r.site, r.month) for r in versions.itertuples()))
+
+
+def _key_frame(key: tuple) -> pd.DataFrame:
+    return pd.DataFrame(key, columns=["upload_id", "site", "month"])
+
+
+@st.cache_data(ttl=3600, max_entries=60, show_spinner=False)
+def _freshness(key: tuple, allowed: tuple) -> tuple:
+    """(last date with events, last complete day) of the given versions."""
+    ev = scope_filter(combine("events", _key_frame(key)), list(allowed))
+    if ev.empty:
+        return None, None
+    comp = metrics.complete_days(ev)
+    return ev["date"].max(), comp[comp].index.max() if comp.any() else None
+
+
+@st.cache_data(ttl=3600, max_entries=60, show_spinner=False)
+def _unit_options(key: tuple, allowed: tuple, d0: dt.date, d1: dt.date) -> pd.DataFrame:
+    """Type × model × unit combinations in the period: the options of the unit filters."""
+    ev = scope_filter(combine("events", _key_frame(key)), list(allowed))
+    ev = ev[(ev["date"] >= d0) & (ev["date"] <= d1)] if len(ev) else ev
+    return ev[["type", "model", "unit_id"]].drop_duplicates() if len(ev) else pd.DataFrame(
+        columns=["type", "model", "unit_id"])
+
+
+@st.cache_resource(ttl=600, max_entries=8, show_spinner=False)
+def _load(key: tuple, allowed_sites: tuple, a: dt.date, b: dt.date, weeks: tuple, shift: tuple, types: tuple,
+          models: tuple, units: tuple, stamp: str) -> tuple | None:
+    """Filtered frames of one filter selection, so a rerun without a filter change costs nothing. `stamp` changes with
+    every Hourly Production save and cutover change."""
+    versions, allowed = _key_frame(key), list(allowed_sites)
+    ev = scope_filter(combine("events", versions), allowed)
+    if ev.empty:
+        return None
+
+    def by_date(df, col="date", shift_col="shift"):
+        """Date range, week and shift filters for any table. Tables without a week column (ritase, coal, fuel,
+        receipts, stoppages) get the week from their date, so Week filters every figure on the page."""
+        if df.empty:
+            return df
+        out = df[(df[col] >= a) & (df[col] <= b)]
+        if weeks:
+            wk = out["week"] if "week" in out else week_of(pd.to_datetime(out[col]).dt.day).set_axis(out.index)
+            out = out[wk.isin(weeks)]
+        if shift_col in out and len(shift) < 2:
+            out = out[out[shift_col].isin(shift)]
+        return out
+
+    def by_unit(df, col="unit_id"):
+        if df.empty:
+            return df
+        if types and "type" in df:
+            df = df[df["type"].isin(types)]
+        if models and "model" in df:
+            df = df[df["model"].isin(models)]
+        if units:
+            df = df[df[col].isin(units)]
+        return df
+
+    # a stoppage belongs to the day and shift it started in, so MTBS/MTTR follow the same filters as the hours
+    return (by_unit(by_date(ev)),
+            by_unit(by_date(scope_filter(combine("stoppages", versions), allowed), "start_date", "start_shift")),
+            by_date(ritase(versions, allowed)),
+            by_date(scope_filter(combine("coal", versions), allowed)),
+            by_unit(by_date(scope_filter(combine("fuel", versions), allowed))),
+            by_date(scope_filter(combine("receipt", versions), allowed), shift_col="-"))  # deliveries: no shift
+
+
+@st.cache_resource(ttl=600, max_entries=4, show_spinner=False)
+def _wide(key: tuple, allowed: tuple, stamp: str) -> tuple:
+    """Events and ritase of many versions (yearly views), unfiltered."""
+    versions = _key_frame(key)
+    return scope_filter(combine("events", versions), list(allowed)), ritase(versions, list(allowed))
+
+
+def _hourly_state(sites: list[str]) -> str:
+    with session_scope() as s:
+        return f"{repo.hourly_cutover(s)}|{repo.hourly_stamp(s, sites)}"
+
+
+def wide_data(versions: pd.DataFrame, allowed: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    sites = sorted(set(versions["site"]) & set(allowed))
+    ev, rit = _wide(_version_key(versions), tuple(allowed), _hourly_state(sites))
+    return ev.copy(deep=False), rit.copy(deep=False)
+
+
 @dataclass
 class Ctx:
     user: object
@@ -117,6 +207,8 @@ class Ctx:
     compare: bool = False
     prev: object = None                    # Loaded data of the previous period (compare on and data exists)
     prev_range: tuple | None = None
+    plan_hidden: bool = False              # Shift or Week filter on: the plan covers whole days of the whole period
+    unit_filtered: bool = False            # Type, Model or Unit filter on: fuel follows it, ritase does not
 
     @property
     def single_month(self) -> bool:
@@ -224,10 +316,8 @@ def context(page: str, unit_filter: bool = True, title: str | None = None) -> Ct
     mine = pub[pub["site"].isin(sel)]
     months_avail = sorted(mine["month"].unique())
     latest = mine[mine["month"] == months_avail[-1]]
-    ev_latest = scope_filter(combine("events", latest), allowed)
-    anchor = ev_latest["date"].max() if len(ev_latest) else F.month_end(months_avail[-1])
-    comp = metrics.complete_days(ev_latest) if len(ev_latest) else pd.Series(dtype=bool)
-    last_complete = comp[comp].index.max() if comp.any() else None
+    anchor, last_complete = _freshness(_version_key(latest), tuple(allowed))
+    anchor = anchor or F.month_end(months_avail[-1])
     first = months_avail[0]
 
     if st.session_state.get("f_period") not in F.PRESETS:
@@ -259,13 +349,13 @@ def context(page: str, unit_filter: bool = True, title: str | None = None) -> Ct
         r[2].text_input("From – to", disabled=True, key="f_range_label")
     cmp_on = r[3].toggle("Compare", key="f_cmp", help="Show the change against the previous period on the KPI cards")
 
-    more = r[4].popover("More", icon=":material/tune:", width="stretch")
-    week_opts = ["Week 1", "Week 2", "Week 3", "Week 4"]
-    _valid("f_week", week_opts)
-    weeks = more.multiselect("Week of month", week_opts, key="f_week",
-                             help="1–7, 8–14, 15–21, 22–end of each month in the period")
-    _valid("f_shift", ["DS", "NS"])
-    shift = more.segmented_control("Shift", ["DS", "NS"], selection_mode="multi", key="f_shift") or ["DS", "NS"]
+    options = None
+    if unit_filter:
+        options = _unit_options(_version_key(mine[mine["month"].isin(F.months_between(d0, d1))]), tuple(allowed), d0, d1)
+    with r[4].popover("More", icon=":material/tune:", width="stretch"):
+        _more_filters(options)
+    weeks = st.session_state.get("f_week") or []
+    shift = st.session_state.get("f_shift") or ["DS", "NS"]
     extra = [f"Week {', '.join(w[-1] for w in weeks)}" if weeks else "", shift[0] if len(shift) == 1 else ""]
 
     if moved:
@@ -278,62 +368,22 @@ def context(page: str, unit_filter: bool = True, title: str | None = None) -> Ct
              "date** to see the latest.")
     d0, d1 = max(d0, first), min(d1, anchor)
 
+    types = (st.session_state.get("f_type") or []) if unit_filter else []
+    models = (st.session_state.get("f_model") or []) if unit_filter else []
+    units = (st.session_state.get("f_unit") or []) if unit_filter else []
+    if unit_filter:
+        extra += [f"{len(types)} type(s)" if types else "", f"{len(models)} model(s)" if models else "",
+                  f"{len(units)} unit(s)" if units else ""]
+    _actions(bar, user, [x for x in extra if x])
+    stamp = _hourly_state(sorted(set(sel) & set(allowed)))
+
     def load(a: dt.date, b: dt.date) -> Loaded | None:
         avail_set = set(months_avail)
         months = [mo for mo in F.months_between(a, b) if mo in avail_set]
         versions = mine[mine["month"].isin(months)]
-        ev = scope_filter(combine("events", versions), allowed)
-        if ev.empty:
-            return None
-
-        def by_date(df, col="date", shift_col="shift"):
-            """Date range, week and shift filters for any table. Tables without a week column (ritase, coal, fuel,
-            receipts, stoppages) get the week from their date, so Week filters every figure on the page."""
-            if df.empty:
-                return df
-            out = df[(df[col] >= a) & (df[col] <= b)]
-            if weeks:
-                wk = out["week"] if "week" in out else week_of(pd.to_datetime(out[col]).dt.day).set_axis(out.index)
-                out = out[wk.isin(weeks)]
-            if shift_col in out and len(shift) < 2:
-                out = out[out[shift_col].isin(shift)]
-            return out
-
-        def by_unit(df, col="unit_id"):
-            if df.empty:
-                return df
-            if types and "type" in df:
-                df = df[df["type"].isin(types)]
-            if models and "model" in df:
-                df = df[df["model"].isin(models)]
-            if units:
-                df = df[df[col].isin(units)]
-            return df
-
-        # a stoppage belongs to the day and shift it started in, so MTBS/MTTR follow the same filters as the hours
-        return Loaded(
-            versions, months, by_unit(by_date(ev)),
-            by_unit(by_date(scope_filter(combine("stoppages", versions), allowed), "start_date", "start_shift")),
-            by_date(ritase(versions, allowed)),
-            by_date(scope_filter(combine("coal", versions), allowed)),
-            by_unit(by_date(scope_filter(combine("fuel", versions), allowed))),
-            by_date(scope_filter(combine("receipt", versions), allowed), shift_col="-"))  # deliveries: no shift
-
-    types = models = units = []
-    if unit_filter:
-        ev_all = scope_filter(combine("events", mine[mine["month"].isin(F.months_between(d0, d1))]), allowed)
-        ev_all = ev_all[(ev_all["date"] >= d0) & (ev_all["date"] <= d1)] if len(ev_all) else ev_all
-        _valid("f_type", ev_all["type"].dropna().unique() if len(ev_all) else [])
-        types = more.multiselect("Type", sorted(ev_all["type"].dropna().unique()) if len(ev_all) else [], key="f_type")
-        e2 = ev_all[ev_all["type"].isin(types)] if types else ev_all
-        _valid("f_model", e2["model"].dropna().unique() if len(e2) else [])
-        models = more.multiselect("Model", sorted(e2["model"].dropna().unique()) if len(e2) else [], key="f_model")
-        e3 = e2[e2["model"].isin(models)] if models else e2
-        _valid("f_unit", e3["unit_id"].unique() if len(e3) else [])
-        units = more.multiselect("Unit ID", sorted(e3["unit_id"].unique()) if len(e3) else [], key="f_unit")
-        extra += [f"{len(types)} type(s)" if types else "", f"{len(models)} model(s)" if models else "",
-                  f"{len(units)} unit(s)" if units else ""]
-    _actions(bar, user, [x for x in extra if x])
+        frames = _load(_version_key(versions), tuple(allowed), a, b, tuple(weeks), tuple(sorted(shift)), tuple(types),
+                       tuple(models), tuple(units), stamp)
+        return Loaded(versions, months, *[f.copy(deep=False) for f in frames]) if frames else None
 
     cur = load(d0, d1)
     if cur is None:
@@ -347,9 +397,34 @@ def context(page: str, unit_filter: bool = True, title: str | None = None) -> Ct
     _persist(user, state)
     c = Ctx(user, allowed, sel, F.month_start(d1), pub, cur.versions, cur.ev, cur.st, cur.rit, cur.coal, cur.fuel,
             cur.receipt, d0, d1, months=cur.months, anchor=anchor, last_complete=last_complete, preset=preset,
-            compare=cmp_on, prev=prev, prev_range=prev_rng)
+            compare=cmp_on, prev=prev, prev_range=prev_rng, plan_hidden=bool(weeks) or len(shift) < 2,
+            unit_filtered=bool(types or models or units))
     coverage(c)
     return c
+
+
+@st.fragment
+def _more_filters(options: pd.DataFrame | None) -> None:
+    """The filters in "More". Each choice reruns only this block (Type narrows Model, Model narrows Unit); the page
+    recalculates once, on Apply."""
+    week_opts = ["Week 1", "Week 2", "Week 3", "Week 4"]
+    _valid("f_week", week_opts)
+    st.multiselect("Week of month", week_opts, key="f_week", help="1–7, 8–14, 15–21, 22–end of each month in the period")
+    _valid("f_shift", ["DS", "NS"])
+    st.segmented_control("Shift", ["DS", "NS"], selection_mode="multi", key="f_shift")
+    if options is not None:
+        type_opts = options["type"].dropna().unique()
+        _valid("f_type", type_opts)
+        types = st.multiselect("Type", sorted(type_opts), key="f_type")
+        e2 = options[options["type"].isin(types)] if types else options
+        model_opts = e2["model"].dropna().unique()
+        _valid("f_model", model_opts)
+        models = st.multiselect("Model", sorted(model_opts), key="f_model")
+        e3 = e2[e2["model"].isin(models)] if models else e2
+        _valid("f_unit", e3["unit_id"].unique())
+        st.multiselect("Unit ID", sorted(e3["unit_id"].unique()), key="f_unit")
+    if st.button("Apply", key="flt_apply", type="primary", icon=":material/check:", width="stretch"):
+        st.rerun()
 
 
 def _actions(bar, user, active: list[str] | None = None) -> None:
@@ -396,7 +471,8 @@ def targets_for(c: Ctx) -> dict[str, float | None]:
     so a range across months or sites gets one fair target. If any site-month with hours has no target → None."""
     if c.ev.empty:
         return dict.fromkeys(METRICS)
-    w = (c.ev.assign(month=pd.to_datetime(c.ev["date"]).dt.to_period("M").dt.to_timestamp().dt.date)
+    w = (c.ev[["site", "date", "category", "hours"]]
+         .assign(month=pd.to_datetime(c.ev["date"]).dt.to_period("M").dt.to_timestamp().dt.date)
          .pipe(lambda e: metrics.time_buckets(e, ["site", "month"]))["T"])
     w = w[w > 0]
     with session_scope() as s:
@@ -411,6 +487,16 @@ def targets_for(c: Ctx) -> dict[str, float | None]:
         vals = tab[x].reindex(w.index)
         out[x] = None if vals.isna().any() or w.sum() == 0 else float(np.average(vals, weights=w))
     return out
+
+
+PLAN_HIDDEN = "hidden: Shift or Week filter on"
+
+
+def plan_for(c: Ctx) -> pd.DataFrame:
+    """Daily plan of the selected sites and dates. Empty values while a Shift or Week filter is on: the plan is set per
+    month, and splitting it per shift or per week would assume how production is spread."""
+    plan = plan_range(c.sites, c.date_from, c.date_to)
+    return plan.assign(ob_plan=np.nan, coal_plan=np.nan) if c.plan_hidden else plan
 
 
 def plan_range(sites: list[str], d0: dt.date, d1: dt.date) -> pd.DataFrame:
@@ -457,7 +543,7 @@ def plan_daily(sites: tuple[str, ...], month: dt.date) -> pd.DataFrame:
 
 # ------------------------------------------------------------------ display
 def kpi(col, label: str, value, target=None, kind: str = "pct", higher_better: bool = True, help: str | None = None,
-        prev=None):
+        prev=None, no_target: str = "no target"):
     """KPI card: actual, target, difference (coloured). No target → 'no target'. With `prev` (compare on), a second
     line gives the change against the previous period."""
     fmt = {"pct": fmt_pct, "h": lambda v: fmt_num(v, 1) + " hrs", "n": fmt_num, "n1": lambda v: fmt_num(v, 1),
@@ -465,7 +551,7 @@ def kpi(col, label: str, value, target=None, kind: str = "pct", higher_better: b
     if value is None or pd.isna(value):
         col.metric(label, "—", help=help)
     elif target is None or pd.isna(target):
-        col.metric(label, fmt(value), "no target", delta_color="gray", delta_arrow="off", help=help)
+        col.metric(label, fmt(value), no_target, delta_color="gray", delta_arrow="off", help=help)
     else:
         diff = value - target
         dtxt = (f"{diff * 100:+.1f}%" if kind == "pct" else f"{diff:+,.1f}") + f" vs target {fmt(target)}"

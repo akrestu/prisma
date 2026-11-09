@@ -79,20 +79,56 @@ EXPLORER_TABLES = {
 _HIDDEN = {"id", "upload_id", "month"}
 
 
+def explorer_dates(s: Session, table: str, versions: list[tuple[int, str]]) -> tuple | None:
+    """(first, last) date of one table for the versions; None when it has no dates."""
+    model, date_col = EXPLORER_TABLES[table]
+    if not date_col or not versions:
+        return None
+    dc = getattr(model, date_col)
+    first, last = s.execute(select(func.min(dc), func.max(dc)).where(
+        or_(*[and_(model.upload_id == u, model.site == st_) for u, st_ in versions]))).one()
+    return (first, last) if first is not None else None
+
+
+def _explorer_where(table: str, versions: list[tuple[int, str]], date_from, date_to, unit: str, search: str) -> list:
+    """Conditions of the data explorer: the date range, `unit` (part of a unit id) and `search` (part of any text or
+    date column)."""
+    from sqlalchemy import Date, String, cast
+    model, date_col = EXPLORER_TABLES[table]
+    cols = [c for c in model.__table__.columns if c.key not in _HIDDEN]
+    q = [or_(*[and_(model.upload_id == u, model.site == st_) for u, st_ in versions])]
+    if date_col and date_from is not None and date_to is not None:
+        dc = getattr(model, date_col)
+        q.append(dc.is_(None) | ((dc >= date_from) & (dc <= date_to)))
+    unit_cols = [c for c in cols if c.key in ("unit_id", "hauler", "loader", "dt_unit", "unit")]
+    if unit and unit_cols:
+        q.append(or_(*[c.icontains(unit, autoescape=True) for c in unit_cols]))
+    if search:
+        text_cols = [c if isinstance(c.type, String) else cast(c, String) for c in cols
+                     if isinstance(c.type, (String, Date))]
+        q.append(or_(*[c.icontains(search, autoescape=True) for c in text_cols]))
+    return q
+
+
+def explorer_count(s: Session, table: str, versions: list[tuple[int, str]], date_from=None, date_to=None,
+                   unit: str = "", search: str = "") -> int:
+    if not versions:
+        return 0
+    return s.scalar(select(func.count()).select_from(EXPLORER_TABLES[table][0])
+                    .where(*_explorer_where(table, versions, date_from, date_to, unit, search))) or 0
+
+
 def explorer_rows(s: Session, table: str, versions: list[tuple[int, str]], date_from=None, date_to=None,
-                  limit: int = 200_000) -> pd.DataFrame:
-    """Raw rows of one table for the given (upload_id, site) versions, optionally within a date range."""
-    from sqlalchemy import and_, or_
+                  limit: int = 200_000, unit: str = "", search: str = "", offset: int = 0) -> pd.DataFrame:
+    """Raw rows of one table for the given (upload_id, site) versions. The filters run in SQL, so `limit` never hides
+    a row that matches."""
     model, date_col = EXPLORER_TABLES[table]
     cols = [c for c in model.__table__.columns if c.key not in _HIDDEN]
     if not versions:
         return pd.DataFrame(columns=[c.key for c in cols])
-    q = select(*cols).where(or_(*[and_(model.upload_id == u, model.site == st_) for u, st_ in versions]))
-    if date_col and date_from is not None and date_to is not None:
-        dc = getattr(model, date_col)
-        q = q.where(dc >= date_from, dc <= date_to)
+    q = select(*cols).where(*_explorer_where(table, versions, date_from, date_to, unit, search))
     order = [getattr(model, date_col)] if date_col else []
-    return frame(s, q.order_by(model.site, *order, model.id).limit(limit))
+    return frame(s, q.order_by(model.site, *order, model.id).offset(offset).limit(limit))
 
 
 # ---------------------------------------------------------------- deleting data (Admin)

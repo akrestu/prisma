@@ -77,6 +77,7 @@ def refresh(*what: str) -> None:
       "hourly" hourly TV payload           "all" everything (after deleting data)"""
     if "all" in what:
         st.cache_data.clear()
+        st.cache_resource.clear()     # data tables and filtered results (core.dash)
         return
     from core import dash
     if "plan" in what:

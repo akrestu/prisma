@@ -17,7 +17,8 @@ if f.empty:
     st.stop()
 
 ob = c.rit[c.rit["material_group"] == "OB"] if len(c.rit) else c.rit
-ob_bcm = ob["volume"].sum() if len(ob) else 0
+# ritase has no unit filter: fuel of some units over the OB of all units would not be a ratio
+ob_bcm = ob["volume"].sum() if len(ob) and not c.unit_filtered else 0
 fleet = f[f["type"].isin(["Hauling", "Loading"])]["liters"].sum()
 rec = c.receipt["liters"].sum() if len(c.receipt) else 0
 dash.summary(f"{fmt_num(f['liters'].sum())} L consumed against {fmt_num(rec)} L received",
@@ -43,7 +44,7 @@ with a:
     fig.update_layout(title="Receipts vs consumption, cumulative (L)")
     dash.plot(fig)
 with b:
-    if len(ob):
+    if ob_bcm:
         per = pd.DataFrame({"L": f.groupby("site")["liters"].sum(), "BCM": ob.groupby("site")["volume"].sum()})
         per["ratio"] = per["L"] / per["BCM"]
         dash.ranking(per.reset_index(), "site", "ratio", "Fuel ratio by site (L/BCM)", T.ACCENT, pct=False, digits=2)

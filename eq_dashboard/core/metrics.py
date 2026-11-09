@@ -15,8 +15,10 @@ def _div(a, b):
 
 def time_buckets(events: pd.DataFrame, by: list[str] | None = None) -> pd.DataFrame:
     """Jam R/I/S/D/T (+W) per grup. Baris NO DATA tidak dihitung."""
-    ev = events[events["category"].isin([READY, IDLE, STANDBY, DOWN])]
     keys = by or []
+    # only the columns needed: filtering rows of every text column is what makes this slow on large frames
+    ev = events[[*dict.fromkeys(keys), "category", "hours"]]
+    ev = ev[ev["category"].isin([READY, IDLE, STANDBY, DOWN])]
     if keys:
         p = ev.pivot_table(index=keys, columns="category", values="hours", aggfunc="sum", fill_value=0.0,
                            observed=True)
