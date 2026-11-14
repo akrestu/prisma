@@ -279,6 +279,8 @@ class DQFinding(Base):
     unit_id: Mapped[str | None] = mapped_column(String(40))
     date: Mapped[dt.date | None] = mapped_column(Date)
     detail: Mapped[str] = mapped_column(Text)
+    amount: Mapped[float | None] = mapped_column(Float)        # the figure concerned, e.g. litres left out
+    measure: Mapped[str | None] = mapped_column(String(8))     # its unit: L, BCM, t, h
 
 
 # ---------------------------------------------------------------- konfigurasi

@@ -24,6 +24,7 @@ dur = (pd.to_datetime(t["time_out"]) - pd.to_datetime(t["time_in"])).dt.total_se
 top_seam = t.groupby("seam")["ton"].sum().sort_values(ascending=False)
 dash.summary(f"{fmt_num(daily.sum(), 1)} t from {fmt_num(len(t))} weighbridge tickets, average payload {fmt_num(t['ton'].mean(), 1)} t",
              f"{top_seam.index[0]} gives {top_seam.iloc[0] / top_seam.sum():.0%} of coal" if len(top_seam) else "")
+dash.reconcile(c, ['Hauler Trips', 'Coal Weighbridge'], ["t"])
 r = st.columns(6)
 r[0].metric("Coal in period", f"{fmt_num(daily.sum(), 1)} t")
 r[1].metric("Tickets", fmt_num(len(t)))

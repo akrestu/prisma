@@ -19,6 +19,7 @@ comp = c.ev[c.ev["category"] == "D"].groupby("reason_text")["hours"].sum().sort_
 dash.summary(dash.gap_text("MTBS", rel["MTBS"], t["mtbs"], "hrs"),
              dash.gap_text("MTTR", rel["MTTR"], t["mttr"], "hrs", higher_better=False),
              f"{str(comp.index[0]).capitalize()} is the largest down cause ({comp.iloc[0] / comp.sum():.0%})" if len(comp) else "")
+dash.reconcile(c, ['Equipment Events'])
 r = st.columns(6)
 dash.kpi(r[0], "MTBS (hrs)", rel["MTBS"], t["mtbs"], "h", help="Working hours / number of stoppages (SM + USM)", prev=pv.get("MTBS"))
 dash.kpi(r[1], "MTTR (hrs)", rel["MTTR"], t["mttr"], "h", higher_better=False, help="Down hours / number of stoppages", prev=pv.get("MTTR"))

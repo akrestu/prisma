@@ -37,8 +37,11 @@ if sev:
     v = v[v["severity"].isin(sev)]
 if rule:
     v = v[v["rule"].isin(rule)]
-st.dataframe(v[["site", "severity", "rule", "sheet", "row_ref", "unit_id", "date", "detail"]], hide_index=True,
-             width="stretch", height=420,
-             column_config={"row_ref": st.column_config.NumberColumn("Excel row", format="%d")})
+cols = ["site", "severity", "rule", "sheet", "row_ref", "unit_id", "date", "detail", "amount", "measure"]
+st.dataframe(v.reindex(columns=cols), hide_index=True, width="stretch", height=420,
+             column_config={"row_ref": st.column_config.NumberColumn("Excel row", format="%d"),
+                            "amount": st.column_config.NumberColumn("Amount", format="%,.1f",
+                                                                    help="The figure the finding concerns"),
+                            "measure": st.column_config.TextColumn("Unit", help="L, BCM, t or hours (h)")})
 excel_download(v, "data_quality.xlsx")
 st.caption("'Excel row' is the row number in the source file, to make corrections easy.")

@@ -650,6 +650,50 @@ def summary(*parts: str) -> None:
                     f'font-size:1.02rem;color:var(--pr-text)">{text}.</div>', unsafe_allow_html=True)
 
 
+def reconcile(c: Ctx, sheets: list[str], measures: list[str] | None = None) -> None:
+    """Why these figures can differ from the source file: what the upload left out (rows without a date or unit,
+    cancelled tickets, …) and what is counted under site UNMAPPED, with the amount (L, BCM, t, h) of each. From the
+    data quality findings of the versions shown; findings of uploads made before amounts were recorded show their
+    count only."""
+    from core.dq import EXCLUDED, UNMAPPED_RULES
+    d = c.dq()
+    if d.empty or "amount" not in d:
+        return
+    d = d[d["sheet"].isin(sheets) & d["rule"].isin(EXCLUDED.keys() | UNMAPPED_RULES.keys())]
+    if UNMAPPED in c.sites:                     # UNMAPPED is shown: its figures are in the totals
+        d = d[~d["rule"].isin(UNMAPPED_RULES.keys())]
+    dates = pd.to_datetime(d["date"]).dt.date
+    d = d[dates.isna() | ((dates >= c.date_from) & (dates <= c.date_to))]
+    if measures:
+        d = d[d["measure"].isin(measures) | d["measure"].isna()]
+    # a row without a site is reported to every site of its file: count it once
+    d = d.drop_duplicates(["upload_id", "rule", "sheet", "row_ref", "unit_id", "detail", "measure"])
+    if d.empty:
+        return
+    d = d.assign(effect=np.where(d["rule"].isin(EXCLUDED.keys()), "not counted", "counted under UNMAPPED"),
+                 reason=d["rule"].map({**EXCLUDED, **UNMAPPED_RULES}), measure=d["measure"].fillna(""))
+    g = (d.groupby(["effect", "reason", "sheet", "measure"], dropna=False)
+          .agg(findings=("rule", "size"), amount=("amount", lambda s: s.sum(min_count=1))).reset_index()
+          .sort_values(["effect", "amount"], ascending=[False, False]))
+    head = []
+    for eff in ("not counted", "counted under UNMAPPED"):
+        e = g[(g["effect"] == eff) & g["amount"].notna()]
+        tot = e.groupby("measure")["amount"].sum()
+        if len(tot):
+            head.append(" + ".join(f"{fmt_num(v)} {k}" for k, v in tot.items()) + f" {eff}")
+    if not head:
+        head = [f"{int(g['findings'].sum())} data quality finding(s) affect these figures"]
+    with st.expander("Difference with the source file: " + " · ".join(head)):
+        st.dataframe(g.assign(amount=g["amount"].map(lambda v: "" if pd.isna(v) else fmt_num(v)))
+                     [["effect", "amount", "measure", "reason", "sheet", "findings"]],
+                     hide_index=True, width="stretch",
+                     column_config={"amount": st.column_config.TextColumn("Amount"),
+                                    "findings": st.column_config.NumberColumn("Findings", format="%d")})
+        st.caption("The source file adds these up; this page does not, or shows them under site UNMAPPED. Rows, Excel "
+                   "row numbers and units are on the Data quality page. An empty amount: uploaded before amounts were "
+                   "recorded (upload the month again to see it).")
+
+
 def gap_text(name: str, value, target, unit: str = "%", higher_better: bool = True) -> str:
     """'UoA 47.3%, 12.7% below target' / '' when no target."""
     if value is None or pd.isna(value):

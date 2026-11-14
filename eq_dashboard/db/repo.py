@@ -60,7 +60,8 @@ def stoppages(s: Session, upload_id: int, site: str) -> pd.DataFrame:
 
 def dq_findings(s: Session, upload_id: int, site: str) -> pd.DataFrame:
     t = m.DQFinding
-    return frame(s, select(t.severity, t.rule, t.sheet, t.row_ref, t.unit_id, t.date, t.detail)
+    return frame(s, select(t.upload_id, t.severity, t.rule, t.sheet, t.row_ref, t.unit_id, t.date, t.detail,
+                           t.amount, t.measure)
                  .where(t.upload_id == upload_id, t.site == site)
                  .order_by(t.severity, t.rule, t.row_ref))
 

@@ -122,6 +122,7 @@ dash.summary(f"Loaders move {fmt_num(tot_l['per_hour'].iloc[0], 1)} {unit} per R
              f"average haul {fmt_num(tot_l['dist_h'].iloc[0] / 1000, 2)} km horizontal and "
              f"{fmt_num(tot_l['dist_v'].iloc[0])} m vertical",
              f"best loader {best.index[0]} at {fmt_num(best.iloc[0], 1)} {unit}/h" if len(best) else "")
+dash.reconcile(c, ['Hauler Trips', 'Equipment Events'])
 k = st.columns(6)
 k[0].metric(f"{group} volume ({unit})", fmt_num(tot_l["volume"].iloc[0]))   # unit in the label: six cards are narrow
 k[1].metric("Trips", fmt_num(tot_l["rit"].iloc[0]))

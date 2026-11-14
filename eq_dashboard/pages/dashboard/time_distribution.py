@@ -16,6 +16,7 @@ s_all = c.ev[c.ev["category"] == "S"]
 client_share = s_all.loc[s_all["reason_code"].isin(client_codes), "hours"].sum() / s_all["hours"].sum() if len(s_all) else 0
 dash.summary(f"Standby is {b['S'] / b['T']:.0%} of all hours and down is {b['D'] / b['T']:.0%}",
              f"{client_share:.0%} of standby is caused by the client")
+dash.reconcile(c, ['Equipment Events'])
 r = st.columns(5)
 r[0].metric("Total hours", fmt_num(b["T"]))
 for i, cat in enumerate("RISD", start=1):

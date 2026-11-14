@@ -129,20 +129,20 @@ def parse_frames(frames: dict[str, pd.DataFrame], alias: dict[str, str] | None =
     # what the database would refuse is left out here, with a finding, instead of failing the whole month on submit
     fit: list[pd.DataFrame] = []
 
-    def fit_(df, model, sheet):
-        out, found = dq.fit_table(df, model, sheet)
+    def fit_(df, model, sheet, value=None, measure=None):
+        out, found = dq.fit_table(df, model, sheet, value=value, measure=measure)
         fit.extend(found)
         return out
 
     units = fit_(units, m.DimUnit, "Unit Population")
-    events = fit_(events, m.FactEvent, "Equipment Events")
+    events = fit_(events, m.FactEvent, "Equipment Events", "hours", "h")
     events["seq"] = events.groupby("unit_id").cumcount()  # no gaps where rows were left out (PM block starts)
     stoppages = fit_(clean.build_stoppages(events), m.FactStoppage, "Equipment Events")
-    ritase = fit_(ritase, m.FactRitase, "Hauler Trips")
-    kept = fit_(coal[~coal["cancelled"]], m.FactCoalTicket, "Coal Weighbridge")
+    ritase = fit_(ritase, m.FactRitase, "Hauler Trips", "volume", dq.ritase_measure)
+    kept = fit_(coal[~coal["cancelled"]], m.FactCoalTicket, "Coal Weighbridge", "ton", "t")
     coal = pd.concat([kept, coal[coal["cancelled"]]]).sort_index()
-    fuel = fit_(fuel, m.FactFuel, "Fuel Consumption")
-    receipt = fit_(receipt, m.FactFuelReceipt, "Fuel Receipts")
+    fuel = fit_(fuel, m.FactFuel, "Fuel Consumption", "liters", "L")
+    receipt = fit_(receipt, m.FactFuelReceipt, "Fuel Receipts", "liters", "L")
     sites = sorted(set(events["site"]) | set(ritase["site"]) | set(coal["site"]) | set(fuel["site"])
                    | set(receipt["site"]))
     gone = [x for sheet, (df, what) in raw.items() for x in dq.dropped_rows(df, sheet, what, sites)]

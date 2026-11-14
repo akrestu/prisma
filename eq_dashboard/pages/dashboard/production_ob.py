@@ -31,6 +31,7 @@ dash.summary(f"{fmt_num(daily.sum())} BCM over {len(daily)} days, {fmt_num(daily
              (f"projected {fmt_num(proj)} BCM at month end" if projectable else "")
              + (f" against a plan of {fmt_num(plan.sum())} BCM" if projectable and plan.notna().any() else ""),
              f"{top_pit.index[0]} delivers {top_pit.iloc[0] / top_pit.sum():.0%}" if len(top_pit) else "")
+dash.reconcile(c, ['Hauler Trips'], ["BCM"])
 r = st.columns(6)
 r[0].metric("OB in period", f"{fmt_num(daily.sum())} BCM")
 r[1].metric("Average per day", f"{fmt_num(daily.mean())} BCM")

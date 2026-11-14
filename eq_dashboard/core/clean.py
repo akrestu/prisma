@@ -38,16 +38,30 @@ def _ids(s: pd.Series, alias: dict[str, str] | None = None) -> pd.Series:
     return out.replace(alias) if alias else out
 
 
-def _drop_missing(out: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
-    """dropna on `cols`, remembering the Excel rows removed as (row, site) in attrs['dropped'] so parse can
-    report them."""
+def _drop_missing(out: pd.DataFrame, cols: list[str], value=None, measure=None) -> pd.DataFrame:
+    """dropna on `cols`, remembering the Excel rows removed as (row, site, amount, measure) in attrs['dropped'] so
+    parse can report them with the figure they take out of the totals. `value`: a column name or a Series (the
+    figure of each row, e.g. litres); `measure`: its unit ('L', 'BCM', 't', 'h'), a string or a Series."""
     miss = out[cols].isna().any(axis=1)
     kept = out[~miss]
-    gone = out.loc[miss].drop_duplicates("row_ref")
-    site = gone["site"] if "site" in gone else pd.Series(None, index=gone.index)  # None: site unknown
-    kept.attrs["dropped"] = [(int(r), s) for r, s in zip(gone["row_ref"], site.where(site.notna(), None),
-                                                          strict=True) if pd.notna(r)]
+    g = out.loc[miss]
+    val = (pd.Series(np.nan, index=g.index) if value is None
+           else g[value] if isinstance(value, str) else value[miss])
+    mea = measure[miss] if isinstance(measure, pd.Series) else pd.Series(measure, index=g.index, dtype=object)
+    site = g["site"] if "site" in g else pd.Series(None, index=g.index, dtype=object)  # None: site unknown
+    gone = pd.DataFrame({"row": g["row_ref"], "site": site.astype(object).where(site.notna(), None),
+                         "amount": pd.to_numeric(val, errors="coerce"), "measure": mea.astype(object)})
+    gone = gone[gone["row"].notna()]
+    gone = (gone.groupby(["row", "measure"], dropna=False, sort=False)
+                .agg(site=("site", "first"), amount=("amount", lambda s: s.sum(min_count=1))).reset_index())
+    kept.attrs["dropped"] = [(int(r.row), r.site, None if pd.isna(r.amount) else float(r.amount),
+                              None if pd.isna(r.measure) else r.measure) for r in gone.itertuples()]
     return kept
+
+
+def vol_measure(material_group: pd.Series) -> pd.Series:
+    """Measure of a ritase volume: coal in tonnes, everything else in BCM."""
+    return pd.Series(np.where(material_group == "CG", "t", "BCM"), index=material_group.index, dtype=object)
 
 
 def month_start(d: pd.Series) -> pd.Series:
@@ -104,7 +118,7 @@ def clean_events(df: pd.DataFrame, units: pd.DataFrame, week_fn=week_of) -> pd.D
         "reason_text": reason.str.replace(r"^\s*\d{3}\s*", "", regex=True).str.strip(),
         "down_type": status.map({"SM": "Schedule", "USM": "Unschedule"}),
     })
-    out = _drop_missing(out, ["date", "unit_id"])
+    out = _drop_missing(out, ["date", "unit_id"], "hours", "h")
     out["month"] = month_start(out["date"])
     # urutan kronologis: shift malam melewati tengah malam (jam < 12:00 = setelah 00:00)
     t = out["time_start"].fillna(0.0)
@@ -170,7 +184,9 @@ def clean_ritasi(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str] | 
     hours = df[HOUR_SLOTS].apply(num)
     long = pd.concat([base, hours], axis=1).melt(id_vars=list(base.columns), value_vars=HOUR_SLOTS,
                                                  var_name="hour_slot", value_name="rit")
-    long = _drop_missing(long[long["rit"].fillna(0) > 0], ["date"]).copy()
+    long = long[long["rit"].fillna(0) > 0]
+    long = _drop_missing(long, ["date"], long["rit"] * long["muatan"],
+                         vol_measure(material_group(long["material"]))).copy()
     long["shift"] = np.where(long["hour_slot"].isin(DS_SLOTS), "DS", "NS")
     long["volume"] = long["rit"] * long["muatan"]
     long["material_group"] = material_group(long["material"])
@@ -204,7 +220,7 @@ def clean_timbangan(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str]
         "dist_h": num(df["H Distance"]),
         "dist_v": num(df["V Distance"]),
     })
-    out = _drop_missing(out, ["date"])
+    out = _drop_missing(out, ["date"], "ton", "t")
     out["cancelled"] = out["supplier"].str.upper().eq("BATAL").fillna(False)
     out["site"] = _lookup(out["loader"], units, "site", UNMAPPED)
     out["site_dt"] = _lookup(out["dt_unit"], units, "site", UNMAPPED)
@@ -228,7 +244,7 @@ def clean_fuel(df: pd.DataFrame, units: pd.DataFrame, alias: dict[str, str] | No
         "liters": num(df["FLUID CONSUMPTION"]),
         "site": _lookup(unit, units, "site", UNMAPPED),
     })
-    out = _drop_missing(out, ["date", "unit_id"])
+    out = _drop_missing(out, ["date", "unit_id"], "liters", "L")
     out["month"] = month_start(out["date"])
     p99 = out.groupby("model")["liters"].transform(lambda s: s.quantile(0.99) if s.count() >= 20 else np.inf)
     out["outlier"] = (out["liters"] > p99).fillna(False)
@@ -252,6 +268,6 @@ def clean_receipt(df: pd.DataFrame, units: pd.DataFrame, tank_site: dict[str, st
         "liters": num(df["DELIVERY NOTE_VOLUME"]),
         "site": site.fillna(UNMAPPED),
     })
-    out = _drop_missing(out, ["date"])
+    out = _drop_missing(out, ["date"], "liters", "L")
     out["month"] = month_start(out["date"])
     return out.reset_index(drop=True)

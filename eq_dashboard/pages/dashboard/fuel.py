@@ -24,6 +24,7 @@ rec = c.receipt["liters"].sum() if len(c.receipt) else 0
 dash.summary(f"{fmt_num(f['liters'].sum())} L consumed against {fmt_num(rec)} L received",
              f"site fuel ratio {fmt_num(f['liters'].sum() / ob_bcm, 2)} L/BCM" if ob_bcm else "",
              f"{int(f['outlier'].sum())} refuels above the model's 99th percentile")
+dash.reconcile(c, ['Fuel Consumption', 'Fuel Receipts'])
 r = st.columns(5)
 r[0].metric("Consumption", f"{fmt_num(f['liters'].sum())} L")
 r[1].metric("Receipts", f"{fmt_num(rec)} L")

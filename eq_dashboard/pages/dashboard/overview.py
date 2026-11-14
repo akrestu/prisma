@@ -24,6 +24,7 @@ dash.summary(dash.gap_text("UoA", k["UoA"], t["uoa"]), dash.gap_text("PA", k["PA
              f"{str(top_down.index[0]).capitalize()} causes {top_down.iloc[0] / top_down.sum():.0%} of down hours"
              if top_down is not None and len(top_down) else "",
              f"OB {fmt_num(ob)} BCM and coal {fmt_num(coal)} t in the selected dates")
+dash.reconcile(c, ['Equipment Events', 'Hauler Trips', 'Coal Weighbridge', 'Fuel Consumption'])
 
 r1 = st.columns(4)
 dash.kpi(r1[0], "PA (%)", k["PA"], t["pa"], prev=pv.get("PA"))

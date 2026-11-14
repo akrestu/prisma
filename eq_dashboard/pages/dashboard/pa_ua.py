@@ -18,6 +18,7 @@ pv = dash.headline(c.prev)
 worst_type = metrics.kpis(c.ev, ["type"])["PA"].sort_values()
 dash.summary(dash.gap_text("UoA", k["UoA"], t["uoa"]), dash.gap_text("PA", k["PA"], t["pa"]),
              f"Lowest PA by type: {worst_type.index[0]} at {worst_type.iloc[0]:.0%}" if len(worst_type) else "")
+dash.reconcile(c, ['Equipment Events'])
 r = st.columns(4)
 dash.kpi(r[0], "PA (%)", k["PA"], t["pa"], help="(Ready + Idle + Standby) / total hours", prev=pv.get("PA"))
 dash.kpi(r[1], "UoA (%)", k["UoA"], t["uoa"], help="(Ready + Idle) / (Ready + Idle + Standby)", prev=pv.get("UoA"))
