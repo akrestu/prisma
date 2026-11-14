@@ -226,9 +226,7 @@ METRICS = [("OB", "OB", "BCM", 0), ("Coal", "Coal", "t", 0), ("SR", "SR", "BCM/t
 
 
 def _kpi(d: HourlyTv, p: dict) -> str:
-    hour = SLOTS[d.shift][d.slot - 1] if d.slot else "—"
-    cols = [("Hour", f"Hour {hour}" if d.live else f"Last hour {hour}"),
-            ("Daily", f"Day · {d.date.day} {d.date:%b}"), ("MTD", "Cumulative " + (f"1–{d.date.day} {d.date:%b}" if d.date.day > 1 else f"1 {d.date:%b}")),
+    cols = [("Daily", f"Day · {d.date.day} {d.date:%b}"), ("MTD", "Cumulative " + (f"1–{d.date.day} {d.date:%b}" if d.date.day > 1 else f"1 {d.date:%b}")),
             ("Outlook", "Month outlook")]
     head = "<tr><th></th>" + "".join(f"<th>{escape(t)}</th>" for _, t in cols) + "</tr>"
     body = ""

@@ -14,7 +14,9 @@ from db import models as m
 from db import repo
 from db.engine import session_scope
 
-POSITIONS = ["Operator Excavator", "Operator Dump Truck", "Operator Dozer", "Operator Grader", "Operator Other"]
+# import headers: English or Indonesian, case and spaces ignored
+HEADERS = {"nrp": "nrp", "nik": "nrp", "name": "name", "nama": "name", "nama operator": "name",
+           "position": "position", "jabatan": "position", "active": "active", "aktif": "active", "status": "active"}
 
 user = require("operators")
 sites = [x for x in sites_for(user) if x != UNMAPPED]
@@ -56,7 +58,8 @@ with t_edit:
                         column_config={
                             "nrp": st.column_config.TextColumn("NRP", required=True),
                             "name": st.column_config.TextColumn("Name", required=True),
-                            "position": st.column_config.SelectboxColumn("Position", options=POSITIONS),
+                            "position": st.column_config.TextColumn("Position",
+                                                                    help="As in the imported Excel (Jabatan)"),
                             "active": st.column_config.CheckboxColumn("Active", default=True,
                                                                       help="Inactive operators are hidden in input "
                                                                            "but keep their history")})
@@ -68,7 +71,8 @@ with t_edit:
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 with t_imp:
-    st.markdown("An Excel sheet with the columns **NRP**, **Name** and optionally **Position** and **Active** "
+    st.markdown("An Excel sheet with the columns **NRP**, **Name** (Nama) and optionally **Position** (Jabatan) and "
+                "**Active** (Aktif); every column of every operator is updated from the file "
                 "(the *Download list* file of the first tab has exactly this layout). It replaces the operator list "
                 "of the site.")
     f = st.file_uploader("Operators workbook (.xlsx)", type=["xlsx"], key="op_file", max_upload_size=5)
@@ -81,13 +85,18 @@ with t_imp:
             st.error(f"The workbook could not be opened ({type(e).__name__}). Save it again as .xlsx and retry.")
             st.stop()
         df = raw.iloc[1:].copy()
-        df.columns = [str(c).strip().lower() for c in raw.iloc[0]]
+        df.columns = [HEADERS.get(" ".join(str(c).split()).lower(), str(c)) for c in raw.iloc[0]]
+        df = df.loc[:, ~df.columns.duplicated()]
         if not {"nrp", "name"} <= set(df.columns):
-            st.error("The first row must hold the headers NRP and Name.")
+            st.error("The first row must hold the headers NRP and Name (or Nama).")
             st.stop()
+        has_active = "active" in df
         df = df.reindex(columns=["nrp", "name", "position", "active"])
-        df["active"] = df["active"].map(lambda v: str(v).strip().lower() not in ("0", "false", "no", "n")
+        df["active"] = df["active"].map(lambda v: str(v).strip().lower() not in
+                                        ("0", "false", "no", "n", "tidak", "nonaktif", "non aktif", "inactive")
                                         if pd.notna(v) else True)
+        if not has_active:
+            st.caption("No Active column in the file: every operator in it is set active.")
         st.dataframe(df, hide_index=True, width="stretch", height=300)
         st.caption(f"{len(df.dropna(subset=['nrp']))} operators in the file · {len(cur)} in {site} now.")
         if st.button(f"Replace operators of {site}", type="primary", key="op_imp"):
