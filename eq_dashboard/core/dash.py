@@ -662,8 +662,9 @@ def reconcile(c: Ctx, sheets: list[str], measures: list[str] | None = None) -> N
     d = d[d["sheet"].isin(sheets) & d["rule"].isin(EXCLUDED.keys() | UNMAPPED_RULES.keys())]
     if UNMAPPED in c.sites:                     # UNMAPPED is shown: its figures are in the totals
         d = d[~d["rule"].isin(UNMAPPED_RULES.keys())]
-    dates = pd.to_datetime(d["date"]).dt.date
-    d = d[dates.isna() | ((dates >= c.date_from) & (dates <= c.date_to))]
+    # timestamps on both sides: .dt.date of an all-empty column stays datetime64 and cannot compare with a date
+    dates = pd.to_datetime(d["date"], errors="coerce")
+    d = d[dates.isna() | dates.between(pd.Timestamp(c.date_from), pd.Timestamp(c.date_to))]
     if measures:
         d = d[d["measure"].isin(measures) | d["measure"].isna()]
     # a row without a site is reported to every site of its file: count it once
