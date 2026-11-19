@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core import dash, metrics
+from core import filters as F
 from core import theme as T
 from core.ui import excel_download, fmt_num
 
@@ -43,6 +44,19 @@ with cc:
     dash.plot(fig, 380)
     st.caption("Client reason codes are set by the Admin on the PM intervals & standby page.")
 
+# Down split by type: SM = scheduled (PM, service), USM = unscheduled (breakdown)
+dn = c.ev[c.ev["category"] == "D"]
+a, bb = st.columns(2)
+for col, kind, label, color in ((a, "Schedule", "SM (scheduled)", T.DOWN_SM),
+                                (bb, "Unschedule", "USM (unscheduled)", T.DOWN_USM)):
+    part = dn[dn["down_type"] == kind]
+    with col:
+        if part.empty:
+            st.info(f"No Down {label} hours in this selection.")
+        else:
+            dash.pareto(part, "reason_text", "hours",
+                        f"Down {label} hours Pareto · {fmt_num(part['hours'].sum())} h", color)
+
 st.subheader("Day shift vs night shift")
 ds = metrics.availability(metrics.time_buckets(c.ev, ["shift"]))
 fig = go.Figure()
@@ -55,6 +69,16 @@ dash.plot(fig, 360, bottom=56)
 st.subheader("Hours by reason code")
 tab = (c.ev.groupby(["category", "reason_code", "reason_text"], dropna=False)["hours"].sum().reset_index()
        .assign(category=lambda d: d["category"].map(dash.CAT_LABEL)).sort_values("hours", ascending=False))
-tab.columns = ["Category", "Code", "Reason", "Hours"]
-st.dataframe(tab, hide_index=True, width="stretch", column_config={"Hours": st.column_config.NumberColumn(format="%.1f")})
+# shares of the hours in the selected dates (a week, a month, a custom range: whatever the filter holds)
+tot = tab["hours"].sum()
+tab["pct"] = tab["hours"] / tot if tot else None
+cat_tot = tab.groupby("category", dropna=False)["hours"].transform("sum")
+tab["pct_cat"] = tab["hours"] / cat_tot.where(cat_tot > 0)
+tab.columns = ["Category", "Code", "Reason", "Hours", "% of total", "% of category"]
+st.caption(f"Shares of the {fmt_num(tot)} h in {F.range_label(c.date_from, c.date_to)}: "
+           "% of total = of all hours, % of category = of the hours of its own category (e.g. of all Standby).")
+st.dataframe(tab, hide_index=True, width="stretch",
+             column_config={"Hours": st.column_config.NumberColumn(format="%.1f"),
+                            "% of total": st.column_config.NumberColumn(format="percent"),
+                            "% of category": st.column_config.NumberColumn(format="percent")})
 excel_download(tab, "hours_by_reason.xlsx")

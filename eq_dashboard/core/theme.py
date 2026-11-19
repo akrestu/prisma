@@ -20,6 +20,7 @@ ACCENT = "#F2C230"    # hi-vis
 MISS = "#F08A3C"      # off target
 READY, IDLE, STANDBY, DOWN = "#4E9BD8", "#9CC7EA", "#C98DA8", "#F08A3C"  # standby = dusty rose
 CAT = {"R": READY, "I": IDLE, "S": STANDBY, "D": DOWN}
+DOWN_USM, DOWN_SM = "#E5534B", "#F0928C"   # red: breakdown Paretos (unscheduled darker, scheduled lighter)
 NEUTRAL_BAR = "#7CCFB9"  # default category bars: soft teal, never grey/white
 FUEL_COLOR = "#C08BE0"   # violet: fuel litres (never status colours)
 PA_COLOR = "#4FC1A6"     # teal: PA series (distinct from chalk text, blue UoA, orange miss)

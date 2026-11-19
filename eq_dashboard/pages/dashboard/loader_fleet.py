@@ -42,21 +42,17 @@ period = a.segmented_control("Granularity", PERIODS, default="daily", format_fun
 group = b.segmented_control("Material", ["OB", "CG"], default="OB", key="prod_group",
                             format_func=lambda g: "OB (BCM)" if g == "OB" else "Coal getting (t)") or "OB"
 unit = UNIT[group]
-scope = {"hourly": "month", "daily": "month", "weekly": "month", "monthly": "year", "yearly": "all"}[period]
 st.caption({
     "hourly": "Hourly profile over the selected dates (by production hour 06-07 … 05-06).",
     "daily": "Per day within the selected dates.",
-    "weekly": "Per week of each month in the period (1–7, 8–14, 15–21, 22–end).",
-    "monthly": f"Per month of {c.month.year} (all published months, period filter ignored).",
-    "yearly": "Per year across all published data (period filter ignored).",
+    "weekly": "Per week of each month within the selected dates (1–7, 8–14, 15–21, 22–end).",
+    "monthly": "Per month within the selected dates (pick a longer range, e.g. This year, to see more months).",
+    "yearly": "Per year within the selected dates (pick a range across years to compare them).",
 }[period])
 
+# every granularity reads the selected dates, so the cards always match the range in the header
 with st.spinner(f"Calculating {group} productivity ({PERIOD_LABEL[period].lower()})…", show_time=True):
-    if scope == "month":
-        ev, rit = c.ev, c.rit
-    else:
-        vers = c.versions_for(scope)
-        ev, rit = dash.wide_data(vers, c.allowed)
+    ev, rit = c.ev, c.rit
     if rit.empty or rit[rit["material_group"] == group].empty:
         st.info(f"No {group} trips for this selection.")
         st.stop()
@@ -154,18 +150,36 @@ with right:
     dash.plot(fig, 380)
 
 
-def unit_table(df: pd.DataFrame, role: str) -> pd.DataFrame:
-    g = df.groupby("unit").agg(model=("model", "first"), volume=("volume", "sum"), trips=("rit", "sum"),
-                               ready_h=("ready_h", "sum"), work_h=("work_h", "sum"))
-    w = df.assign(wh=df["dist_h"] * df["rit"], wv=df["dist_v"] * df["rit"]).groupby("unit")[["wh", "wv"]].sum()
+PER_COL = {"hourly": "Hour", "daily": "Date", "weekly": "Week", "monthly": "Month", "yearly": "Year"}[period]
+
+
+def unit_table(df: pd.DataFrame, role: str, per_bucket: bool = False) -> pd.DataFrame:
+    """One row per unit (total of the selected dates) or, with `per_bucket`, per unit and hour/day/week/month/year."""
+    by = ["unit", "bucket"] if per_bucket else ["unit"]
+    g = df.groupby(by).agg(model=("model", "first"), volume=("volume", "sum"), trips=("rit", "sum"),
+                           ready_h=("ready_h", "sum"), work_h=("work_h", "sum"))
+    w = df.assign(wh=df["dist_h"] * df["rit"], wv=df["dist_v"] * df["rit"]).groupby(by)[["wh", "wv"]].sum()
     g["per_hour"] = g["volume"] / g["ready_h"].where(g["ready_h"] > 0)
     g["per_hour_work"] = g["volume"] / g["work_h"].where(g["work_h"] > 0)
     g["trips_per_hour"] = g["trips"] / g["ready_h"].where(g["ready_h"] > 0)
     g["dist_h"], g["dist_v"] = w["wh"] / g["trips"], w["wv"] / g["trips"]
-    g["target"] = [target_of(role, mo, unit_site[role].get(un)) for un, mo in zip(g.index, g["model"], strict=True)]
+    g = g.reset_index()
+    g["target"] = [target_of(role, mo, unit_site[role].get(un)) for un, mo in zip(g["unit"], g["model"], strict=True)]
     g["ach"] = g["per_hour"] / g["target"]
-    g = g.reset_index().sort_values("volume", ascending=False)
-    return g.rename(columns={"unit": role.title(), "model": "Model", "volume": f"Volume ({unit})", "trips": "Trips",
+    if per_bucket:
+        # units by their total volume (largest first), each unit's periods in time order
+        rank = g.groupby("unit")["volume"].sum().rank(ascending=False, method="first")
+        pos = {b: i for i, b in enumerate(bucket_order(g["bucket"].unique(), period))}
+        g = (g.assign(_r=g["unit"].map(rank), _p=g["bucket"].map(pos)).sort_values(["_r", "_p"])
+             .drop(columns=["_r", "_p"]))
+        # full labels (the chart's short ones drop the year / month): 01 Dec 2023, 2023-12 Week 1-7, Dec 2023
+        g["bucket"] = [pd.Timestamp(x).strftime("%d %b %Y") if period == "daily"
+                       else x if period == "weekly" else pretty(x, period) for x in g["bucket"]]
+        g = g[["unit", "bucket"] + [x for x in g.columns if x not in ("unit", "bucket")]]
+    else:
+        g = g.sort_values("volume", ascending=False)
+    return g.rename(columns={"unit": role.title(), "bucket": PER_COL, "model": "Model", "volume": f"Volume ({unit})",
+                             "trips": "Trips",
                              "ready_h": "Ready h", "work_h": "Ready+Idle h", "per_hour": f"{unit}/Ready h",
                              "per_hour_work": f"{unit}/(Ready+Idle) h", "trips_per_hour": "Trips/Ready h",
                              "dist_h": "Horizontal (m)", "dist_v": "Vertical (m)",
@@ -174,18 +188,23 @@ def unit_table(df: pd.DataFrame, role: str) -> pd.DataFrame:
 
 cfg = lambda cols: {x: st.column_config.NumberColumn(format="percent" if x == "Achievement" else "%,.1f")  # noqa: E731
                     for x in cols}
+per_bucket = st.toggle(f"Detail per {PER_COL.lower()}", value=True, key="prod_per_bucket",
+                       help=f"On: one row per unit and {PER_COL.lower()} of the selected dates. "
+                            "Off: one row per unit with its total. The ranking always shows the totals.")
+num_cols = lambda t: [x for x in t.columns if pd.api.types.is_numeric_dtype(t[x])]  # noqa: E731
 t1, t2 = st.tabs(["Loaders", "Haulers"])
 with t1:
     tl = unit_table(ld, "loader")
+    show = unit_table(ld, "loader", True) if per_bucket else tl
     a, b = st.columns([1, 1.6])
     with a:
         dash.ranking(tl.dropna(subset=[f"{unit}/Ready h"]), "Loader", f"{unit}/Ready h", f"Loader {unit} per Ready hour",
                      T.ACCENT if group == "OB" else T.READY, pct=False, digits=1)
     with b:
-        st.dataframe(tl, hide_index=True, width="stretch", height=420, column_config=cfg(tl.columns[2:]))
-        excel_download(tl, f"loader_productivity_{group}_{period}.xlsx", key="dl_ld")
+        st.dataframe(show, hide_index=True, width="stretch", height=420, column_config=cfg(num_cols(show)))
+        excel_download(show, f"loader_productivity_{group}_{period}.xlsx", key="dl_ld")
 with t2:
-    th = unit_table(hl, "hauler")
+    th = unit_table(hl, "hauler", per_bucket)
     mdl = hl.groupby("model").agg(volume=("volume", "sum"), ready_h=("ready_h", "sum"), rit=("rit", "sum")).reset_index()
     mdl["per_hour"] = mdl["volume"] / mdl["ready_h"].where(mdl["ready_h"] > 0)
     a, b = st.columns([1, 1.6])
@@ -193,7 +212,7 @@ with t2:
         dash.ranking(mdl.dropna(subset=["per_hour"]), "model", "per_hour", f"Hauler {unit} per Ready hour by model",
                      T.PA_COLOR, pct=False, digits=1)
     with b:
-        st.dataframe(th, hide_index=True, width="stretch", height=420, column_config=cfg(th.columns[2:]))
+        st.dataframe(th, hide_index=True, width="stretch", height=420, column_config=cfg(num_cols(th)))
         excel_download(th, f"hauler_productivity_{group}_{period}.xlsx", key="dl_hl")
 
 st.caption(f"Targets: productivity target per model of each unit's site, {PT.BASIS_LABEL[basis].lower()}"

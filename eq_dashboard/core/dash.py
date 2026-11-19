@@ -603,7 +603,8 @@ def plot(fig: go.Figure, height: int = 360, bottom: int = 10) -> None:
 
 def ranking(df: pd.DataFrame, cat: str, val: str, title: str, color: str, pct: bool = True, top: int = 15,
             ascending: bool = False, height: int | None = None, digits: int = 0):
-    d = df.sort_values(val, ascending=ascending).head(top).iloc[::-1]
+    # `ascending` picks which rows (lowest or highest `top`); they are always drawn highest at the top
+    d = df.sort_values(val, ascending=ascending).head(top).sort_values(val, ascending=True)
     text = d[val].map(fmt_pct) if pct else d[val].map(lambda v: fmt_num(v, digits))
     fig = go.Figure(go.Bar(x=d[val], y=d[cat].astype(str), orientation="h", marker_color=color, text=text,
                            textposition="outside", cliponaxis=False))

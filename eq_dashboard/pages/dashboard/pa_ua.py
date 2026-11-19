@@ -44,7 +44,10 @@ with left:
         fig.add_scatter(x=d["date"], y=d[col], name=col, line=dict(color=color, width=3 if col != "MA" else 2))
     if t["uoa"] is not None:
         fig.add_hline(y=t["uoa"], line_dash="dot", line_color=T.ACCENT, annotation_text="UoA target")
-    fig.update_layout(title="Daily trend", yaxis=dict(tickformat=".0%", range=[0, 1]))
+    # every date on the axis (01 Jan, 02 Jan, …) up to ~1.5 months; longer ranges keep Plotly's own spacing
+    every_day = d["date"].nunique() <= 45
+    fig.update_layout(title="Daily trend", yaxis=dict(tickformat=".0%", range=[0, 1]),
+                      xaxis=dict(dtick=86_400_000, tickformat="%d %b", tickangle=-90) if every_day else {})
     dash.plot(fig)
 with right:
     w = metrics.kpis(c.ev, ["week"]).reset_index()
