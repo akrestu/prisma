@@ -71,7 +71,57 @@ def live_uploads(s: Session, digests: list[str]) -> dict[str, int]:
                      .where(m.Upload.sha256.in_(digests))).all()
     retired = {REJECTED, SUPERSEDED}
     # PENDING, PUBLISHED, or an upload without versions
-    return {d: up_id for d, up_id, status in rows if status not in retired}
+    live = {d: up_id for d, up_id, status in rows if status not in retired}
+    # imported before the Unit Population that now applies to its month: the same file may come in again to re-map
+    stale = stale_uploads(s, set(live.values()))
+    return {d: up_id for d, up_id in live.items() if up_id not in stale}
+
+
+def remapped_uploads(s: Session, digests: list[str]) -> dict[str, int]:
+    """digest → upload id for files already in use whose Unit Population changed since (live_uploads lets them in)."""
+    if not digests:
+        return {}
+    rows = s.execute(select(m.Upload.sha256, m.Upload.id, m.UploadSite.status)
+                     .outerjoin(m.UploadSite, m.UploadSite.upload_id == m.Upload.id)
+                     .where(m.Upload.sha256.in_(digests))).all()
+    live = {d: up_id for d, up_id, status in rows if status not in (REJECTED, SUPERSEDED)}
+    stale = stale_uploads(s, set(live.values()))
+    return {d: up_id for d, up_id in live.items() if up_id in stale}
+
+
+def stale_uploads(s: Session, upload_ids: set[int] | None = None) -> dict[int, int]:
+    """upload id → id of the Unit Population version that applies to its month now but was uploaded after it (units
+    are mapped at import, so such an upload still carries the older mapping). `None` = every upload."""
+    import calendar
+
+    q = select(m.Upload.id, m.Upload.month, m.Upload.uploaded_at)
+    if upload_ids is not None:
+        if not upload_ids:
+            return {}
+        q = q.where(m.Upload.id.in_(upload_ids))
+    ups = s.execute(q).all()
+    if not ups:
+        return {}
+    pv = s.execute(select(m.PopulationVersion.id, m.PopulationVersion.effective_from, m.PopulationVersion.uploaded_at)
+                   .order_by(m.PopulationVersion.effective_from.desc(), m.PopulationVersion.id.desc())).all()
+    out = {}
+    for up_id, month, at in ups:
+        last = month.replace(day=calendar.monthrange(month.year, month.month)[1])
+        v = next((x for x in pv if x.effective_from <= last), None)   # same choice as repo.population_for
+        if v is not None and at is not None and v.uploaded_at is not None and v.uploaded_at > at:
+            out[up_id] = v.id
+    return out
+
+
+def stale_published(s: Session) -> list[dict]:
+    """Published site-months imported before the Unit Population that applies to them now (upload them again)."""
+    pub = s.execute(select(m.UploadSite.site_code, m.UploadSite.month, m.Upload.id, m.Upload.filename)
+                    .join(m.Upload, m.Upload.id == m.UploadSite.upload_id)
+                    .where(m.UploadSite.status == PUBLISHED)).all()
+    stale = stale_uploads(s, {r.id for r in pub})
+    return sorted(({"site": r.site_code, "month": r.month, "upload": r.id, "file": r.filename,
+                    "population": stale[r.id]} for r in pub if r.id in stale),
+                  key=lambda x: (x["month"], x["site"]))
 
 
 def month_digest(data: bytes, month) -> str:

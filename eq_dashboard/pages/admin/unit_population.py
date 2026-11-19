@@ -6,7 +6,7 @@ import streamlit as st
 
 from core import population as pop
 from core.config import UNMAPPED, today_wib
-from core.ingest import audit
+from core.ingest import audit, stale_published
 from core.io import sha256
 from core.ui import excel_download, fmt_num, require, sites_for
 from core.validate import StructureError, file_stem
@@ -30,6 +30,7 @@ with session_scope() as s:
     versions = repo.population_versions(s)
     current = repo.population_for(s, today_wib())
     all_units = repo.population_all_units(s) if len(versions) > 1 else pd.DataFrame()
+    stale = stale_published(s)
 moves = pop.movements(all_units, versions)
 cur_label = current.attrs.get("source", "") if current is not None else ""
 
@@ -41,6 +42,20 @@ k[3].metric("Sites", fmt_num(current.loc[current["site"] != UNMAPPED, "site"].nu
             else "—")
 if cur_label:
     st.caption(f"In force today: {cur_label}.")
+if stale:
+    # units are mapped when Production Data is imported: published months keep the mapping they were imported with
+    sd = pd.DataFrame(stale)
+    months = sorted(sd["month"].unique())
+    span = f"{months[0]:%b %Y}" if len(months) == 1 else f"{months[0]:%b %Y} – {months[-1]:%b %Y}"
+    with st.container(border=True):
+        st.warning(f"**{len(sd)} published site-month(s) ({span}) were imported before the Unit Population that "
+                   "applies to them now**, so they still use the older unit mapping (site, type, model). Upload "
+                   "those Production Data files again (Input & upload → Upload Production Data): the same file is "
+                   "accepted, re-mapped with the current population, and replaces the old version once approved.")
+        st.dataframe(sd.assign(month=sd["month"].map(lambda d: f"{d:%b %Y}"))
+                     .rename(columns={"site": "Site", "month": "Month", "upload": "Upload #", "file": "File",
+                                      "population": "Population version #"}),
+                     hide_index=True, width="stretch", height=min(320, 38 + 35 * len(sd)))
 
 n_moved = int((moves["change"] == "moved").sum())
 t_imp, t_now, t_move, t_hist = st.tabs(["Import", "Current units",

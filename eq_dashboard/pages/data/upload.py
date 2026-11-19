@@ -139,14 +139,22 @@ with t_imp:
                     digests = {r.month: ing.month_digest(data, r.month) if multi else digest for r in results}
                     with session_scope() as s:
                         done = ing.live_uploads(s, list(digests.values()))
+                        remap = ing.remapped_uploads(s, list(digests.values()))
                     ok = sum(r.parsed is not None for r in results)
                     box.update(label=f"Workbook read: {len(results)} month(s), {ok} readable", state="complete",
                                expanded=False)
-                prev = {"digest": digest, "results": results, "digests": digests, "done": done, "name": f.name}
+                prev = {"digest": digest, "results": results, "digests": digests, "done": done, "remap": remap,
+                        "name": f.name}
                 st.session_state["upload_preview"] = prev
 
             results, digests, done = prev["results"], prev["digests"], prev["done"]
+            remap = prev.get("remap", {})
             stepper(1)
+            if remap:
+                ids = ", ".join(f"#{i}" for i in sorted(set(remap.values())))
+                st.info(f"This file was uploaded before ({ids}), but the Unit Population for its month(s) changed "
+                        "since. It is read again with the current population (site, type, model of each unit); once "
+                        "approved it replaces the earlier version.")
             if len(results) == 1:
                 r = results[0]
                 if r.parsed is None:
@@ -170,6 +178,8 @@ with t_imp:
                         state = f"already uploaded (#{done[digests[r.month]]})"
                     else:
                         state = "critical findings" if (p.dq["severity"] == "critical").any() else "ready"
+                        if digests[r.month] in remap:
+                            state += f" · re-map (replaces #{remap[digests[r.month]]})"
                     sev = p.dq["severity"].value_counts() if p is not None else pd.Series(dtype=int)
                     table.append({
                         "Month": f"{r.month:%b %Y}", "Status": state,
