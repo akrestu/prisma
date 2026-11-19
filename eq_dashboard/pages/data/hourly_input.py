@@ -144,7 +144,36 @@ with st.container(border=True):
             st.session_state["hi_msg"] = f"{site} {date:%d %b} {shift} submitted to the Site Manager."
             st.rerun()
 
-t_web, t_xls = st.tabs(["Web input", "Excel template"])
+t_web, t_xls, t_exp = st.tabs(["Web input", "Excel template", "Export"])
+
+# ------------------------------------------------------------------ export for a manual review
+# filled before the other tabs: their st.stop() on a bad upload must not hide it
+with t_exp:
+    st.markdown("Download what was entered for one or more sites and a range of production dates, to review it in "
+                "Excel. Sheets: **Shifts** (status, coordinator, who entered and approved, totals), **Lines** (each "
+                "line as entered with trips per hour H1–H12), **Per hour** and **Remarks**. This file is for "
+                "reading only: to correct a shift, use the Web input or the shift's Excel template.")
+    e1, e2 = st.columns([1.4, 1])
+    ex_sites = e1.multiselect("Sites", sites, default=[site], key="hx_sites")
+    ex_rng = e2.date_input("Production dates", (p_date.replace(day=1), p_date), key="hx_range", format="DD/MM/YYYY")
+    d0, d1 = ex_rng if isinstance(ex_rng, (tuple, list)) and len(ex_rng) == 2 else (None, None)
+    if not ex_sites or d0 is None:
+        st.caption("Pick at least one site and both dates (from and to).")
+    elif (d1 - d0).days > 366:
+        st.warning("Pick at most one year at a time.")
+    else:
+        from core import hourly_export as HX
+
+        def _build(sites_=tuple(ex_sites), a_=d0, b_=d1) -> bytes:   # built only when the button is clicked
+            with session_scope() as s_:
+                data = HX.load(s_, list(sites_), a_, b_)
+            logging.getLogger(__name__).info("hourly export %s %s – %s by %s", sites_, a_, b_, user.username)
+            return HX.workbook(data, list(sites_), a_, b_, now=now_wib().replace(tzinfo=None))
+
+        st.download_button(f"Download Excel · {', '.join(ex_sites)} · {d0:%d %b %Y} – {d1:%d %b %Y}", _build,
+                           file_name=HX.file_name(ex_sites, d0, d1), on_click="ignore", type="primary",
+                           icon=":material/download:", key="hx_dl",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ------------------------------------------------------------------ remarks per hour
 @st.fragment

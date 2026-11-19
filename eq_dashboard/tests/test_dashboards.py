@@ -319,7 +319,8 @@ def test_hourly_pages_by_role(world):
     world.commit()
     at = run_path("pages/data/hourly_input.py", sm)
     assert not at.exception, [e.value for e in at.exception]
-    assert [t.label for t in at.tabs] == ["Web input", "Excel template"]
+    assert [t.label for t in at.tabs] == ["Web input", "Excel template", "Export"]
+    assert at.multiselect(key="hx_sites").value == ["WBK-BAU"]          # export starts on the site in view
     vw = load_user(world, "vw")
     for p in ("pages/data/hourly_input.py", "pages/admin/hourly_setup.py"):
         assert any("do not have access" in e.value for e in run_path(p, vw).error)
