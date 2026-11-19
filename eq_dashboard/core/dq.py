@@ -206,7 +206,9 @@ def fit_table(df: pd.DataFrame, model, sheet: str, skip: tuple[str, ...] = ("id"
         n = c.type.length if isinstance(c.type, String) else None
         if n is None or not (out[c.key].dtype == object or pd.api.types.is_string_dtype(out[c.key])):
             continue
-        long = out[c.key].map(lambda v, n=n: isinstance(v, str) and len(v) > n)
+        # a plain bool list: Series.map on an empty string-dtype column (pandas 3) keeps the string dtype and
+        # .any() then raises TypeError (a month with no rows in a sheet)
+        long = pd.Series([isinstance(v, str) and len(v) > n for v in out[c.key]], index=out.index, dtype=bool)
         if long.any():
             found.append(_rows(out[long].drop_duplicates(c.key), "text_too_long", "warn", sheet,
                                f"{c.key} longer than {n} characters → cut"))

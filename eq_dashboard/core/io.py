@@ -52,7 +52,8 @@ def excel_date(s: pd.Series) -> pd.Series:
     """Dates/datetimes from any reader: real datetimes (calamine), Excel serial numbers (pyxlsb) or text."""
     if pd.api.types.is_datetime64_any_dtype(s):
         return pd.to_datetime(s)          # already dates: to_numeric would turn them into nanoseconds
-    is_dt = s.map(lambda v: isinstance(v, (dt.datetime, dt.date, pd.Timestamp)))
+    # plain bool: Series.map on an empty string-dtype column (pandas 3) keeps the string dtype
+    is_dt = pd.Series([isinstance(v, (dt.datetime, dt.date, pd.Timestamp)) for v in s], index=s.index, dtype=bool)
     serial = pd.to_numeric(s.where(~is_dt), errors="coerce")
     out = pd.to_datetime(serial, unit="D", origin=EXCEL_EPOCH)
     rest = serial.isna() & s.notna()
